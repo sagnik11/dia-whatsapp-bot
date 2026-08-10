@@ -1,0 +1,12 @@
+services:
+  dia:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - dia-data:/app/data
+
+volumes:
+  dia-data:

@@ -1,6 +1,7 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
+COPY patches ./patches
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN npm ci
 COPY tsconfig.json eslint.config.js ./
@@ -17,6 +18,7 @@ ENV NODE_ENV=production \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     DATA_DIR=/app/data
 COPY package*.json ./
+COPY patches ./patches
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 VOLUME ["/app/data"]

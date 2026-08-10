@@ -122,6 +122,7 @@ For a 24/7 deployment on an Ubuntu Lightsail instance—including Docker install
 
 - Tell group participants that triggered content may be sent through Vercel AI Gateway to the selected model provider and written to Notion.
 - Dia buffers only the latest `CONTEXT_MESSAGE_LIMIT` text messages in memory. Set it to `0` to send no preceding context.
+- Triggered `@dia` messages and Dia's outgoing replies are written to the application logs for troubleshooting. Ordinary untriggered group messages are not logged.
 - Never commit `.env` or the `.data` directory.
 - Use `ALLOWED_GROUP_IDS` in any real deployment.
 - Use `AUTHORIZED_USER_IDS` to restrict commands to the owner; display names are never trusted for authorization.

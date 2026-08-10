@@ -2,6 +2,31 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+export function normalizeDedupeKey(messageId: unknown): string {
+  if (typeof messageId === "string" && messageId.length > 0) {
+    return messageId;
+  }
+
+  if (
+    typeof messageId === "number" ||
+    typeof messageId === "bigint" ||
+    typeof messageId === "boolean"
+  ) {
+    return String(messageId);
+  }
+
+  try {
+    const serialized = JSON.stringify(messageId);
+    if (typeof serialized === "string" && serialized.length > 0) {
+      return serialized;
+    }
+  } catch {
+    // Fall through to the explicit error below.
+  }
+
+  throw new TypeError("WhatsApp message ID could not be converted to a dedupe key");
+}
+
 export class DedupeStore {
   private readonly database: DatabaseSync;
 
@@ -16,10 +41,11 @@ export class DedupeStore {
     `);
   }
 
-  public claim(messageId: string): boolean {
+  public claim(messageId: unknown): boolean {
+    const dedupeKey = normalizeDedupeKey(messageId);
     const result = this.database
       .prepare("INSERT OR IGNORE INTO processed_messages (message_id) VALUES (?)")
-      .run(messageId);
+      .run(dedupeKey);
     return result.changes === 1;
   }
 

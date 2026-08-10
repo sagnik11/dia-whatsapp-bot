@@ -199,6 +199,18 @@ export class WhatsAppBot {
     ].filter((id): id is string => Boolean(id));
 
     const messageId = serializeMessageId(message.id);
+    this.options.logger.info(
+      {
+        author,
+        fromMe: message.fromMe,
+        groupId,
+        input: message.body,
+        messageId,
+        senderIds,
+      },
+      "Received triggered WhatsApp message",
+    );
+
     if (!this.options.dedupe.claim(messageId)) {
       this.options.logger.info({ messageId }, "Ignored duplicate message");
       return;
@@ -216,11 +228,24 @@ export class WhatsAppBot {
           groupId,
           senderId: senderIds[0] ?? "unknown",
         });
+        this.options.logger.info(
+          { author, groupId, messageId, output: rejection },
+          "Sending Dia rejection",
+        );
         await this.client.sendMessage(groupId, rejection);
       } catch (error) {
         this.options.logger.error(
           { error, messageId },
           "Failed to generate unauthorized rejection",
+        );
+        this.options.logger.info(
+          {
+            author,
+            groupId,
+            messageId,
+            output: this.options.unauthorizedReply,
+          },
+          "Sending Dia fallback rejection",
         );
         await this.client.sendMessage(groupId, this.options.unauthorizedReply);
       }
@@ -253,13 +278,20 @@ export class WhatsAppBot {
         quotedMessage: quotedMessage?.body ?? null,
         recentContext: this.options.context.get(groupId, true),
       });
+      this.options.logger.info(
+        { author, groupId, messageId, output: reply },
+        "Sending Dia response",
+      );
       await this.client.sendMessage(groupId, reply);
     } catch (error) {
       this.options.logger.error({ error, messageId }, "Assistant request failed");
-      await this.client.sendMessage(
-        groupId,
-        "I hit an error while handling that. Please try again in a moment.",
+      const fallbackReply =
+        "I hit an error while handling that. Please try again in a moment.";
+      this.options.logger.info(
+        { author, groupId, messageId, output: fallbackReply },
+        "Sending Dia error response",
       );
+      await this.client.sendMessage(groupId, fallbackReply);
     }
   }
 }

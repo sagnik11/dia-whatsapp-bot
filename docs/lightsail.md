@@ -75,9 +75,11 @@ nano .env
 Set at least these values:
 
 ```dotenv
-OPENAI_API_KEY=your_openai_key
+AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
+AI_GATEWAY_MODEL=openai/gpt-5.6-luna
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
+NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
 TIMEZONE=Asia/Kolkata
 ```
 

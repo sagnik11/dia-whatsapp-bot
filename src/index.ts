@@ -14,11 +14,14 @@ const notion = new NotionTaskService({
   dataSourceId: config.notionDataSourceId,
   properties: config.notionProperties,
   defaultStatus: config.notionDefaultStatus,
+  defaultAssigneeId: config.notionDefaultAssigneeId,
+  assigneeMap: config.notionAssigneeMap,
   logger,
 });
 const assistant = new DiaAssistant({
-  apiKey: config.openaiApiKey,
-  model: config.openaiModel,
+  gatewayApiKey: config.aiGatewayApiKey,
+  gatewayBaseUrl: config.aiGatewayBaseUrl,
+  model: config.aiGatewayModel,
   botName: config.botName,
   timezone: config.timezone,
   notion,

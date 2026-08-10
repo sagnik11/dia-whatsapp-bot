@@ -9,6 +9,8 @@ const taskSchema = z.object({
   title: z.string().min(1).max(200),
   due_at: z.string().max(100).nullable(),
   assignee: z.string().max(200).nullable(),
+  priority: z.enum(["High", "Med", "Low"]).nullable(),
+  task_type: z.enum(["Tech", "Marketing", "Content", "Misc", "Product"]).nullable(),
   notes: z.string().max(2000).nullable(),
 });
 
@@ -30,18 +32,29 @@ const createTaskTool = {
         type: ["string", "null"],
         description: "Assignee as written by the user, or null.",
       },
+      priority: {
+        type: ["string", "null"],
+        enum: ["High", "Med", "Low", null],
+        description: "Priority when explicit or strongly implied, otherwise null.",
+      },
+      task_type: {
+        type: ["string", "null"],
+        enum: ["Tech", "Marketing", "Content", "Misc", "Product", null],
+        description: "Best matching task type when clear, otherwise null.",
+      },
       notes: {
         type: ["string", "null"],
         description: "Useful task context, or null.",
       },
     },
-    required: ["title", "due_at", "assignee", "notes"],
+    required: ["title", "due_at", "assignee", "priority", "task_type", "notes"],
     additionalProperties: false,
   },
 };
 
 interface AssistantOptions {
-  apiKey: string;
+  gatewayApiKey: string;
+  gatewayBaseUrl: string;
   model: string;
   botName: string;
   timezone: string;
@@ -53,7 +66,10 @@ export class DiaAssistant {
   private readonly client: OpenAI;
 
   public constructor(private readonly options: AssistantOptions) {
-    this.client = new OpenAI({ apiKey: options.apiKey });
+    this.client = new OpenAI({
+      apiKey: options.gatewayApiKey,
+      baseURL: options.gatewayBaseUrl,
+    });
   }
 
   public async respond(request: AssistantRequest): Promise<string> {
@@ -106,6 +122,8 @@ export class DiaAssistant {
           title: parsed.title,
           dueAt: parsed.due_at,
           assignee: parsed.assignee,
+          priority: parsed.priority,
+          taskType: parsed.task_type,
           notes: parsed.notes,
         };
         const result = await this.options.notion.createTask(task, {

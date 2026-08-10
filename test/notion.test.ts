@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  NotionTaskService,
+  boundBrainDumpMarkdown,
   buildTaskQueryFilter,
   resolveAssigneeId,
   taskSummaryFromPage,
@@ -96,5 +98,48 @@ describe("taskSummaryFromPage", () => {
       priority: "High",
       taskTypes: ["Tech"],
     });
+  });
+});
+
+describe("Notion Brain Dump reads", () => {
+  it("retrieves only the configured page as markdown", async () => {
+    const retrieveMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "brain-page",
+      markdown: "# Brain Dump\n\nAn onboarding idea",
+      truncated: false,
+      unknown_block_ids: [],
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      brainDumpPageId: "brain-page",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { retrieveMarkdown } },
+    });
+
+    await expect(service.readBrainDump()).resolves.toEqual({
+      pageId: "brain-page",
+      markdown: "# Brain Dump\n\nAn onboarding idea",
+      truncated: false,
+    });
+    expect(retrieveMarkdown).toHaveBeenCalledWith({
+      page_id: "brain-page",
+      include_transcript: false,
+    });
+  });
+
+  it("bounds large pages before exposing them to the model", () => {
+    const result = boundBrainDumpMarkdown("x".repeat(12_001));
+
+    expect(result.truncated).toBe(true);
+    expect(result.markdown).toContain("[Content truncated by Captain Patch]");
+    expect(result.markdown).not.toContain("x".repeat(12_001));
   });
 });

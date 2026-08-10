@@ -43,6 +43,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
+- Optionally reads one configured Notion Brain Dump page for summaries and product context.
 - Optionally performs one bounded Tavily search and returns source URLs.
 - Keeps a short in-memory group context window for follow-up questions.
 - Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
@@ -74,6 +75,7 @@ flowchart LR
     A --> Q["Normal WhatsApp answer"]
     A --> N1["Create Notion task"]
     A --> N2["Read Notion tasks"]
+    A --> N3["Read Brain Dump page"]
     A --> S["One Tavily web search"]
     N1 --> O["WhatsApp response"]
     N2 --> O
@@ -115,6 +117,8 @@ AI_GATEWAY_MODEL=azure/your-model-name
 
 NOTION_API_KEY=your_notion_integration_token
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
+# Optional read-only page context
+NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
 
 BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
@@ -188,6 +192,16 @@ NOTION_ASSIGNEE_MAP_JSON={"sagnik":"user-id-1","tanvi":"user-id-2"}
 
 Unknown names remain unassigned, but the requested name is preserved in the task page body.
 
+### Optional Brain Dump access
+
+To let Captain Patch answer questions from one Notion page, add the same internal integration as a connection to that page and set:
+
+```dotenv
+NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
+```
+
+The page can be a regular Notion page; it does not need to be a database. Captain Patch retrieves it as Markdown only when an authorized founder asks about the Brain Dump. The integration still needs **Read content** access to that page. This feature does not edit the page, does not search the workspace, and caps the content sent to the model at 12,000 characters per request.
+
 ## Find group and sender IDs
 
 ### Group allowlist
@@ -259,6 +273,7 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AI_GATEWAY_MODEL` | Yes | — | Model ID; must match `azure/<model-name>`. |
 | `NOTION_API_KEY` | Yes | — | Notion internal integration token. |
 | `NOTION_DATA_SOURCE_ID` | Yes | — | Task tracker's data source ID. |
+| `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables read-only access to one specific Notion page. |
 | `NOTION_TITLE_PROPERTY` | No | `Task name` | Title property name. |
 | `NOTION_STATUS_PROPERTY` | No | `Status` | Status property name. |
 | `NOTION_DEFAULT_STATUS` | No | `Not started` | Status assigned to new tasks. |
@@ -317,7 +332,7 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Group and sender allowlists are checked before AI tools are exposed.
 - The unauthorized rejection call has no Notion or web-search tools.
 - Notion writes are limited to the strict `create_notion_task` schema.
-- Notion reads return selected task properties rather than arbitrary workspace content.
+- Task reads return selected properties; optional Brain Dump reads are confined to one configured page and capped at 12,000 characters.
 - Web search is limited to one bounded Tavily request per trigger.
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
@@ -337,6 +352,7 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - The current model configuration intentionally requires an `azure/...` Gateway model.
 - Notion is required at startup even if you only want ordinary AI answers.
 - Notion task property types and select options are currently fixed in code.
+- Brain Dump access supports one configured page and is read-only.
 - Context is in-memory and is lost when the process restarts.
 - SQLite and local session storage assume a single bot process, not horizontal scaling.
 - A linked WhatsApp session can be paused or logged out and may require QR pairing again.
@@ -402,7 +418,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters and task confirmations, assistant tool loops, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters, bounded Brain Dump reads, task confirmations, assistant tool loops, and Tavily request bounds.
 
 ## Project structure
 
@@ -415,7 +431,7 @@ src/
 ├── config.ts             Validated environment configuration
 ├── context-buffer.ts     Bounded in-memory group context
 ├── dedupe-store.ts       SQLite message deduplication
-├── notion.ts             Strict Notion task service
+├── notion.ts             Strict Notion task and Brain Dump service
 └── web-search.ts         Bounded Tavily search service
 
 docs/lightsail.md         Production VPS deployment guide

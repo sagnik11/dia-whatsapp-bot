@@ -1,6 +1,7 @@
 import { Client, type PageObjectResponse } from "@notionhq/client";
 import type { Logger } from "./logger.js";
 import type {
+  BrainDumpResult,
   TaskInput,
   TaskListResult,
   TaskQuery,
@@ -27,11 +28,28 @@ type TaskPropertyFilter =
 interface NotionTaskServiceOptions {
   apiKey: string;
   dataSourceId: string;
+  brainDumpPageId?: string;
   properties: NotionPropertyNames;
   defaultStatus: string;
   defaultAssigneeId: string | undefined;
   assigneeMap: Readonly<Record<string, string>>;
   logger: Logger;
+}
+
+const MAX_BRAIN_DUMP_CHARACTERS = 12_000;
+
+export function boundBrainDumpMarkdown(markdown: string): {
+  markdown: string;
+  truncated: boolean;
+} {
+  if (markdown.length <= MAX_BRAIN_DUMP_CHARACTERS) {
+    return { markdown, truncated: false };
+  }
+
+  return {
+    markdown: `${markdown.slice(0, MAX_BRAIN_DUMP_CHARACTERS)}\n\n[Content truncated by Captain Patch]`,
+    truncated: true,
+  };
 }
 
 export function resolveAssigneeId(
@@ -148,6 +166,31 @@ export class NotionTaskService {
 
   public constructor(private readonly options: NotionTaskServiceOptions) {
     this.client = new Client({ auth: options.apiKey });
+  }
+
+  public get canReadBrainDump(): boolean {
+    return Boolean(this.options.brainDumpPageId);
+  }
+
+  public async readBrainDump(): Promise<BrainDumpResult> {
+    const pageId = this.options.brainDumpPageId;
+    if (!pageId) {
+      throw new Error("NOTION_BRAIN_DUMP_PAGE_ID is not configured");
+    }
+
+    const response = await this.client.pages.retrieveMarkdown({
+      page_id: pageId,
+      include_transcript: false,
+    });
+    const bounded = boundBrainDumpMarkdown(response.markdown);
+    const truncated = response.truncated || bounded.truncated;
+
+    this.options.logger.info(
+      { notionPageId: pageId, characters: bounded.markdown.length, truncated },
+      "Read Notion Brain Dump",
+    );
+
+    return { pageId, markdown: bounded.markdown, truncated };
   }
 
   public async createTask(input: TaskInput, source: TaskSource): Promise<TaskResult> {

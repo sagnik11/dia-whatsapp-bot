@@ -59,3 +59,9 @@ export interface TaskListResult {
   tasks: TaskSummary[];
   hasMore: boolean;
 }
+
+export interface BrainDumpResult {
+  pageId: string;
+  markdown: string;
+  truncated: boolean;
+}

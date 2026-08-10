@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DiaAssistant,
   formatTaskConfirmation,
+  isExplicitBrainDumpRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
   isExplicitWebSearchRequest,
@@ -57,6 +58,19 @@ describe("isExplicitWebSearchRequest", () => {
 
   it("does not force web search for stable conversation", () => {
     expect(isExplicitWebSearchRequest("write a funny launch message")).toBe(false);
+  });
+});
+
+describe("isExplicitBrainDumpRequest", () => {
+  it.each([
+    "summarize the Brain Dump",
+    "what onboarding feedback is in our brain-dump?",
+  ])("detects a Brain Dump request: %s", (message) => {
+    expect(isExplicitBrainDumpRequest(message)).toBe(true);
+  });
+
+  it("does not confuse ordinary idea questions with configured Notion content", () => {
+    expect(isExplicitBrainDumpRequest("brainstorm some launch ideas")).toBe(false);
   });
 });
 
@@ -213,6 +227,68 @@ describe("DiaAssistant web search", () => {
       type: "function_call_output",
       call_id: "search-1",
       output: expect.stringContaining("https://autter.dev/"),
+    });
+    expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
+  });
+});
+
+describe("DiaAssistant Brain Dump reads", () => {
+  it("reads the configured page and gives its bounded content to the model", async () => {
+    const readBrainDump = vi.fn().mockResolvedValue({
+      pageId: "brain-page",
+      markdown: "# Feedback\nMake the first review memorable.",
+      truncated: false,
+    });
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "read_brain_dump",
+            call_id: "brain-1",
+            arguments: JSON.stringify({ query: "summarize the Brain Dump" }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "The main idea is to make the first review memorable.",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: { canReadBrainDump: true, readBrainDump } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-3",
+      requestedBy: "Sagnik",
+      requestedById: "919999999999@c.us",
+      body: "summarize the Brain Dump",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("first review memorable");
+    expect(readBrainDump).toHaveBeenCalledOnce();
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "read_brain_dump" },
+    });
+    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "brain-1",
+      output: expect.stringContaining("Make the first review memorable"),
     });
     expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
   });

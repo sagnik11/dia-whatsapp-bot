@@ -13,6 +13,9 @@ const dedupe = new DedupeStore(join(config.dataDir, "dia.sqlite"));
 const notion = new NotionTaskService({
   apiKey: config.notionApiKey,
   dataSourceId: config.notionDataSourceId,
+  ...(config.notionBrainDumpPageId
+    ? { brainDumpPageId: config.notionBrainDumpPageId }
+    : {}),
   properties: config.notionProperties,
   defaultStatus: config.notionDefaultStatus,
   defaultAssigneeId: config.notionDefaultAssigneeId,

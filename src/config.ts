@@ -14,6 +14,7 @@ const schema = z.object({
     .regex(/^azure\/.+/, "AI_GATEWAY_MODEL must use the azure/<model-name> format"),
   NOTION_API_KEY: z.string().min(1, "NOTION_API_KEY is required"),
   NOTION_DATA_SOURCE_ID: z.string().min(1, "NOTION_DATA_SOURCE_ID is required"),
+  NOTION_BRAIN_DUMP_PAGE_ID: optionalString,
   NOTION_TITLE_PROPERTY: z.string().default("Task name"),
   NOTION_STATUS_PROPERTY: z.string().default("Status"),
   NOTION_DEFAULT_STATUS: z.string().default("Not started"),
@@ -59,6 +60,7 @@ export const config = {
   aiGatewayModel: env.AI_GATEWAY_MODEL,
   notionApiKey: env.NOTION_API_KEY,
   notionDataSourceId: env.NOTION_DATA_SOURCE_ID,
+  notionBrainDumpPageId: env.NOTION_BRAIN_DUMP_PAGE_ID,
   notionProperties: {
     title: env.NOTION_TITLE_PROPERTY,
     status: env.NOTION_STATUS_PROPERTY,

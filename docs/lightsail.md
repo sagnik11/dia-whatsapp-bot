@@ -79,6 +79,7 @@ AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
 AI_GATEWAY_MODEL=azure/your-model-name
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
+NOTION_BRAIN_DUMP_PAGE_ID=your_optional_notion_page_id
 NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
 TAVILY_API_KEY=your_optional_tavily_key
 BOT_NAME=Captain Patch
@@ -86,7 +87,7 @@ BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
 
-Replace `your-model-name` with the exact model name configured for your Azure endpoint. Captain Patch rejects model IDs that do not begin with `azure/`. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command.
+Replace `your-model-name` with the exact model name configured for your Azure endpoint. Captain Patch rejects model IDs that do not begin with `azure/`. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration so Patch can read it without changing it.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
 

@@ -8,6 +8,7 @@ import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
+import { serializeMessageId } from "./message-id.js";
 import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
 const { Client, LocalAuth } = whatsapp;
@@ -197,7 +198,7 @@ export class WhatsAppBot {
       message.fromMe ? botId.split("@")[0] : undefined,
     ].filter((id): id is string => Boolean(id));
 
-    const messageId = message.id._serialized;
+    const messageId = serializeMessageId(message.id);
     if (!this.options.dedupe.claim(messageId)) {
       this.options.logger.info({ messageId }, "Ignored duplicate message");
       return;
@@ -215,25 +216,36 @@ export class WhatsAppBot {
           groupId,
           senderId: senderIds[0] ?? "unknown",
         });
-        await message.reply(rejection);
+        await this.client.sendMessage(groupId, rejection);
       } catch (error) {
         this.options.logger.error(
           { error, messageId },
           "Failed to generate unauthorized rejection",
         );
-        await message.reply(this.options.unauthorizedReply);
+        await this.client.sendMessage(groupId, this.options.unauthorizedReply);
       }
       return;
     }
 
-    const chat = await message.getChat();
-    const quotedMessage = message.hasQuotedMsg ? await message.getQuotedMessage() : null;
+    const chat = await message.getChat().catch((error: unknown) => {
+      this.options.logger.warn({ error, messageId }, "Could not resolve group name");
+      return null;
+    });
+    const quotedMessage = message.hasQuotedMsg
+      ? await message.getQuotedMessage().catch((error: unknown) => {
+          this.options.logger.warn(
+            { error, messageId },
+            "Could not resolve quoted message",
+          );
+          return null;
+        })
+      : null;
     const prompt = removeTextTrigger(message.body, this.options.botTrigger);
 
     try {
       const reply = await this.options.assistant.respond({
         groupId,
-        groupName: chat.name,
+        groupName: chat?.name ?? groupId,
         messageId,
         requestedBy: author,
         requestedById: message.author || contact.id._serialized,
@@ -241,10 +253,13 @@ export class WhatsAppBot {
         quotedMessage: quotedMessage?.body ?? null,
         recentContext: this.options.context.get(groupId, true),
       });
-      await message.reply(reply);
+      await this.client.sendMessage(groupId, reply);
     } catch (error) {
       this.options.logger.error({ error, messageId }, "Assistant request failed");
-      await message.reply("I hit an error while handling that. Please try again in a moment.");
+      await this.client.sendMessage(
+        groupId,
+        "I hit an error while handling that. Please try again in a moment.",
+      );
     }
   }
 }

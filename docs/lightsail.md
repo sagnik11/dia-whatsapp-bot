@@ -106,6 +106,8 @@ If the QR is difficult to scan, maximize the terminal, slightly reduce its font 
 
 Dia will also print the names and IDs of its joined groups. Copy the intended ID, stop the foreground process with `Ctrl+C`, and set the allowlist:
 
+If WhatsApp Web temporarily refuses the full chat-list request, Dia retries without exiting. Send any message in the intended group and Dia will log that group's ID as a fallback.
+
 ```bash
 nano .env
 ```

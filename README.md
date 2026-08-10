@@ -3,7 +3,7 @@
 [![CI](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with an OpenAI model or create a task in Notion.
+Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with a model routed through Vercel AI Gateway to Azure or create a task in Notion.
 
 ```text
 @dia summarize the plan we just discussed
@@ -20,9 +20,10 @@ Meta's official WhatsApp Groups API has restricted eligibility and is generally 
 ## Features
 
 - Responds only in group chats and only when the bot is actually mentioned or the configured text trigger is present.
-- Keeps a small, in-memory context window; untriggered messages are not sent to OpenAI.
-- Uses OpenAI Responses API function calling for controlled Notion writes.
-- Creates tasks with title, status, due date, assignee, requester, source, and notes.
+- Keeps a small, in-memory context window; untriggered messages are not sent to the AI Gateway.
+- Uses an `azure/<model-name>` endpoint through the OpenAI Responses-compatible Vercel AI Gateway API for controlled Notion writes.
+- Creates tasks with title, status, due date, assignee, priority, and task type.
+- Stores WhatsApp requester, group, message ID, and notes inside the task page body, so the database needs no provenance columns.
 - Restricts the bot to an optional group allowlist.
 - Deduplicates processed messages with local SQLite.
 - Stores the WhatsApp session locally so QR pairing survives restarts.
@@ -32,23 +33,21 @@ Meta's official WhatsApp Groups API has restricted eligibility and is generally 
 
 - Node.js 24 or Docker
 - A dedicated WhatsApp number
-- An [OpenAI API key](https://platform.openai.com/api-keys)
+- A [Vercel AI Gateway API key](https://vercel.com/docs/ai-gateway/authentication-and-byok)
 - A Notion internal integration with access to your task database
 
-## 1. Create the Notion data source
+## 1. Connect a Notion task tracker
 
-Create a Notion database with these exact properties, or change the corresponding names in `.env`:
+Dia defaults to the following task-tracker schema. Change the property names in `.env` if your database differs:
 
 | Property | Type |
 | --- | --- |
-| `Task` | Title |
+| `Task name` | Title |
 | `Status` | Status, containing `Not started` |
 | `Due date` | Date |
-| `Assignee` | Text |
-| `Requested by` | Text |
-| `Source group` | Text |
-| `Source message ID` | Text |
-| `Notes` | Text |
+| `Assignee` | Person |
+| `Priority` | Select with `High`, `Med`, and `Low` |
+| `Task type` | Multi-select with `Tech`, `Marketing`, `Content`, `Misc`, and `Product` |
 
 Create an internal Notion integration, give it **Insert content** access, and add the integration to the database. Copy the database's data source ID from the Notion API or integration tooling.
 
@@ -66,12 +65,22 @@ cp .env.example .env
 Fill in at least:
 
 ```dotenv
-OPENAI_API_KEY=...
+AI_GATEWAY_API_KEY=...
+AI_GATEWAY_MODEL=azure/your-model-name
 NOTION_API_KEY=...
 NOTION_DATA_SOURCE_ID=...
 ```
 
-The default model is `gpt-5.6-luna`. You can select another Responses API model with `OPENAI_MODEL`.
+Replace `your-model-name` with the exact Azure model name configured for your Gateway account. Dia validates the `azure/<model-name>` prefix at startup so it cannot accidentally use a differently namespaced endpoint. The selected model must support tool calling.
+
+Notion person properties require user IDs rather than display names. You can assign unqualified tasks to one person and map names used in WhatsApp:
+
+```dotenv
+NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
+NOTION_ASSIGNEE_MAP_JSON='{"sagnik":"user-id-1","alex":"user-id-2"}'
+```
+
+Unknown names remain unassigned, but Dia records the requested assignee in the task page body.
 
 ## 3. Pair WhatsApp and find the group ID
 
@@ -100,9 +109,13 @@ docker compose logs -f dia
 
 The named volume preserves WhatsApp authentication and the deduplication database.
 
+### Deploy on Amazon Lightsail
+
+For a 24/7 deployment on an Ubuntu Lightsail instance—including Docker installation, firewall guidance, SSH-based QR pairing, updates, and backups—follow the [Amazon Lightsail deployment guide](docs/lightsail.md).
+
 ## Privacy and security
 
-- Tell group participants that triggered content may be sent to OpenAI and written to Notion.
+- Tell group participants that triggered content may be sent through Vercel AI Gateway to the selected model provider and written to Notion.
 - Dia buffers only the latest `CONTEXT_MESSAGE_LIMIT` text messages in memory. Set it to `0` to send no preceding context.
 - Never commit `.env` or the `.data` directory.
 - Use `ALLOWED_GROUP_IDS` in any real deployment.
@@ -125,7 +138,8 @@ WhatsApp group
 Trigger + allowlist ──► in-memory context
     │
     ▼
-OpenAI Responses API
+Vercel AI Gateway / Responses API
+    │ model: azure/<model-name>
     ├── normal text ──► WhatsApp reply
     └── create_notion_task ──► Notion ──► confirmation reply
 ```

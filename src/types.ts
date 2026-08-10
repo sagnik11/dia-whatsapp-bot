@@ -19,6 +19,8 @@ export interface TaskInput {
   title: string;
   dueAt: string | null;
   assignee: string | null;
+  priority: "High" | "Med" | "Low" | null;
+  taskType: "Tech" | "Marketing" | "Content" | "Misc" | "Product" | null;
   notes: string | null;
 }
 

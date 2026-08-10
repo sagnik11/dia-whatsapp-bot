@@ -5,6 +5,9 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      DATA_DIR: /app/data
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - dia-data:/app/data
 

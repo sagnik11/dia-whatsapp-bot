@@ -7,10 +7,8 @@ interface NotionPropertyNames {
   status: string;
   dueDate: string;
   assignee: string;
-  requestedBy: string;
-  sourceGroup: string;
-  sourceMessage: string;
-  notes: string;
+  priority: string;
+  taskType: string;
 }
 
 interface NotionTaskServiceOptions {
@@ -18,13 +16,38 @@ interface NotionTaskServiceOptions {
   dataSourceId: string;
   properties: NotionPropertyNames;
   defaultStatus: string;
+  defaultAssigneeId: string | undefined;
+  assigneeMap: Readonly<Record<string, string>>;
   logger: Logger;
 }
 
-const richText = (content: string) => ({
-  type: "rich_text" as const,
-  rich_text: [{ type: "text" as const, text: { content } }],
-});
+export function resolveAssigneeId(
+  assignee: string | null,
+  defaultAssigneeId: string | undefined,
+  assigneeMap: Readonly<Record<string, string>>,
+): string | undefined {
+  if (!assignee || ["me", "myself"].includes(assignee.trim().toLowerCase())) {
+    return defaultAssigneeId;
+  }
+  return assigneeMap[assignee.trim().toLowerCase()];
+}
+
+function pageMarkdown(input: TaskInput, source: TaskSource): string {
+  const lines = [
+    "## WhatsApp source",
+    `- **Group:** ${source.groupName}`,
+    `- **Requested by:** ${source.requestedBy}`,
+    `- **Message ID:** \`${source.messageId}\``,
+  ];
+
+  if (input.assignee) {
+    lines.push(`- **Requested assignee:** ${input.assignee}`);
+  }
+  if (input.notes) {
+    lines.push("", "## Notes", input.notes);
+  }
+  return lines.join("\n");
+}
 
 export class NotionTaskService {
   private readonly client: Client;
@@ -35,6 +58,11 @@ export class NotionTaskService {
 
   public async createTask(input: TaskInput, source: TaskSource): Promise<TaskResult> {
     const p = this.options.properties;
+    const assigneeId = resolveAssigneeId(
+      input.assignee,
+      this.options.defaultAssigneeId,
+      this.options.assigneeMap,
+    );
     const response = await this.client.pages.create({
       parent: {
         type: "data_source_id",
@@ -53,12 +81,32 @@ export class NotionTaskService {
           type: "date",
           date: input.dueAt ? { start: input.dueAt } : null,
         },
-        [p.assignee]: richText(input.assignee ?? ""),
-        [p.requestedBy]: richText(source.requestedBy),
-        [p.sourceGroup]: richText(source.groupName),
-        [p.sourceMessage]: richText(source.messageId),
-        [p.notes]: richText(input.notes ?? ""),
+        ...(assigneeId
+          ? {
+              [p.assignee]: {
+                type: "people" as const,
+                people: [{ id: assigneeId }],
+              },
+            }
+          : {}),
+        ...(input.priority
+          ? {
+              [p.priority]: {
+                type: "select" as const,
+                select: { name: input.priority },
+              },
+            }
+          : {}),
+        ...(input.taskType
+          ? {
+              [p.taskType]: {
+                type: "multi_select" as const,
+                multi_select: [{ name: input.taskType }],
+              },
+            }
+          : {}),
       },
+      markdown: pageMarkdown(input, source),
     });
 
     this.options.logger.info(

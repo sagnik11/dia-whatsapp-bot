@@ -6,6 +6,7 @@ import { ContextBuffer } from "./context-buffer.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { createLogger } from "./logger.js";
 import { NotionTaskService } from "./notion.js";
+import { TavilyWebSearchService } from "./web-search.js";
 
 const logger = createLogger(config.logLevel);
 const dedupe = new DedupeStore(join(config.dataDir, "dia.sqlite"));
@@ -18,6 +19,9 @@ const notion = new NotionTaskService({
   assigneeMap: config.notionAssigneeMap,
   logger,
 });
+const webSearch = config.tavilyApiKey
+  ? new TavilyWebSearchService({ apiKey: config.tavilyApiKey, logger })
+  : undefined;
 const assistant = new DiaAssistant({
   gatewayApiKey: config.aiGatewayApiKey,
   gatewayBaseUrl: config.aiGatewayBaseUrl,
@@ -25,6 +29,7 @@ const assistant = new DiaAssistant({
   botName: config.botName,
   timezone: config.timezone,
   notion,
+  ...(webSearch ? { webSearch } : {}),
   logger,
 });
 const bot = new WhatsAppBot({
@@ -34,6 +39,7 @@ const bot = new WhatsAppBot({
   allowedGroupIds: config.allowedGroupIds,
   authorizedUserIds: config.authorizedUserIds,
   unauthorizedReply: config.unauthorizedReply,
+  botName: config.botName,
   botTrigger: config.botTrigger,
   dataDir: config.dataDir,
   listGroupsOnStart: config.listGroupsOnStart,
@@ -59,7 +65,7 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 bot.start().catch((error: unknown) => {
-  logger.fatal({ error }, "Dia failed to start");
+  logger.fatal({ error }, `${config.botName} failed to start`);
   dedupe.close();
   process.exitCode = 1;
 });

@@ -4,6 +4,7 @@ import {
   formatTaskConfirmation,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
+  isExplicitWebSearchRequest,
 } from "../src/assistant.js";
 
 describe("isExplicitTaskRequest", () => {
@@ -42,6 +43,20 @@ describe("formatTaskConfirmation", () => {
         { id: "page-id", title: "Send proposal", url: "https://notion.so/page" },
       ]),
     ).toBe("✅ Task added: Send proposal\nhttps://notion.so/page");
+  });
+});
+
+describe("isExplicitWebSearchRequest", () => {
+  it.each([
+    "search the web for the best code review tools",
+    "what is the latest GitHub news?",
+    "look up https://autter.dev",
+  ])("detects a request needing live web access: %s", (message) => {
+    expect(isExplicitWebSearchRequest(message)).toBe(true);
+  });
+
+  it("does not force web search for stable conversation", () => {
+    expect(isExplicitWebSearchRequest("write a funny launch message")).toBe(false);
   });
 });
 
@@ -125,5 +140,80 @@ describe("DiaAssistant task reads", () => {
       call_id: "call-1",
       output: expect.stringContaining("Send proposal"),
     });
+    expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
+  });
+});
+
+describe("DiaAssistant web search", () => {
+  it("uses one search and gives its sources back to the model", async () => {
+    const search = vi.fn().mockResolvedValue({
+      query: "latest Autter news",
+      results: [
+        {
+          title: "Autter",
+          url: "https://autter.dev/",
+          content: "Autter is the assurance layer for the AI coding era.",
+        },
+      ],
+    });
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "search_web",
+            call_id: "search-1",
+            arguments: JSON.stringify({
+              query: "latest Autter news",
+              topic: "news",
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "The harbour is busy. https://autter.dev/",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {} as never,
+      webSearch: { search } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-2",
+      requestedBy: "Tanvi",
+      requestedById: "919999999998@c.us",
+      body: "what is the latest Autter news?",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("https://autter.dev/");
+    expect(search).toHaveBeenCalledOnce();
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "search_web" },
+      instructions: expect.stringContaining(
+        "Sagnik Ghosh and Tanvi are equal co-founders",
+      ),
+    });
+    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "search-1",
+      output: expect.stringContaining("https://autter.dev/"),
+    });
+    expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
   });
 });

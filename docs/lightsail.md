@@ -1,6 +1,6 @@
-# Deploy Dia on Amazon Lightsail
+# Deploy Captain Patch on Amazon Lightsail
 
-This guide runs Dia continuously on a standard Amazon Lightsail Linux instance. Dia does not serve a website or accept incoming webhooks: it needs outbound internet access and SSH access for administration.
+This guide runs Captain Patch continuously on a standard Amazon Lightsail Linux instance. Captain Patch does not serve a website or accept incoming webhooks: it needs outbound internet access and SSH access for administration.
 
 ## What to provision
 
@@ -11,9 +11,9 @@ Create a Lightsail **Linux/Unix** instance with:
 - An x86_64 instance unless you specifically want to maintain an ARM deployment
 - A region reasonably close to the WhatsApp users
 
-A static IP is optional because Dia makes outbound connections, but attaching one makes SSH access predictable after stop/start cycles.
+A static IP is optional because Captain Patch makes outbound connections, but attaching one makes SSH access predictable after stop/start cycles.
 
-In the Lightsail networking firewall, keep SSH/TCP port 22 open only to the IP ranges that need administrative access when practical. Dia does **not** need HTTP, HTTPS, or a custom application port exposed.
+In the Lightsail networking firewall, keep SSH/TCP port 22 open only to the IP ranges that need administrative access when practical. Captain Patch does **not** need HTTP, HTTPS, or a custom application port exposed.
 
 ## 1. Connect over SSH
 
@@ -62,7 +62,7 @@ sudo docker compose version
 
 Using `sudo` avoids adding the SSH user to the root-equivalent `docker` group.
 
-## 3. Clone and configure Dia
+## 3. Clone and configure Captain Patch
 
 ```bash
 git clone https://github.com/sagnik11/dia-whatsapp-bot.git
@@ -80,16 +80,19 @@ AI_GATEWAY_MODEL=azure/your-model-name
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
+TAVILY_API_KEY=your_optional_tavily_key
+BOT_NAME=Captain Patch
+BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
 
-Replace `your-model-name` with the exact model name configured for your Azure endpoint. Dia rejects model IDs that do not begin with `azure/`.
+Replace `your-model-name` with the exact model name configured for your Azure endpoint. Captain Patch rejects model IDs that do not begin with `azure/`. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
 
 ## 4. Pair the WhatsApp account over SSH
 
-The VPS does not need a monitor. Dia prints the WhatsApp QR code inside your SSH terminal:
+The VPS does not need a monitor. Captain Patch prints the WhatsApp QR code inside your SSH terminal:
 
 ```bash
 sudo docker compose up --build dia
@@ -100,13 +103,13 @@ When the QR appears:
 1. Open WhatsApp on the dedicated phone.
 2. Open **Linked devices** and choose **Link a device**.
 3. Point the phone at the QR displayed on your laptop's SSH terminal.
-4. Wait for the log message saying Dia is connected.
+4. Wait for the log message saying Captain Patch is connected.
 
 If the QR is difficult to scan, maximize the terminal, slightly reduce its font size, and wait for a fresh QR. The phone scans the laptop display; it does not need access to the VPS desktop.
 
-Dia will also print the names and IDs of its joined groups. Copy the intended ID, stop the foreground process with `Ctrl+C`, and set the allowlist:
+Captain Patch will also print the names and IDs of its joined groups. Copy the intended ID, stop the foreground process with `Ctrl+C`, and set the allowlist:
 
-If WhatsApp Web temporarily refuses the full chat-list request, Dia retries without exiting. Send any message in the intended group and Dia will log that group's ID as a fallback.
+If WhatsApp Web temporarily refuses the full chat-list request, Captain Patch retries without exiting. Send any message in the intended group and Captain Patch will log that group's ID as a fallback.
 
 ```bash
 nano .env
@@ -119,21 +122,21 @@ LIST_GROUPS_ON_START=false
 
 Multiple IDs can be separated with commas.
 
-Dia also fails closed until an authorized sender is configured. Start log streaming, send `@dia hello` from Sagnik's account, and look for:
+Captain Patch also fails closed until an authorized sender is configured. Start log streaming, send `@patch hello` from each Sagnik and Tanvi account, and look for:
 
 ```text
 Ignored trigger from unauthorized sender
 ```
 
-Copy the values in that entry's `senderIds` array, then add the IDs belonging to Sagnik to `.env` as a comma-separated list:
+Copy the values in that entry's `senderIds` array, then add the IDs belonging to Sagnik and Tanvi to `.env` as a comma-separated list:
 
 ```dotenv
 AUTHORIZED_USER_IDS=919999999999@c.us,919999999999
 ```
 
-Restart with `sudo docker compose up -d`. Dia will answer every configured Sagnik account. For other senders it uses a separate no-tools AI call to produce a short funny rejection without exposing the normal assistant or Notion tool. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
+Restart with `sudo docker compose up -d`. Captain Patch will answer every configured founder account. For other senders it uses a separate no-tools AI call to produce a sarcastic rejection without exposing the normal assistant, search, or Notion tools. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
 
-## 5. Start Dia continuously
+## 5. Start Captain Patch continuously
 
 ```bash
 sudo docker compose up -d
@@ -141,11 +144,11 @@ sudo docker compose ps
 sudo docker compose logs -f --tail 100 dia
 ```
 
-Exit log streaming with `Ctrl+C`; the container continues running. The Compose policy `restart: unless-stopped` brings Dia back after a process failure or instance reboot.
+Exit log streaming with `Ctrl+C`; the container continues running. The Compose policy `restart: unless-stopped` brings Captain Patch back after a process failure or instance reboot.
 
 The `dia-data` Docker volume holds the WhatsApp linked-device session and the SQLite deduplication database. Normal container rebuilds keep this volume, so you should not need to scan a QR on every deployment.
 
-## Updating Dia
+## Updating Captain Patch
 
 From the repository directory:
 
@@ -174,7 +177,7 @@ sudo docker compose restart dia
 
 If WhatsApp logs the linked device out, remove only the saved authentication directory from the volume or recreate the volume, then repeat the foreground QR-pairing step. Back up the volume before deleting anything.
 
-If Chromium exits because the instance is out of memory, move Dia to a larger Lightsail bundle. Avoid relying on swap as the permanent fix.
+If Chromium exits because the instance is out of memory, move Captain Patch to a larger Lightsail bundle. Avoid relying on swap as the permanent fix.
 
 ## Backups
 

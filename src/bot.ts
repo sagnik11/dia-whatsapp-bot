@@ -21,6 +21,7 @@ interface BotOptions {
   allowedGroupIds: ReadonlySet<string>;
   authorizedUserIds: ReadonlySet<string>;
   unauthorizedReply: string;
+  botName: string;
   botTrigger: string;
   dataDir: string;
   listGroupsOnStart: boolean;
@@ -92,7 +93,7 @@ export class WhatsAppBot {
     });
 
     // message_create includes both incoming messages and commands manually sent
-    // from the WhatsApp account linked to Dia.
+    // from the WhatsApp account linked to the bot.
     this.client.on("message_create", (message) => {
       void this.onMessage(message).catch((error: unknown) => {
         this.options.logger.error({ error }, "Failed to process WhatsApp message");
@@ -109,7 +110,7 @@ export class WhatsAppBot {
   private async onReady(): Promise<void> {
     this.options.logger.info(
       { botId: this.client.info.wid._serialized },
-      "Dia is connected to WhatsApp",
+      `${this.options.botName} is connected to WhatsApp`,
     );
 
     if (!this.options.listGroupsOnStart) {
@@ -142,7 +143,7 @@ export class WhatsAppBot {
     }
 
     this.options.logger.warn(
-      "Dia remains connected. Send any message in a group to log that group's ID.",
+      `${this.options.botName} remains connected. Send any message in a group to log that group's ID.`,
     );
   }
 
@@ -230,7 +231,7 @@ export class WhatsAppBot {
         });
         this.options.logger.info(
           { author, groupId, messageId, output: rejection },
-          "Sending Dia rejection",
+          `Sending ${this.options.botName} rejection`,
         );
         await this.client.sendMessage(groupId, rejection);
       } catch (error) {
@@ -245,7 +246,7 @@ export class WhatsAppBot {
             messageId,
             output: this.options.unauthorizedReply,
           },
-          "Sending Dia fallback rejection",
+          `Sending ${this.options.botName} fallback rejection`,
         );
         await this.client.sendMessage(groupId, this.options.unauthorizedReply);
       }
@@ -280,7 +281,7 @@ export class WhatsAppBot {
       });
       this.options.logger.info(
         { author, groupId, messageId, output: reply },
-        "Sending Dia response",
+        `Sending ${this.options.botName} response`,
       );
       await this.client.sendMessage(groupId, reply);
     } catch (error) {
@@ -289,7 +290,7 @@ export class WhatsAppBot {
         "I hit an error while handling that. Please try again in a moment.";
       this.options.logger.info(
         { author, groupId, messageId, output: fallbackReply },
-        "Sending Dia error response",
+        `Sending ${this.options.botName} error response`,
       );
       await this.client.sendMessage(groupId, fallbackReply);
     }

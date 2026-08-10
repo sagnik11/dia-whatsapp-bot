@@ -1,7 +1,7 @@
 {
   "name": "dia-whatsapp-bot",
   "version": "0.1.0",
-  "description": "A mention-triggered WhatsApp group assistant with AI and Notion task reading and creation.",
+  "description": "Captain Patch: Autter's sarcastic WhatsApp assistant with web search and Notion tasks.",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -21,6 +21,8 @@
     "whatsapp",
     "openai",
     "notion",
+    "tavily",
+    "web-search",
     "bot",
     "assistant"
   ],

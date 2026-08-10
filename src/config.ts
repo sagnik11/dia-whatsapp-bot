@@ -23,12 +23,16 @@ const schema = z.object({
   NOTION_ASSIGNEE_MAP_JSON: z.string().default("{}"),
   NOTION_PRIORITY_PROPERTY: z.string().default("Priority"),
   NOTION_TASK_TYPE_PROPERTY: z.string().default("Task type"),
-  BOT_NAME: z.string().default("Dia"),
-  BOT_TRIGGER: z.string().default("@dia"),
+  TAVILY_API_KEY: optionalString,
+  BOT_NAME: z.string().default("Captain Patch"),
+  BOT_TRIGGER: z.string().default("@patch"),
   TIMEZONE: z.string().default("Asia/Kolkata"),
   ALLOWED_GROUP_IDS: z.string().default(""),
   AUTHORIZED_USER_IDS: z.string().default(""),
-  UNAUTHORIZED_REPLY: z.string().min(1).default("Shoo shoo 👋"),
+  UNAUTHORIZED_REPLY: z
+    .string()
+    .min(1)
+    .default("Harbour's closed — only Autter's founders get the command deck. ⚓"),
   CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
   LIST_GROUPS_ON_START: z
     .enum(["true", "false"])
@@ -66,6 +70,7 @@ export const config = {
   notionDefaultStatus: env.NOTION_DEFAULT_STATUS,
   notionDefaultAssigneeId: env.NOTION_DEFAULT_ASSIGNEE_ID,
   notionAssigneeMap: parseAssigneeMap(env.NOTION_ASSIGNEE_MAP_JSON),
+  tavilyApiKey: env.TAVILY_API_KEY,
   botName: env.BOT_NAME,
   botTrigger: env.BOT_TRIGGER,
   timezone: env.TIMEZONE,

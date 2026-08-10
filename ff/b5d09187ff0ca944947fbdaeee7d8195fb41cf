@@ -1,0 +1,57 @@
+README.md
+  s_4f29094a4551ec::t_4cc81e6726d577 103-106
+docs/lightsail.md
+  s_4f29094a4551ec::t_4cc81e6726d577 1-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "ffb5d09187ff0ca944947fbdaeee7d8195fb41cf",
+  "branch": "agent/lightsail-deployment",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:7ce3ceaf0cdfe650ae088376473007fe9408c4b3a69c269b683cd49bdeb0017d",
+      "total_additions": 174,
+      "total_deletions": 0,
+      "accepted_lines": 174,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:7ce3ceaf0cdfe650ae088376473007fe9408c4b3a69c269b683cd49bdeb0017d",
+      "stats": {
+        "total_additions": 174,
+        "total_deletions": 0,
+        "accepted_lines": 174,
+        "overriden_lines": 0,
+        "files": {
+          "README.md": {
+            "total_additions": 4,
+            "total_deletions": 0,
+            "accepted_lines": 4,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 170,
+            "total_deletions": 0,
+            "accepted_lines": 170,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

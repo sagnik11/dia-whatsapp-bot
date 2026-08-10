@@ -100,6 +100,10 @@ docker compose logs -f dia
 
 The named volume preserves WhatsApp authentication and the deduplication database.
 
+### Deploy on Amazon Lightsail
+
+For a 24/7 deployment on an Ubuntu Lightsail instance—including Docker installation, firewall guidance, SSH-based QR pairing, updates, and backups—follow the [Amazon Lightsail deployment guide](docs/lightsail.md).
+
 ## Privacy and security
 
 - Tell group participants that triggered content may be sent to OpenAI and written to Notion.

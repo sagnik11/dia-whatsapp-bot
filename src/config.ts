@@ -10,6 +10,7 @@ const schema = z.object({
   AI_GATEWAY_API_KEY: z.string().min(1, "AI_GATEWAY_API_KEY is required"),
   AI_GATEWAY_BASE_URL: z.url().default("https://ai-gateway.vercel.sh/v1"),
   AI_GATEWAY_MODEL: z.string().default("openai/gpt-5.6-luna"),
+  AI_GATEWAY_PROVIDER: z.string().min(1).default("azure"),
   NOTION_API_KEY: z.string().min(1, "NOTION_API_KEY is required"),
   NOTION_DATA_SOURCE_ID: z.string().min(1, "NOTION_DATA_SOURCE_ID is required"),
   NOTION_TITLE_PROPERTY: z.string().default("Task name"),
@@ -49,6 +50,7 @@ export const config = {
   aiGatewayApiKey: env.AI_GATEWAY_API_KEY,
   aiGatewayBaseUrl: env.AI_GATEWAY_BASE_URL,
   aiGatewayModel: env.AI_GATEWAY_MODEL,
+  aiGatewayProvider: env.AI_GATEWAY_PROVIDER,
   notionApiKey: env.NOTION_API_KEY,
   notionDataSourceId: env.NOTION_DATA_SOURCE_ID,
   notionProperties: {

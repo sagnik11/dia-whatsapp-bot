@@ -3,7 +3,7 @@
 [![CI](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with a model routed through Vercel AI Gateway or create a task in Notion.
+Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with a model routed through Vercel AI Gateway to Azure or create a task in Notion.
 
 ```text
 @dia summarize the plan we just discussed
@@ -21,7 +21,7 @@ Meta's official WhatsApp Groups API has restricted eligibility and is generally 
 
 - Responds only in group chats and only when the bot is actually mentioned or the configured text trigger is present.
 - Keeps a small, in-memory context window; untriggered messages are not sent to the AI Gateway.
-- Uses the OpenAI Responses API through Vercel AI Gateway for controlled Notion writes.
+- Uses the OpenAI Responses API through Vercel AI Gateway, with requests restricted to Azure, for controlled Notion writes.
 - Creates tasks with title, status, due date, assignee, priority, and task type.
 - Stores WhatsApp requester, group, message ID, and notes inside the task page body, so the database needs no provenance columns.
 - Restricts the bot to an optional group allowlist.
@@ -66,11 +66,12 @@ Fill in at least:
 
 ```dotenv
 AI_GATEWAY_API_KEY=...
+AI_GATEWAY_PROVIDER=azure
 NOTION_API_KEY=...
 NOTION_DATA_SOURCE_ID=...
 ```
 
-The default Gateway model is `openai/gpt-5.6-luna`. Select any Gateway model that supports tool use with `AI_GATEWAY_MODEL`, using Vercel's `creator/model` format.
+The default Gateway model is `openai/gpt-5.6-luna`, and `AI_GATEWAY_PROVIDER=azure` restricts execution to Vercel AI Gateway's Azure provider instead of allowing automatic routing to another host. Select any Gateway model that supports both Azure routing and tool use with `AI_GATEWAY_MODEL`, using Vercel's `creator/model` format.
 
 Notion person properties require user IDs rather than display names. You can assign unqualified tasks to one person and map names used in WhatsApp:
 
@@ -138,6 +139,7 @@ Trigger + allowlist ──► in-memory context
     │
     ▼
 Vercel AI Gateway / Responses API
+    │ provider restricted to Azure
     ├── normal text ──► WhatsApp reply
     └── create_notion_task ──► Notion ──► confirmation reply
 ```

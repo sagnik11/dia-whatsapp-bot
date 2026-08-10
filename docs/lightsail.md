@@ -77,11 +77,14 @@ Set at least these values:
 ```dotenv
 AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
 AI_GATEWAY_MODEL=openai/gpt-5.6-luna
+AI_GATEWAY_PROVIDER=azure
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
 TIMEZONE=Asia/Kolkata
 ```
+
+`AI_GATEWAY_PROVIDER=azure` makes the Gateway reject routing to non-Azure providers. Confirm that the chosen `AI_GATEWAY_MODEL` is listed for Azure in Vercel's model catalog before deploying.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
 

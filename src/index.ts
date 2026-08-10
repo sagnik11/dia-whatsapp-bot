@@ -22,6 +22,7 @@ const assistant = new DiaAssistant({
   gatewayApiKey: config.aiGatewayApiKey,
   gatewayBaseUrl: config.aiGatewayBaseUrl,
   model: config.aiGatewayModel,
+  provider: config.aiGatewayProvider,
   botName: config.botName,
   timezone: config.timezone,
   notion,

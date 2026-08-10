@@ -1,0 +1,87 @@
+src/config.ts
+  s_4f29094a4551ec::t_34eabeffa99186 12-14
+docs/lightsail.md
+  s_4f29094a4551ec::t_34eabeffa99186 79,86
+README.md
+  s_4f29094a4551ec::t_34eabeffa99186 24,69,74,142
+.env.example
+  s_4f29094a4551ec::t_34eabeffa99186 3
+src/assistant.ts
+  s_4f29094a4551ec::t_34eabeffa99186 93,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "833cddab08214a8e5dd7b009cdf93d2bf62900d9",
+  "branch": "agent/lightsail-deployment",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:fee9f8aea1dad64a33a20debf244ad492ffb2bbbc9c2a3aa0a2627e2978b8f34",
+      "total_additions": 12,
+      "total_deletions": 26,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:fee9f8aea1dad64a33a20debf244ad492ffb2bbbc9c2a3aa0a2627e2978b8f34",
+      "stats": {
+        "total_additions": 12,
+        "total_deletions": 26,
+        "accepted_lines": 12,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 1,
+            "total_deletions": 2,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 4,
+            "total_deletions": 4,
+            "accepted_lines": 4,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 2,
+            "total_deletions": 3,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 2,
+            "total_deletions": 13,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 3,
+            "total_deletions": 3,
+            "accepted_lines": 3,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 0,
+            "total_deletions": 1,
+            "accepted_lines": 0,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

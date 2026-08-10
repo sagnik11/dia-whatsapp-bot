@@ -1,0 +1,122 @@
+README.md
+  s_4f29094a4551ec::t_ff50853203b97e 23,27,99,104-105,127
+docs/lightsail.md
+  s_4f29094a4551ec::t_ff50853203b97e 122-135
+test/assistant.test.ts
+  s_4f29094a4551ec::t_cea29739828b5b 1-29
+src/authorization.ts
+  s_4f29094a4551ec::t_cea29739828b5b 1-25
+.env.example
+  s_4f29094a4551ec::t_cea29739828b5b 21
+src/index.ts
+  s_4f29094a4551ec::t_cea29739828b5b 35
+src/config.ts
+  s_4f29094a4551ec::t_cea29739828b5b 30,76-77
+src/bot.ts
+  s_4f29094a4551ec::t_cea29739828b5b 6,21,183-193
+test/authorization.test.ts
+  s_4f29094a4551ec::t_cea29739828b5b 1-20
+src/assistant.ts
+  s_4f29094a4551ec::t_cea29739828b5b 6,55-65,67-77,105,112,123-130,152,168,170-171
+  s_4f29094a4551ec::t_46c8e7b9427557 66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "f25af2f1efb1a69a6f7d8b7448af93eb49e4b049",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:d5173d7a8ae81f782158e4707f453144fa03de0e2f9728d4a2a6f24550a8be74",
+      "total_additions": 156,
+      "total_deletions": 7,
+      "accepted_lines": 156,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:d5173d7a8ae81f782158e4707f453144fa03de0e2f9728d4a2a6f24550a8be74",
+      "stats": {
+        "total_additions": 156,
+        "total_deletions": 7,
+        "accepted_lines": 156,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 1,
+            "total_deletions": 0,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 6,
+            "total_deletions": 0,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 14,
+            "total_deletions": 0,
+            "accepted_lines": 14,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 38,
+            "total_deletions": 7,
+            "accepted_lines": 38,
+            "overriden_lines": 0
+          },
+          "src/authorization.ts": {
+            "total_additions": 25,
+            "total_deletions": 0,
+            "accepted_lines": 25,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 16,
+            "total_deletions": 0,
+            "accepted_lines": 16,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 6,
+            "total_deletions": 0,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 1,
+            "total_deletions": 0,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 29,
+            "total_deletions": 0,
+            "accepted_lines": 29,
+            "overriden_lines": 0
+          },
+          "test/authorization.test.ts": {
+            "total_additions": 20,
+            "total_deletions": 0,
+            "accepted_lines": 20,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

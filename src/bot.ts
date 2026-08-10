@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import qrcode from "qrcode-terminal";
 import whatsapp from "whatsapp-web.js";
 import type { DiaAssistant } from "./assistant.js";
+import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
@@ -28,6 +29,18 @@ export class WhatsAppBot {
   private readonly discoveredGroupIds = new Set<string>();
 
   public constructor(private readonly options: BotOptions) {
+    const profileDirectory = join(options.dataDir, "whatsapp", "session");
+    try {
+      for (const path of removeStaleChromiumLocks(profileDirectory)) {
+        options.logger.warn({ path }, "Removed stale Chromium profile lock");
+      }
+    } catch (error) {
+      options.logger.warn(
+        { error, profileDirectory },
+        "Could not clean stale Chromium profile locks",
+      );
+    }
+
     this.client = new Client({
       authStrategy: new LocalAuth({ dataPath: join(options.dataDir, "whatsapp") }),
       puppeteer: {

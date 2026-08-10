@@ -1,5 +1,8 @@
 # Dia
 
+[![CI](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with an OpenAI model or create a task in Notion.
 
 ```text

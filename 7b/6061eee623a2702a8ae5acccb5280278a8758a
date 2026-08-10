@@ -1,0 +1,57 @@
+README.md
+  s_4f29094a4551ec::t_5bb466df42f061 3-5
+.github/workflows/ci.yml
+  s_4f29094a4551ec::t_5bb466df42f061 17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "7b6061eee623a2702a8ae5acccb5280278a8758a",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:1229942517f4eefc310d53d4f083a5af751de09fae6d5c4c158994b2e31ac267",
+      "total_additions": 5,
+      "total_deletions": 2,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:1229942517f4eefc310d53d4f083a5af751de09fae6d5c4c158994b2e31ac267",
+      "stats": {
+        "total_additions": 5,
+        "total_deletions": 2,
+        "accepted_lines": 5,
+        "overriden_lines": 0,
+        "files": {
+          ".github/workflows/ci.yml": {
+            "total_additions": 2,
+            "total_deletions": 2,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 3,
+            "total_deletions": 0,
+            "accepted_lines": 3,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

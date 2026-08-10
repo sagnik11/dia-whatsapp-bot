@@ -1,7 +1,7 @@
 {
   "name": "dia-whatsapp-bot",
   "version": "0.1.0",
-  "description": "A mention-triggered WhatsApp group assistant with OpenAI and Notion task creation.",
+  "description": "A mention-triggered WhatsApp group assistant with AI and Notion task reading and creation.",
   "type": "module",
   "engines": {
     "node": ">=24"

@@ -3,12 +3,13 @@
 [![CI](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/sagnik11/dia-whatsapp-bot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with a model routed through Vercel AI Gateway to Azure or create a task in Notion.
+Dia is a small, self-hosted WhatsApp group assistant. Add its dedicated number to a group, mention `@dia`, and it can answer with a model routed through Vercel AI Gateway to Azure or read and create tasks in Notion.
 
 ```text
 @dia summarize the plan we just discussed
 @dia add a task: Sagnik to send the proposal tomorrow at 4pm
 @dia turn the quoted message into a task due Friday
+@dia which tasks are due this week?
 ```
 
 ## Important disclaimer
@@ -22,8 +23,9 @@ Meta's official WhatsApp Groups API has restricted eligibility and is generally 
 - Responds only in group chats and only when the bot is actually mentioned or the configured text trigger is present.
 - Accepts triggered commands only from explicitly authorized WhatsApp user IDs; an empty owner allowlist fails closed.
 - Keeps a small, in-memory context window; untriggered messages are not sent to the AI Gateway.
-- Uses an `azure/<model-name>` endpoint through the OpenAI Responses-compatible Vercel AI Gateway API for controlled Notion writes.
+- Uses an `azure/<model-name>` endpoint through the OpenAI Responses-compatible Vercel AI Gateway API for controlled Notion reads and writes.
 - Creates tasks with title, status, due date, assignee, priority, and task type.
+- Reads and filters tasks by title, exact status, and due-date range.
 - Forces explicit task-creation requests through the Notion tool and confirms successful writes with the task link.
 - Stores WhatsApp requester, group, message ID, and notes inside the task page body, so the database needs no provenance columns.
 - Restricts the bot to an optional group allowlist.
@@ -51,7 +53,7 @@ Dia defaults to the following task-tracker schema. Change the property names in 
 | `Priority` | Select with `High`, `Med`, and `Low` |
 | `Task type` | Multi-select with `Tech`, `Marketing`, `Content`, `Misc`, and `Product` |
 
-Create an internal Notion integration, give it **Insert content** access, and add the integration to the database. Copy the database's data source ID from the Notion API or integration tooling.
+Create an internal Notion integration, give it **Read content** and **Insert content** access, and add the integration to the database. Copy the database's data source ID from the Notion API or integration tooling.
 
 Notion API versions from 2025-09-03 onward distinguish the database container from its data source. `NOTION_DATA_SOURCE_ID` must be the data source ID.
 
@@ -120,13 +122,13 @@ For a 24/7 deployment on an Ubuntu Lightsail instance—including Docker install
 
 ## Privacy and security
 
-- Tell group participants that triggered content may be sent through Vercel AI Gateway to the selected model provider and written to Notion.
+- Tell group participants that triggered content and requested task records may be sent through Vercel AI Gateway to the selected model provider, and task commands may be written to Notion.
 - Dia buffers only the latest `CONTEXT_MESSAGE_LIMIT` text messages in memory. Set it to `0` to send no preceding context.
 - Triggered `@dia` messages and Dia's outgoing replies are written to the application logs for troubleshooting. Ordinary untriggered group messages are not logged.
 - Never commit `.env` or the `.data` directory.
 - Use `ALLOWED_GROUP_IDS` in any real deployment.
 - Use `AUTHORIZED_USER_IDS` to restrict commands to the owner; display names are never trusted for authorization.
-- The model cannot write arbitrary Notion content. It can request only the strict `create_notion_task` function, which the server validates.
+- The model cannot write arbitrary Notion content. It can request only the strict `create_notion_task` and read-only `list_notion_tasks` functions, which the server validates.
 - Group messages and quoted text are treated as untrusted content in the system instructions.
 
 ## Development
@@ -148,7 +150,8 @@ Trigger + allowlist ──► in-memory context
 Vercel AI Gateway / Responses API
     │ model: azure/<model-name>
     ├── normal text ──► WhatsApp reply
-    └── create_notion_task ──► Notion ──► confirmation reply
+    ├── create_notion_task ──► Notion ──► confirmation reply
+    └── list_notion_tasks ───► Notion ──► summarized reply
 ```
 
 ## License

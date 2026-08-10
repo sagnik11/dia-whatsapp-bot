@@ -1,8 +1,15 @@
-import { Client } from "@notionhq/client";
+import { Client, type PageObjectResponse } from "@notionhq/client";
 import type { Logger } from "./logger.js";
-import type { TaskInput, TaskResult, TaskSource } from "./types.js";
+import type {
+  TaskInput,
+  TaskListResult,
+  TaskQuery,
+  TaskResult,
+  TaskSource,
+  TaskSummary,
+} from "./types.js";
 
-interface NotionPropertyNames {
+export interface NotionPropertyNames {
   title: string;
   status: string;
   dueDate: string;
@@ -10,6 +17,12 @@ interface NotionPropertyNames {
   priority: string;
   taskType: string;
 }
+
+type TaskPropertyFilter =
+  | { property: string; title: { contains: string } }
+  | { property: string; status: { equals: string } }
+  | { property: string; date: { on_or_after: string } }
+  | { property: string; date: { on_or_before: string } };
 
 interface NotionTaskServiceOptions {
   apiKey: string;
@@ -47,6 +60,87 @@ function pageMarkdown(input: TaskInput, source: TaskSource): string {
     lines.push("", "## Notes", input.notes);
   }
   return lines.join("\n");
+}
+
+export function buildTaskQueryFilter(
+  input: TaskQuery,
+  properties: NotionPropertyNames,
+): TaskPropertyFilter | { and: TaskPropertyFilter[] } | undefined {
+  const filters: TaskPropertyFilter[] = [];
+  if (input.titleContains) {
+    filters.push({
+      property: properties.title,
+      title: { contains: input.titleContains },
+    });
+  }
+  if (input.status) {
+    filters.push({
+      property: properties.status,
+      status: { equals: input.status },
+    });
+  }
+  if (input.dueFrom) {
+    filters.push({
+      property: properties.dueDate,
+      date: { on_or_after: input.dueFrom },
+    });
+  }
+  if (input.dueTo) {
+    filters.push({
+      property: properties.dueDate,
+      date: { on_or_before: input.dueTo },
+    });
+  }
+
+  if (filters.length === 0) return undefined;
+  if (filters.length === 1) return filters[0];
+  return { and: filters };
+}
+
+export function taskSummaryFromPage(
+  page: PageObjectResponse,
+  properties: NotionPropertyNames,
+): TaskSummary {
+  const titleProperty = page.properties[properties.title];
+  const statusProperty = page.properties[properties.status];
+  const dueDateProperty = page.properties[properties.dueDate];
+  const assigneeProperty = page.properties[properties.assignee];
+  const priorityProperty = page.properties[properties.priority];
+  const taskTypeProperty = page.properties[properties.taskType];
+
+  const title =
+    titleProperty?.type === "title"
+      ? titleProperty.title.map((item) => item.plain_text).join("").trim()
+      : "";
+  const assignees =
+    assigneeProperty?.type === "people"
+      ? assigneeProperty.people
+          .map((person) => ("name" in person ? person.name : null))
+          .filter((name): name is string => Boolean(name))
+      : [];
+
+  return {
+    id: page.id,
+    url: page.url,
+    title: title || "Untitled task",
+    status:
+      statusProperty?.type === "status"
+        ? (statusProperty.status?.name ?? null)
+        : null,
+    dueAt:
+      dueDateProperty?.type === "date"
+        ? (dueDateProperty.date?.start ?? null)
+        : null,
+    assignees,
+    priority:
+      priorityProperty?.type === "select"
+        ? (priorityProperty.select?.name ?? null)
+        : null,
+    taskTypes:
+      taskTypeProperty?.type === "multi_select"
+        ? taskTypeProperty.multi_select.map((option) => option.name)
+        : [],
+  };
 }
 
 export class NotionTaskService {
@@ -119,5 +213,45 @@ export class NotionTaskService {
       url: "url" in response && typeof response.url === "string" ? response.url : null,
       title: input.title,
     };
+  }
+
+  public async listTasks(input: TaskQuery): Promise<TaskListResult> {
+    const p = this.options.properties;
+    const filter = buildTaskQueryFilter(input, p);
+    const response = await this.client.dataSources.query({
+      data_source_id: this.options.dataSourceId,
+      page_size: input.limit,
+      result_type: "page",
+      filter_properties: [
+        p.title,
+        p.status,
+        p.dueDate,
+        p.assignee,
+        p.priority,
+        p.taskType,
+      ],
+      ...(filter ? { filter } : {}),
+      sorts: [{ property: p.dueDate, direction: "ascending" }],
+    });
+    const tasks = response.results
+      .filter(
+        (result): result is PageObjectResponse =>
+          result.object === "page" && "properties" in result,
+      )
+      .map((page) => taskSummaryFromPage(page, p));
+
+    this.options.logger.info(
+      {
+        count: tasks.length,
+        dueFrom: input.dueFrom,
+        dueTo: input.dueTo,
+        hasMore: response.has_more,
+        status: input.status,
+        titleContains: input.titleContains,
+      },
+      "Read Notion tasks",
+    );
+
+    return { tasks, hasMore: response.has_more };
   }
 }

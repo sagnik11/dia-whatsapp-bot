@@ -1,0 +1,73 @@
+src/bot.ts
+  s_4f29094a4551ec::t_bd0af2cedf45c6 202-213,231-234,241-249,281-284,288-292,294
+README.md
+  s_4f29094a4551ec::t_bd0af2cedf45c6 125
+test/dedupe-store.test.ts
+  s_4f29094a4551ec::t_bd0af2cedf45c6 1-39
+src/dedupe-store.ts
+  s_4f29094a4551ec::t_bd0af2cedf45c6 5-29,44-45,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "2b38b1ca3dbbb6826ffd00dcb8632d260e8864e4",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:d3e8b3a45672d9418f288d9f75aa251bc5018c7db4a59d3e232d387ef11bbcf9",
+      "total_additions": 103,
+      "total_deletions": 5,
+      "accepted_lines": 103,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:d3e8b3a45672d9418f288d9f75aa251bc5018c7db4a59d3e232d387ef11bbcf9",
+      "stats": {
+        "total_additions": 103,
+        "total_deletions": 5,
+        "accepted_lines": 103,
+        "overriden_lines": 0,
+        "files": {
+          "README.md": {
+            "total_additions": 1,
+            "total_deletions": 0,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 35,
+            "total_deletions": 3,
+            "accepted_lines": 35,
+            "overriden_lines": 0
+          },
+          "src/dedupe-store.ts": {
+            "total_additions": 28,
+            "total_deletions": 2,
+            "accepted_lines": 28,
+            "overriden_lines": 0
+          },
+          "test/dedupe-store.test.ts": {
+            "total_additions": 39,
+            "total_deletions": 0,
+            "accepted_lines": 39,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

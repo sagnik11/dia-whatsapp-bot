@@ -33,6 +33,7 @@ const bot = new WhatsAppBot({
   dedupe,
   allowedGroupIds: config.allowedGroupIds,
   authorizedUserIds: config.authorizedUserIds,
+  unauthorizedReply: config.unauthorizedReply,
   botTrigger: config.botTrigger,
   dataDir: config.dataDir,
   listGroupsOnStart: config.listGroupsOnStart,

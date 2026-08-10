@@ -28,6 +28,7 @@ const schema = z.object({
   TIMEZONE: z.string().default("Asia/Kolkata"),
   ALLOWED_GROUP_IDS: z.string().default(""),
   AUTHORIZED_USER_IDS: z.string().default(""),
+  UNAUTHORIZED_REPLY: z.string().min(1).default("Shoo shoo 👋"),
   CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
   LIST_GROUPS_ON_START: z
     .enum(["true", "false"])
@@ -78,6 +79,7 @@ export const config = {
       .map((id) => id.trim())
       .filter(Boolean),
   ),
+  unauthorizedReply: env.UNAUTHORIZED_REPLY,
   contextMessageLimit: env.CONTEXT_MESSAGE_LIMIT,
   listGroupsOnStart: env.LIST_GROUPS_ON_START,
   dataDir: env.DATA_DIR,

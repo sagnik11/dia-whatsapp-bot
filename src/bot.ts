@@ -19,6 +19,7 @@ interface BotOptions {
   dedupe: DedupeStore;
   allowedGroupIds: ReadonlySet<string>;
   authorizedUserIds: ReadonlySet<string>;
+  unauthorizedReply: string;
   botTrigger: string;
   dataDir: string;
   listGroupsOnStart: boolean;
@@ -200,6 +201,7 @@ export class WhatsAppBot {
         { author, senderIds },
         "Ignored trigger from unauthorized sender",
       );
+      await message.reply(this.options.unauthorizedReply);
       return;
     }
 

@@ -101,7 +101,7 @@ AUTHORIZED_USER_IDS=919999999999@c.us
 
 Multiple group IDs can be comma-separated. When the value is empty, every joined group can trigger Dia.
 
-`AUTHORIZED_USER_IDS` is required for commands. It accepts comma-separated WhatsApp sender IDs or phone numbers. When it is empty, Dia ignores every trigger and logs the sender identity candidates without calling AI or Notion. Send `@dia hello` as Sagnik, copy Sagnik's IDs from the `Ignored trigger from unauthorized sender` log entry, add them to this setting, and restart Dia. Other group members are then silently ignored when they trigger the bot. Commands sent manually from Dia's linked WhatsApp account are supported through the `message_create` event; authorize that account's ID if it is Sagnik's command account.
+`AUTHORIZED_USER_IDS` is required for commands. It accepts comma-separated WhatsApp sender IDs or phone numbers. When it is empty, Dia blocks every trigger and logs the sender identity candidates without calling AI or Notion. Send `@dia hello` as Sagnik, copy Sagnik's IDs from the `Ignored trigger from unauthorized sender` log entry, add them to this setting, and restart Dia. Other group members receive `Shoo shoo 👋` by default; customize that text with `UNAUTHORIZED_REPLY`. Commands sent manually from Dia's linked WhatsApp account are supported through the `message_create` event; authorize that account's ID if it is Sagnik's command account.
 
 ## Run with Docker
 

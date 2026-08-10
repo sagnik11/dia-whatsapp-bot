@@ -1,0 +1,141 @@
+src/web-search.ts
+  s_4f29094a4551ec::t_0ceac949f2088a 1-75
+src/index.ts
+  s_4f29094a4551ec::t_0ceac949f2088a 9,22-24,32,42,68
+src/config.ts
+  s_4f29094a4551ec::t_0ceac949f2088a 26-28,73
+  s_4f29094a4551ec::t_13df03ffbee19d 32-35
+README.md
+  s_4f29094a4551ec::t_13df03ffbee19d 1,6,9-12,29-31,45-51,55,70,86,89-91,100,110,117,119,138-140,143,158,167-168
+package.json
+  s_4f29094a4551ec::t_008e384f52b225 4,24-25
+src/bot.ts
+  s_4f29094a4551ec::t_0ceac949f2088a 24,113,146,234,249,284,293
+  s_4f29094a4551ec::t_13df03ffbee19d 96
+.env.example
+  s_4f29094a4551ec::t_0ceac949f2088a 17-21,25
+src/assistant.ts
+  s_4f29094a4551ec::t_9c5b0e294f9b39 4,8,27-31,108-131,155-162,185,208-209,211,236-238,248-256,264-268,276-280,284,291,364-410
+  s_4f29094a4551ec::t_2e84c5292532da 269-275,292,296
+src/captain-patch.ts
+  s_4f29094a4551ec::t_0ceac949f2088a 1-20
+test/assistant.test.ts
+  s_4f29094a4551ec::t_2e84c5292532da 143,217
+  s_4f29094a4551ec::t_dd71a0e6d4a917 7,49-62,144-215
+test/web-search.test.ts
+  s_4f29094a4551ec::t_dd71a0e6d4a917 1-56
+docs/lightsail.md
+  s_4f29094a4551ec::t_008e384f52b225 1,3,14,16,65,83-85,89,95,106,110,112,125,131,137,139,147,151,180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "bb08465defa7b69279b82447310b133b82f59f41",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:d77597538f0e9078e70e8a15db3aead399afba7ef7d3d8b6aba5d1ec610bba6b",
+      "total_additions": 454,
+      "total_deletions": 65,
+      "accepted_lines": 449,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:d77597538f0e9078e70e8a15db3aead399afba7ef7d3d8b6aba5d1ec610bba6b",
+      "stats": {
+        "total_additions": 454,
+        "total_deletions": 65,
+        "accepted_lines": 449,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 6,
+            "total_deletions": 3,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 33,
+            "total_deletions": 19,
+            "accepted_lines": 33,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 20,
+            "total_deletions": 17,
+            "accepted_lines": 20,
+            "overriden_lines": 0
+          },
+          "package.json": {
+            "total_additions": 3,
+            "total_deletions": 1,
+            "accepted_lines": 3,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 128,
+            "total_deletions": 14,
+            "accepted_lines": 123,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 8,
+            "total_deletions": 7,
+            "accepted_lines": 8,
+            "overriden_lines": 0
+          },
+          "src/captain-patch.ts": {
+            "total_additions": 20,
+            "total_deletions": 0,
+            "accepted_lines": 20,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 8,
+            "total_deletions": 3,
+            "accepted_lines": 8,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 7,
+            "total_deletions": 1,
+            "accepted_lines": 7,
+            "overriden_lines": 0
+          },
+          "src/web-search.ts": {
+            "total_additions": 75,
+            "total_deletions": 0,
+            "accepted_lines": 75,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 90,
+            "total_deletions": 0,
+            "accepted_lines": 90,
+            "overriden_lines": 0
+          },
+          "test/web-search.test.ts": {
+            "total_additions": 56,
+            "total_deletions": 0,
+            "accepted_lines": 56,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

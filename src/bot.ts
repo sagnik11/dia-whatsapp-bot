@@ -26,6 +26,13 @@ interface BotOptions {
   logger: Logger;
 }
 
+export function resolveGroupId(
+  message: Pick<whatsapp.Message, "from" | "fromMe" | "to">,
+): string | null {
+  const chatId = message.fromMe ? message.to : message.from;
+  return chatId?.endsWith("@g.us") ? chatId : null;
+}
+
 export class WhatsAppBot {
   private readonly client: InstanceType<typeof Client>;
   private readonly discoveredGroupIds = new Set<string>();
@@ -82,7 +89,9 @@ export class WhatsAppBot {
       });
     });
 
-    this.client.on("message", (message) => {
+    // message_create includes both incoming messages and commands manually sent
+    // from the WhatsApp account linked to Dia.
+    this.client.on("message_create", (message) => {
       void this.onMessage(message).catch((error: unknown) => {
         this.options.logger.error({ error }, "Failed to process WhatsApp message");
       });
@@ -136,11 +145,9 @@ export class WhatsAppBot {
   }
 
   private async onMessage(message: whatsapp.Message): Promise<void> {
-    if (!message.from.endsWith("@g.us") || message.fromMe) {
-      return;
-    }
+    const groupId = resolveGroupId(message);
+    if (!groupId) return;
 
-    const groupId = message.from;
     if (
       this.options.listGroupsOnStart &&
       !this.discoveredGroupIds.has(groupId)
@@ -185,6 +192,8 @@ export class WhatsAppBot {
       contact.id._serialized,
       contact.number,
       contact.number ? `${contact.number}@c.us` : undefined,
+      message.fromMe ? botId : undefined,
+      message.fromMe ? botId.split("@")[0] : undefined,
     ].filter((id): id is string => Boolean(id));
     if (!isAuthorizedSender(this.options.authorizedUserIds, senderIds)) {
       this.options.logger.warn(

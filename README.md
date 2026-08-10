@@ -43,7 +43,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
-- Optionally reads one configured Notion Brain Dump page for summaries and product context.
+- Optionally reads and appends notes to one configured Notion Brain Dump page.
 - Optionally performs one bounded Tavily search and returns source URLs.
 - Keeps a short in-memory group context window for follow-up questions.
 - Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
@@ -75,7 +75,7 @@ flowchart LR
     A --> Q["Normal WhatsApp answer"]
     A --> N1["Create Notion task"]
     A --> N2["Read Notion tasks"]
-    A --> N3["Read Brain Dump page"]
+    A --> N3["Read or append Brain Dump"]
     A --> S["One Tavily web search"]
     N1 --> O["WhatsApp response"]
     N2 --> O
@@ -117,7 +117,7 @@ AI_GATEWAY_MODEL=azure/your-model-name
 
 NOTION_API_KEY=your_notion_integration_token
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
-# Optional read-only page context
+# Optional bounded page context and append-only notes
 NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
 
 BOT_NAME=Captain Patch
@@ -164,7 +164,7 @@ If Puppeteer cannot locate a browser, set `PUPPETEER_EXECUTABLE_PATH` to the Chr
 
 ## Configure Notion
 
-Create a Notion internal integration with **Read content** and **Insert content** capabilities, then add that integration as a connection to the task database.
+Create a Notion internal integration with **Read content**, **Insert content**, and **Update content** capabilities, then add that integration as a connection to the task database. Update content is needed only for optional Brain Dump appends.
 
 The default schema is:
 
@@ -200,7 +200,15 @@ To let Captain Patch answer questions from one Notion page, add the same interna
 NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
 ```
 
-The page can be a regular Notion page; it does not need to be a database. Captain Patch retrieves it as Markdown only when an authorized founder asks about the Brain Dump. The integration still needs **Read content** access to that page. This feature does not edit the page, does not search the workspace, and caps the content sent to the model at 12,000 characters per request.
+The page can be a regular Notion page; it does not need to be a database. Captain Patch reads it only when an authorized founder asks about its contents and appends only when explicitly told to add something. The integration needs **Read content** and **Update content** capabilities plus access to the page. Existing content cannot be replaced, edited, or deleted through the bot. Reads are capped at 12,000 characters per request, appends at 4,000 characters, and the bot does not search the rest of the workspace.
+
+Examples:
+
+```text
+@patch summarize the Brain Dump
+@patch add this to the Brain Dump: make the first repository review memorable
+@patch append the quoted feedback to the Brain Dump under Onboarding
+```
 
 ## Find group and sender IDs
 
@@ -273,7 +281,7 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AI_GATEWAY_MODEL` | Yes | — | Model ID; must match `azure/<model-name>`. |
 | `NOTION_API_KEY` | Yes | — | Notion internal integration token. |
 | `NOTION_DATA_SOURCE_ID` | Yes | — | Task tracker's data source ID. |
-| `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables read-only access to one specific Notion page. |
+| `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables bounded reads and append-only notes for one specific page. |
 | `NOTION_TITLE_PROPERTY` | No | `Task name` | Title property name. |
 | `NOTION_STATUS_PROPERTY` | No | `Status` | Status property name. |
 | `NOTION_DEFAULT_STATUS` | No | `Not started` | Status assigned to new tasks. |
@@ -331,8 +339,8 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Authorization uses WhatsApp sender IDs, not editable profile names.
 - Group and sender allowlists are checked before AI tools are exposed.
 - The unauthorized rejection call has no Notion or web-search tools.
-- Notion writes are limited to the strict `create_notion_task` schema.
-- Task reads return selected properties; optional Brain Dump reads are confined to one configured page and capped at 12,000 characters.
+- Task writes use the strict `create_notion_task` schema; Brain Dump writes can only append a bounded note to the configured page.
+- Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
 - Web search is limited to one bounded Tavily request per trigger.
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
@@ -352,7 +360,7 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - The current model configuration intentionally requires an `azure/...` Gateway model.
 - Notion is required at startup even if you only want ordinary AI answers.
 - Notion task property types and select options are currently fixed in code.
-- Brain Dump access supports one configured page and is read-only.
+- Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
 - Context is in-memory and is lost when the process restarts.
 - SQLite and local session storage assume a single bot process, not horizontal scaling.
 - A linked WhatsApp session can be paused or logged out and may require QR pairing again.
@@ -418,7 +426,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters, bounded Brain Dump reads, task confirmations, assistant tool loops, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters, bounded Brain Dump reads, append-only writes, task confirmations, assistant tool loops, and Tavily request bounds.
 
 ## Project structure
 

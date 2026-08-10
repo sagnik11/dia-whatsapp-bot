@@ -1,6 +1,8 @@
 import { Client, type PageObjectResponse } from "@notionhq/client";
 import type { Logger } from "./logger.js";
 import type {
+  BrainDumpAppendInput,
+  BrainDumpAppendResult,
   BrainDumpResult,
   TaskInput,
   TaskListResult,
@@ -17,6 +19,25 @@ export interface NotionPropertyNames {
   assignee: string;
   priority: string;
   taskType: string;
+}
+
+function escapeMarkdownInline(value: string): string {
+  return value.replace(/[\\`*_{}[\]()#+.!|>-]/g, "\\$&");
+}
+
+export function brainDumpAppendMarkdown(
+  input: BrainDumpAppendInput,
+  source: TaskSource,
+): string {
+  const heading = input.heading?.trim();
+  return [
+    "",
+    `## ${heading || "WhatsApp note"}`,
+    "",
+    input.content.trim(),
+    "",
+    `_Added from WhatsApp · ${escapeMarkdownInline(source.groupName)} · ${escapeMarkdownInline(source.requestedBy)}_`,
+  ].join("\n");
 }
 
 type TaskPropertyFilter =
@@ -191,6 +212,41 @@ export class NotionTaskService {
     );
 
     return { pageId, markdown: bounded.markdown, truncated };
+  }
+
+  public async appendBrainDump(
+    input: BrainDumpAppendInput,
+    source: TaskSource,
+  ): Promise<BrainDumpAppendResult> {
+    const pageId = this.options.brainDumpPageId;
+    if (!pageId) {
+      throw new Error("NOTION_BRAIN_DUMP_PAGE_ID is not configured");
+    }
+
+    const markdown = brainDumpAppendMarkdown(input, source);
+    await this.client.pages.updateMarkdown({
+      page_id: pageId,
+      type: "insert_content",
+      insert_content: {
+        content: markdown,
+        position: { type: "end" },
+      },
+    });
+
+    this.options.logger.info(
+      {
+        notionPageId: pageId,
+        charactersAdded: markdown.length,
+        hasHeading: Boolean(input.heading),
+      },
+      "Appended to Notion Brain Dump",
+    );
+
+    return {
+      pageId,
+      heading: input.heading,
+      charactersAdded: markdown.length,
+    };
   }
 
   public async createTask(input: TaskInput, source: TaskSource): Promise<TaskResult> {

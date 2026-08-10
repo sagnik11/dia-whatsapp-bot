@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   NotionTaskService,
   boundBrainDumpMarkdown,
+  brainDumpAppendMarkdown,
   buildTaskQueryFilter,
   resolveAssigneeId,
   taskSummaryFromPage,
@@ -141,5 +142,64 @@ describe("Notion Brain Dump reads", () => {
     expect(result.truncated).toBe(true);
     expect(result.markdown).toContain("[Content truncated by Captain Patch]");
     expect(result.markdown).not.toContain("x".repeat(12_001));
+  });
+});
+
+describe("Notion Brain Dump appends", () => {
+  it("appends a source-attributed note at the end of only the configured page", async () => {
+    const updateMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "brain-page",
+      markdown: "existing content",
+      truncated: false,
+      unknown_block_ids: [],
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      brainDumpPageId: "brain-page",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { updateMarkdown } },
+    });
+
+    const result = await service.appendBrainDump(
+      { heading: "Onboarding", content: "Make the first review memorable." },
+      {
+        groupName: "Autter founders",
+        requestedBy: "Tanvi",
+        messageId: "message-4",
+      },
+    );
+
+    expect(result).toMatchObject({ pageId: "brain-page", heading: "Onboarding" });
+    expect(updateMarkdown).toHaveBeenCalledWith({
+      page_id: "brain-page",
+      type: "insert_content",
+      insert_content: {
+        content: expect.stringContaining("## Onboarding"),
+        position: { type: "end" },
+      },
+    });
+    expect(updateMarkdown.mock.calls[0]?.[0].insert_content.content).toContain(
+      "Make the first review memorable.",
+    );
+    expect(updateMarkdown.mock.calls[0]?.[0].insert_content.content).toContain(
+      "Autter founders · Tanvi",
+    );
+  });
+
+  it("formats a heading-free WhatsApp note", () => {
+    expect(
+      brainDumpAppendMarkdown(
+        { heading: null, content: "  Keep this idea.  " },
+        { groupName: "Autter", requestedBy: "Sagnik", messageId: "message-5" },
+      ),
+    ).toContain("## WhatsApp note\n\nKeep this idea.");
   });
 });

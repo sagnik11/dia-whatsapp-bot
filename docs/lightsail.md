@@ -87,7 +87,7 @@ BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
 
-Replace `your-model-name` with the exact model name configured for your Azure endpoint. Captain Patch rejects model IDs that do not begin with `azure/`. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration so Patch can read it without changing it.
+Replace `your-model-name` with the exact model name configured for your Azure endpoint. Captain Patch rejects model IDs that do not begin with `azure/`. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. Patch can then read the page and append notes, but cannot alter existing content.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
 

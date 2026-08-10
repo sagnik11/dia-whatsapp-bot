@@ -65,3 +65,14 @@ export interface BrainDumpResult {
   markdown: string;
   truncated: boolean;
 }
+
+export interface BrainDumpAppendInput {
+  heading: string | null;
+  content: string;
+}
+
+export interface BrainDumpAppendResult {
+  pageId: string;
+  heading: string | null;
+  charactersAdded: number;
+}

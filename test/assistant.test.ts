@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DiaAssistant,
   formatTaskConfirmation,
+  isExplicitBrainDumpAppendRequest,
   isExplicitBrainDumpRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
@@ -71,6 +72,24 @@ describe("isExplicitBrainDumpRequest", () => {
 
   it("does not confuse ordinary idea questions with configured Notion content", () => {
     expect(isExplicitBrainDumpRequest("brainstorm some launch ideas")).toBe(false);
+  });
+});
+
+describe("isExplicitBrainDumpAppendRequest", () => {
+  it.each([
+    "add this onboarding feedback to the Brain Dump",
+    "please append this to our brain-dump: improve secret detection",
+    "Brain Dump — capture the idea from the quoted message",
+  ])("detects an explicit Brain Dump append: %s", (message) => {
+    expect(isExplicitBrainDumpAppendRequest(message)).toBe(true);
+  });
+
+  it.each([
+    "summarize the Brain Dump",
+    "what did I put in the Brain Dump?",
+    "what should I add to the Brain Dump?",
+  ])("does not mutate for a Brain Dump question: %s", (message) => {
+    expect(isExplicitBrainDumpAppendRequest(message)).toBe(false);
   });
 });
 
@@ -291,5 +310,71 @@ describe("DiaAssistant Brain Dump reads", () => {
       output: expect.stringContaining("Make the first review memorable"),
     });
     expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
+  });
+});
+
+describe("DiaAssistant Brain Dump appends", () => {
+  it("appends once and returns a deterministic confirmation", async () => {
+    const appendBrainDump = vi.fn().mockResolvedValue({
+      pageId: "brain-page",
+      heading: "Onboarding",
+      charactersAdded: 120,
+    });
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [
+        {
+          type: "function_call",
+          name: "append_brain_dump",
+          call_id: "append-1",
+          arguments: JSON.stringify({
+            heading: "Onboarding",
+            content: "Make the first review memorable.",
+          }),
+        },
+      ],
+      output_text: "",
+    });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {
+        canReadBrainDump: true,
+        appendBrainDump,
+      } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-4",
+      requestedBy: "Tanvi",
+      requestedById: "919999999998@c.us",
+      body: "add this onboarding feedback to the Brain Dump",
+      quotedMessage: "Make the first review memorable.",
+      recentContext: [],
+    });
+
+    expect(reply).toBe("✅ Added to Brain Dump: Onboarding");
+    expect(appendBrainDump).toHaveBeenCalledWith(
+      {
+        heading: "Onboarding",
+        content: "Make the first review memorable.",
+      },
+      {
+        groupName: "Autter",
+        messageId: "message-4",
+        requestedBy: "Tanvi",
+      },
+    );
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "append_brain_dump" },
+    });
   });
 });

@@ -1,0 +1,106 @@
+src/types.ts
+  s_4f29094a4551ec::t_750a4a2879b26f 68-78
+test/notion.test.ts
+  s_4f29094a4551ec::t_24c324d29eea95 5,147-203
+docs/lightsail.md
+  s_4f29094a4551ec::t_1ab6fcb3065844 90
+src/notion.ts
+  s_4f29094a4551ec::t_750a4a2879b26f 4-5,24-42,217-249
+src/assistant.ts
+  s_4f29094a4551ec::t_d1e438de3392d5 36-40,136-159,219-220,237-238,324-325,347-351,357,368-369,380-382,426-451
+  s_4f29094a4551ec::t_553f22a0a3700d 221-236
+.env.example
+  s_4f29094a4551ec::t_1ab6fcb3065844 7
+test/assistant.test.ts
+  s_4f29094a4551ec::t_24c324d29eea95 5,78-95,315-378
+README.md
+  s_4f29094a4551ec::t_1ab6fcb3065844 46,78,120,167,203-211,284,342-343,363,429
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "d89c8bec7cbe26c15ff6d906fac6bfd3835bb08c",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:28e9fb0895a2cadc86d28480edc3fc1218432a0d402e3dc5fbbe0f5699e755d5",
+      "total_additions": 323,
+      "total_deletions": 16,
+      "accepted_lines": 322,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:28e9fb0895a2cadc86d28480edc3fc1218432a0d402e3dc5fbbe0f5699e755d5",
+      "stats": {
+        "total_additions": 323,
+        "total_deletions": 16,
+        "accepted_lines": 322,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 1,
+            "total_deletions": 1,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 18,
+            "total_deletions": 10,
+            "accepted_lines": 18,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 1,
+            "total_deletions": 1,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 91,
+            "total_deletions": 4,
+            "accepted_lines": 90,
+            "overriden_lines": 0
+          },
+          "src/notion.ts": {
+            "total_additions": 56,
+            "total_deletions": 0,
+            "accepted_lines": 56,
+            "overriden_lines": 0
+          },
+          "src/types.ts": {
+            "total_additions": 11,
+            "total_deletions": 0,
+            "accepted_lines": 11,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 85,
+            "total_deletions": 0,
+            "accepted_lines": 85,
+            "overriden_lines": 0
+          },
+          "test/notion.test.ts": {
+            "total_additions": 60,
+            "total_deletions": 0,
+            "accepted_lines": 60,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

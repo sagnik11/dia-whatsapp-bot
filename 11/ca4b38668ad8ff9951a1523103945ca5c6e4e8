@@ -1,0 +1,8 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "11ca4b38668ad8ff9951a1523103945ca5c6e4e8",
+  "branch": "agent/lightsail-deployment",
+  "prompts": {}
+}

@@ -196,18 +196,33 @@ export class WhatsAppBot {
       message.fromMe ? botId : undefined,
       message.fromMe ? botId.split("@")[0] : undefined,
     ].filter((id): id is string => Boolean(id));
+
+    const messageId = message.id._serialized;
+    if (!this.options.dedupe.claim(messageId)) {
+      this.options.logger.info({ messageId }, "Ignored duplicate message");
+      return;
+    }
+
     if (!isAuthorizedSender(this.options.authorizedUserIds, senderIds)) {
       this.options.logger.warn(
         { author, senderIds },
         "Ignored trigger from unauthorized sender",
       );
-      await message.reply(this.options.unauthorizedReply);
-      return;
-    }
-
-    const messageId = message.id._serialized;
-    if (!this.options.dedupe.claim(messageId)) {
-      this.options.logger.info({ messageId }, "Ignored duplicate message");
+      try {
+        const rejection = await this.options.assistant.rejectUnauthorized({
+          author,
+          body: message.body,
+          groupId,
+          senderId: senderIds[0] ?? "unknown",
+        });
+        await message.reply(rejection);
+      } catch (error) {
+        this.options.logger.error(
+          { error, messageId },
+          "Failed to generate unauthorized rejection",
+        );
+        await message.reply(this.options.unauthorizedReply);
+      }
       return;
     }
 

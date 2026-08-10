@@ -131,7 +131,7 @@ Copy the values in that entry's `senderIds` array, then add the IDs belonging to
 AUTHORIZED_USER_IDS=919999999999@c.us,919999999999
 ```
 
-Restart with `sudo docker compose up -d`. Dia will answer Sagnik and reply `Shoo shoo 👋` to triggered commands from every other sender without calling AI or Notion. The response can be changed with `UNAUTHORIZED_REPLY`. Authorization uses WhatsApp IDs, not editable display names.
+Restart with `sudo docker compose up -d`. Dia will answer every configured Sagnik account. For other senders it uses a separate no-tools AI call to produce a short funny rejection without exposing the normal assistant or Notion tool. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
 
 ## 5. Start Dia continuously
 

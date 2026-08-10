@@ -21,7 +21,7 @@ Meta's official WhatsApp Groups API has restricted eligibility and is generally 
 
 - Responds only in group chats and only when the bot is actually mentioned or the configured text trigger is present.
 - Keeps a small, in-memory context window; untriggered messages are not sent to the AI Gateway.
-- Uses the OpenAI Responses API through Vercel AI Gateway, with requests restricted to Azure, for controlled Notion writes.
+- Uses an `azure/<model-name>` endpoint through the OpenAI Responses-compatible Vercel AI Gateway API for controlled Notion writes.
 - Creates tasks with title, status, due date, assignee, priority, and task type.
 - Stores WhatsApp requester, group, message ID, and notes inside the task page body, so the database needs no provenance columns.
 - Restricts the bot to an optional group allowlist.
@@ -66,12 +66,12 @@ Fill in at least:
 
 ```dotenv
 AI_GATEWAY_API_KEY=...
-AI_GATEWAY_PROVIDER=azure
+AI_GATEWAY_MODEL=azure/your-model-name
 NOTION_API_KEY=...
 NOTION_DATA_SOURCE_ID=...
 ```
 
-The default Gateway model is `openai/gpt-5.6-luna`, and `AI_GATEWAY_PROVIDER=azure` restricts execution to Vercel AI Gateway's Azure provider instead of allowing automatic routing to another host. Select any Gateway model that supports both Azure routing and tool use with `AI_GATEWAY_MODEL`, using Vercel's `creator/model` format.
+Replace `your-model-name` with the exact Azure model name configured for your Gateway account. Dia validates the `azure/<model-name>` prefix at startup so it cannot accidentally use a differently namespaced endpoint. The selected model must support tool calling.
 
 Notion person properties require user IDs rather than display names. You can assign unqualified tasks to one person and map names used in WhatsApp:
 
@@ -139,7 +139,7 @@ Trigger + allowlist ──► in-memory context
     │
     ▼
 Vercel AI Gateway / Responses API
-    │ provider restricted to Azure
+    │ model: azure/<model-name>
     ├── normal text ──► WhatsApp reply
     └── create_notion_task ──► Notion ──► confirmation reply
 ```

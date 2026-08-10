@@ -56,7 +56,6 @@ interface AssistantOptions {
   gatewayApiKey: string;
   gatewayBaseUrl: string;
   model: string;
-  provider: string;
   botName: string;
   timezone: string;
   notion: NotionTaskService;
@@ -91,9 +90,7 @@ export class DiaAssistant {
     ];
 
     for (let round = 0; round < 3; round += 1) {
-      const requestBody: OpenAI.Responses.ResponseCreateParamsNonStreaming & {
-        providerOptions: { gateway: { only: string[] } };
-      } = {
+      const response = await this.client.responses.create({
         model: this.options.model,
         instructions,
         input,
@@ -101,15 +98,7 @@ export class DiaAssistant {
         max_output_tokens: 700,
         store: false,
         safety_identifier: this.safetyIdentifier(request),
-        // Vercel AI Gateway extension: do not silently route this request to
-        // another infrastructure provider when Azure is required.
-        providerOptions: {
-          gateway: {
-            only: [this.options.provider],
-          },
-        },
-      };
-      const response = await this.client.responses.create(requestBody);
+      });
 
       // The API expects response output items to be replayed when store=false.
       // The SDK's broad output union is slightly wider than its input union, even

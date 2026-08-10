@@ -20,9 +20,11 @@ Meta's official WhatsApp Groups API has restricted eligibility and is generally 
 ## Features
 
 - Responds only in group chats and only when the bot is actually mentioned or the configured text trigger is present.
+- Accepts triggered commands only from explicitly authorized WhatsApp user IDs; an empty owner allowlist fails closed.
 - Keeps a small, in-memory context window; untriggered messages are not sent to the AI Gateway.
 - Uses an `azure/<model-name>` endpoint through the OpenAI Responses-compatible Vercel AI Gateway API for controlled Notion writes.
 - Creates tasks with title, status, due date, assignee, priority, and task type.
+- Forces explicit task-creation requests through the Notion tool and confirms successful writes with the task link.
 - Stores WhatsApp requester, group, message ID, and notes inside the task page body, so the database needs no provenance columns.
 - Restricts the bot to an optional group allowlist.
 - Deduplicates processed messages with local SQLite.
@@ -94,9 +96,12 @@ On startup, Dia logs every group name and ID. Copy the intended ID into `.env`, 
 
 ```dotenv
 ALLOWED_GROUP_IDS=120363000000000000@g.us
+AUTHORIZED_USER_IDS=919999999999@c.us
 ```
 
 Multiple group IDs can be comma-separated. When the value is empty, every joined group can trigger Dia.
+
+`AUTHORIZED_USER_IDS` is required for commands. It accepts comma-separated WhatsApp sender IDs or phone numbers. When it is empty, Dia ignores every trigger and logs the sender identity candidates without calling AI or Notion. Send `@dia hello` as Sagnik, copy Sagnik's IDs from the `Ignored trigger from unauthorized sender` log entry, add them to this setting, and restart Dia. Other group members are then silently ignored when they trigger the bot.
 
 ## Run with Docker
 
@@ -119,6 +124,7 @@ For a 24/7 deployment on an Ubuntu Lightsail instance—including Docker install
 - Dia buffers only the latest `CONTEXT_MESSAGE_LIMIT` text messages in memory. Set it to `0` to send no preceding context.
 - Never commit `.env` or the `.data` directory.
 - Use `ALLOWED_GROUP_IDS` in any real deployment.
+- Use `AUTHORIZED_USER_IDS` to restrict commands to the owner; display names are never trusted for authorization.
 - The model cannot write arbitrary Notion content. It can request only the strict `create_notion_task` function, which the server validates.
 - Group messages and quoted text are treated as untrusted content in the system instructions.
 

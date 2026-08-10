@@ -119,6 +119,20 @@ LIST_GROUPS_ON_START=false
 
 Multiple IDs can be separated with commas.
 
+Dia also fails closed until an authorized sender is configured. Start log streaming, send `@dia hello` from Sagnik's account, and look for:
+
+```text
+Ignored trigger from unauthorized sender
+```
+
+Copy the values in that entry's `senderIds` array, then add the IDs belonging to Sagnik to `.env` as a comma-separated list:
+
+```dotenv
+AUTHORIZED_USER_IDS=919999999999@c.us,919999999999
+```
+
+Restart with `sudo docker compose up -d`. Dia will answer Sagnik and silently ignore triggered commands from every other sender. Authorization uses WhatsApp IDs, not editable display names.
+
 ## 5. Start Dia continuously
 
 ```bash

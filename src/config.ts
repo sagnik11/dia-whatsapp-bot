@@ -27,6 +27,7 @@ const schema = z.object({
   BOT_TRIGGER: z.string().default("@dia"),
   TIMEZONE: z.string().default("Asia/Kolkata"),
   ALLOWED_GROUP_IDS: z.string().default(""),
+  AUTHORIZED_USER_IDS: z.string().default(""),
   CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
   LIST_GROUPS_ON_START: z
     .enum(["true", "false"])
@@ -69,6 +70,11 @@ export const config = {
   timezone: env.TIMEZONE,
   allowedGroupIds: new Set(
     env.ALLOWED_GROUP_IDS.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  ),
+  authorizedUserIds: new Set(
+    env.AUTHORIZED_USER_IDS.split(",")
       .map((id) => id.trim())
       .filter(Boolean),
   ),

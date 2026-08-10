@@ -32,6 +32,7 @@ const bot = new WhatsAppBot({
   context: new ContextBuffer(config.contextMessageLimit),
   dedupe,
   allowedGroupIds: config.allowedGroupIds,
+  authorizedUserIds: config.authorizedUserIds,
   botTrigger: config.botTrigger,
   dataDir: config.dataDir,
   listGroupsOnStart: config.listGroupsOnStart,

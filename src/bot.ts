@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import qrcode from "qrcode-terminal";
 import whatsapp from "whatsapp-web.js";
 import type { DiaAssistant } from "./assistant.js";
+import { isAuthorizedSender } from "./authorization.js";
 import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
 import type { DedupeStore } from "./dedupe-store.js";
@@ -17,6 +18,7 @@ interface BotOptions {
   context: ContextBuffer;
   dedupe: DedupeStore;
   allowedGroupIds: ReadonlySet<string>;
+  authorizedUserIds: ReadonlySet<string>;
   botTrigger: string;
   dataDir: string;
   listGroupsOnStart: boolean;
@@ -175,6 +177,20 @@ export class WhatsAppBot {
       !this.options.allowedGroupIds.has(groupId)
     ) {
       this.options.logger.warn({ groupId }, "Ignored trigger from non-allowlisted group");
+      return;
+    }
+
+    const senderIds = [
+      message.author,
+      contact.id._serialized,
+      contact.number,
+      contact.number ? `${contact.number}@c.us` : undefined,
+    ].filter((id): id is string => Boolean(id));
+    if (!isAuthorizedSender(this.options.authorizedUserIds, senderIds)) {
+      this.options.logger.warn(
+        { author, senderIds },
+        "Ignored trigger from unauthorized sender",
+      );
       return;
     }
 

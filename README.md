@@ -4,7 +4,7 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Captain Patch is an open-source, self-hosted WhatsApp group assistant with an AI personality, owner-only commands, Notion task management, and optional live web search.
+Captain Patch is an open-source, self-hosted WhatsApp group assistant with an AI personality, founder-only commands, Notion task management, voice and file understanding, proactive briefs, and optional live web search.
 
 It is Autter's sarcastic harbour-master mascot out of the box, but the personality and company context live in one small file and can be replaced for another team, community, family, or product.
 
@@ -13,6 +13,8 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 @patch add a high-priority task to ship the onboarding fix tomorrow
 @patch which tasks are due this week?
 @patch search the web for today's AI code-review news
+@patch comment "Research added" on the publishing task
+@patch attach this screenshot to the launch task
 ```
 
 > [!WARNING]
@@ -44,10 +46,15 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
 - Fully edits an exactly matched task's properties and page-body content.
+- Reads and adds comments on exactly matched task pages.
+- Understands attached images and PDFs, and can upload attachments to a matched task.
+- Transcribes quoted WhatsApp voice notes when a Gateway transcription model is configured.
 - Optionally reads and appends notes to one configured Notion Brain Dump page.
 - Optionally searches and reads company knowledge shared with the Notion integration.
 - Stores persistent reminders in SQLite, including advance, due-time, and repeating notifications.
 - Optionally posts an incomplete-task digest from Notion on a persistent interval.
+- Optionally generates a daily AI founder brief from open tasks and reminders.
+- Optionally forwards human Notion task edits and comments into WhatsApp through signed webhooks.
 - Optionally performs one bounded Tavily search and returns source URLs.
 - Keeps a short in-memory group context window for follow-up questions.
 - Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
@@ -82,18 +89,22 @@ flowchart LR
     A --> N5["Update matched Notion task"]
     A --> N3["Read or append Brain Dump"]
     A --> N4["Search/read company Notion"]
+    A --> N6["Task comments and attachments"]
     A --> S["One Tavily web search"]
+    NW["Signed Notion webhook"] --> PN["Proactive WhatsApp notification"]
+    SC["SQLite scheduler"] --> FB["Reminders, digests, founder brief"]
     N1 --> O["WhatsApp response"]
     N2 --> O
     N5 --> O
     N3 --> O
     N4 --> O
+    N6 --> O
     S --> O
 ```
 
 Authorization happens before the assistant receives access to Notion or web search. An empty sender allowlist fails closed.
 
-The linked WhatsApp client also runs a small scheduler. It reads due reminders and digest state from SQLite, then sends proactive messages into configured groups without calling the AI model.
+The linked WhatsApp client also runs a small scheduler. It reads due reminders, digest state, and daily-brief state from SQLite, then sends proactive messages into configured groups. Only the founder brief calls the AI model; reminders and task digests are deterministic.
 
 ## Requirements
 
@@ -103,7 +114,7 @@ Required:
 - A dedicated or non-critical WhatsApp account
 - A [Vercel AI Gateway API key](https://vercel.com/docs/ai-gateway/authentication-and-byok)
 - An Azure model available through AI Gateway using an `azure/<model-name>` identifier
-- A [Notion internal integration](https://www.notion.so/profile/integrations) connected to a task database
+- A [Notion internal integration](https://www.notion.so/profile/integrations) connected to a task database, with read/insert/update/comment capabilities used by the features you enable
 
 Optional:
 
@@ -215,6 +226,18 @@ Captain Patch can update the title, status, due date, assignee, priority, task t
 
 Notes are appended by default. Patch replaces the complete task-page body only when explicitly asked to replace or rewrite it, and it will not delete nested child pages/databases during a replacement. Properties can be cleared only by an explicit request. Assignee changes require the name in `NOTION_ASSIGNEE_MAP_JSON`; redundant writes are skipped. The Notion integration needs **Update content** capability.
 
+### Task comments and attachments
+
+Patch can read existing comments, add a comment, and upload a WhatsApp attachment to one exactly matched task. As with edits, it must search the tracker first and refuses ambiguous matches.
+
+```text
+@patch show the comments on the publishing task
+@patch comment "Research is ready for review" on the publishing task
+@patch attach this screenshot to the launch task
+```
+
+For attachment commands, send the file with the command as its caption, or reply `@patch attach this to the launch task` to the message containing the file. The Notion integration needs the relevant **Read content**, **Insert content**, **Update content**, and comment capabilities. Upload size is also bounded by `MEDIA_MAX_BYTES`.
+
 ### Optional Brain Dump access
 
 To let Captain Patch answer questions from one Notion page, add the same internal integration as a connection to that page and set:
@@ -253,6 +276,20 @@ Examples:
 @patch summarize the latest weekly product update from company knowledge
 ```
 
+## Voice notes, screenshots, and PDFs
+
+Images and PDFs are sent to `AI_GATEWAY_MEDIA_MODEL` for multimodal understanding. It defaults to the main Azure model, so that Azure deployment must support the attached input type. You can send media with an `@patch` caption or reply with an `@patch` command to an existing media message.
+
+Voice notes are transcribed first. Because WhatsApp voice notes do not carry a normal text caption, reply to the voice note with `@patch summarize this` (or another command). Enable transcription with a model available in the Vercel AI Gateway transcription catalog:
+
+```dotenv
+AI_GATEWAY_MEDIA_MODEL=azure/your-multimodal-model
+AI_GATEWAY_TRANSCRIPTION_MODEL=openai/gpt-4o-mini-transcribe
+MEDIA_MAX_BYTES=5000000
+```
+
+`AI_GATEWAY_TRANSCRIPTION_MODEL` is deliberately blank by default, so merely receiving an audio file cannot incur transcription cost. Transcripts, images, and documents are treated as untrusted user content. Do not enable media handling in groups whose participants have not agreed to this processing.
+
 ## Reminders and proactive task digests
 
 Reminders are stored in the same persistent SQLite file as message deduplication, so container rebuilds and restarts do not erase them. By default Patch asks the model to schedule an advance notification ten minutes before the due time and another when due. Repetition is added only when explicitly requested and continues until cancelled.
@@ -274,6 +311,33 @@ TASK_DIGEST_GROUP_IDS=120363000000000000@g.us
 ```
 
 If `TASK_DIGEST_GROUP_IDS` is empty, it uses `ALLOWED_GROUP_IDS`. The digest excludes statuses commonly treated as terminal (`Complete`, `Completed`, `Done`, `Cancelled`, `Canceled`, and `Archived`), includes due dates and assignees, paginates through the tracker, and splits long digests across WhatsApp messages. Its next delivery time is persisted in SQLite, so a restart does not restart the four-hour clock.
+
+### Daily founder brief
+
+The daily brief synthesizes incomplete Notion tasks and active reminders into a short prioritized WhatsApp update:
+
+```dotenv
+FOUNDER_BRIEF_TIME=09:00
+FOUNDER_BRIEF_GROUP_IDS=120363000000000000@g.us
+```
+
+The time uses `TIMEZONE`. If the group list is empty, Patch uses `ALLOWED_GROUP_IDS`. Unlike the deterministic four-hour digest, this feature calls `AI_GATEWAY_MODEL` once per destination per day.
+
+## Notion change notifications
+
+Patch can receive signed Notion webhooks for task creation, task property/page changes, and new or updated comments, then post compact notifications to WhatsApp. Bot-authored events are ignored by default to prevent Patch's own writes from echoing back.
+
+This requires a public HTTPS endpoint; the Docker port is intentionally bound only to `127.0.0.1` and should sit behind Caddy, nginx, a tunnel, or another TLS reverse proxy. Configure:
+
+```dotenv
+NOTION_WEBHOOK_ENABLED=true
+NOTION_WEBHOOK_PORT=3000
+NOTION_WEBHOOK_PATH=/notion/webhook
+NOTION_NOTIFICATION_GROUP_IDS=120363000000000000@g.us
+NOTION_NOTIFY_BOT_EVENTS=false
+```
+
+Create a Notion webhook subscription pointing to `https://YOUR_DOMAIN/notion/webhook`. On the initial verification request, Patch logs `verificationToken`. Copy that value into `NOTION_WEBHOOK_VERIFICATION_TOKEN`, restart the container, and keep the token secret. Subsequent deliveries are rejected unless their `X-Notion-Signature` is valid. See the [Lightsail guide](docs/lightsail.md#optional-public-https-for-notion-webhooks) for a Caddy setup.
 
 ## Find group and sender IDs
 
@@ -344,6 +408,8 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AI_GATEWAY_API_KEY` | Yes | — | Vercel AI Gateway credential. |
 | `AI_GATEWAY_BASE_URL` | No | `https://ai-gateway.vercel.sh/v1` | OpenAI-compatible Gateway base URL. |
 | `AI_GATEWAY_MODEL` | Yes | — | Model ID; must match `azure/<model-name>`. |
+| `AI_GATEWAY_MEDIA_MODEL` | No | `AI_GATEWAY_MODEL` | Azure Gateway model used for images and documents. |
+| `AI_GATEWAY_TRANSCRIPTION_MODEL` | No | Empty | Gateway transcription model; empty disables voice-note processing. |
 | `NOTION_API_KEY` | Yes | — | Notion internal integration token. |
 | `NOTION_DATA_SOURCE_ID` | Yes | — | Task tracker's data source ID. |
 | `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables bounded reads and append-only notes for one specific page. |
@@ -367,6 +433,15 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages retained in memory; `0` disables context. Maximum `20`. |
 | `TASK_DIGEST_INTERVAL_HOURS` | No | `0` | Incomplete-task digest interval; `0` disables it. Use `4` for four-hour digests. |
 | `TASK_DIGEST_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Optional comma-separated proactive digest destinations. |
+| `FOUNDER_BRIEF_TIME` | No | Empty | Daily brief time in `HH:mm`; empty disables it. |
+| `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Optional comma-separated daily-brief destinations. |
+| `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded WhatsApp attachment size. |
+| `NOTION_WEBHOOK_ENABLED` | No | `false` | Starts the Notion webhook receiver. |
+| `NOTION_WEBHOOK_PORT` | No | `3000` | Local webhook HTTP port. |
+| `NOTION_WEBHOOK_PATH` | No | `/notion/webhook` | Webhook URL path. |
+| `NOTION_WEBHOOK_VERIFICATION_TOKEN` | After verification | Empty | Secret used to verify Notion webhook signatures. |
+| `NOTION_NOTIFICATION_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | WhatsApp destinations for Notion events. |
+| `NOTION_NOTIFY_BOT_EVENTS` | No | `false` | Includes integration-authored events; normally keep false. |
 | `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. Disable after configuration. |
 | `DATA_DIR` | No | `.data` | WhatsApp session and SQLite directory outside Docker. |
 | `LOG_LEVEL` | No | `info` | Pino log level such as `debug`, `info`, or `warn`. |
@@ -428,12 +503,14 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 - WhatsApp integration is unofficial and can break when WhatsApp Web changes.
 - Only group chats are handled; direct messages are ignored.
-- The bot handles text and quoted text, not voice notes, images, documents, or reactions.
+- Voice transcription requires a separately configured Gateway transcription model; image/PDF understanding depends on the selected Azure deployment's multimodal support.
+- Media must fit `MEDIA_MAX_BYTES`; reply with an `@patch` command when the original media message cannot carry a caption.
 - The current model configuration intentionally requires an `azure/...` Gateway model.
 - Notion is required at startup even if you only want ordinary AI answers.
 - Notion task property types and select options are currently fixed in code.
 - Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
 - Reminder delivery is at-least-once: a crash after WhatsApp accepts a message but before SQLite advances it can cause one duplicate notification.
+- Webhook notifications are also at-least-once around the small interval between WhatsApp delivery and the SQLite deduplication write.
 - Repeating reminders continue until explicitly cancelled; the bot cannot infer that the underlying real-world action was completed.
 - The task digest recognizes a fixed set of terminal status names; customize `isIncompleteTaskStatus` if your tracker uses different completion labels.
 - Company knowledge search matches titles, not arbitrary page-body text, and database reads return only the five most recently edited rows before an individual row is opened.
@@ -502,7 +579,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates, persistent reminders, proactive scheduling, incomplete-task digests, Notion query filters, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, task confirmations, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, task confirmations, and Tavily request bounds.
 
 ## Project structure
 
@@ -515,6 +592,9 @@ src/
 ├── config.ts             Validated environment configuration
 ├── context-buffer.ts     Bounded in-memory group context
 ├── dedupe-store.ts       SQLite message deduplication
+├── founder-brief.ts      Daily AI brief generation
+├── media-ingestion.ts    Attachment validation and voice transcription
+├── notion-webhook.ts     Signed Notion event receiver and notifications
 ├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
 ├── reminder-store.ts     Persistent reminder and scheduler state
 ├── scheduler.ts          Proactive reminder and task-digest delivery

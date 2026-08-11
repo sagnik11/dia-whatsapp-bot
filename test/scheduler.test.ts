@@ -3,6 +3,7 @@ import {
   ProactiveScheduler,
   formatReminderDelivery,
   formatTaskDigestMessages,
+  nextDailyRunAt,
 } from "../src/scheduler.js";
 import type { ReminderRecord } from "../src/types.js";
 
@@ -46,6 +47,18 @@ describe("scheduler formatting", () => {
       )[0],
     ).toContain("Send proposal — In progress");
   });
+
+  it("calculates a daily run in the configured timezone", () => {
+    expect(
+      new Date(
+        nextDailyRunAt(
+          Date.parse("2026-08-11T02:00:00.000Z"),
+          "09:00",
+          "Asia/Kolkata",
+        ),
+      ).toISOString(),
+    ).toBe("2026-08-11T03:30:00.000Z");
+  });
 });
 
 describe("ProactiveScheduler", () => {
@@ -86,6 +99,45 @@ describe("ProactiveScheduler", () => {
     expect(setNextRun).toHaveBeenCalledWith(
       "task_digest:group@g.us",
       now + 4 * 60 * 60 * 1_000,
+    );
+  });
+
+  it("generates a persisted daily founder brief for due groups", async () => {
+    const setNextRun = vi.fn();
+    const reminders = {
+      due: vi.fn().mockReturnValue([]),
+      getOrCreateNextRun: vi.fn().mockImplementation((key: string) =>
+        key.startsWith("founder_brief:") ? 0 : Number.MAX_SAFE_INTEGER,
+      ),
+      setNextRun,
+      listActive: vi.fn().mockReturnValue([reminder]),
+    };
+    const tasks = { tasks: [], hasMore: false };
+    const notion = { listIncompleteTasks: vi.fn().mockResolvedValue(tasks) };
+    const generate = vi.fn().mockResolvedValue("🧭 Founder brief");
+    const send = vi.fn().mockResolvedValue(undefined);
+    const scheduler = new ProactiveScheduler({
+      reminders: reminders as never,
+      notion: notion as never,
+      digestGroupIds: new Set(),
+      digestIntervalHours: 0,
+      timezone: "Asia/Kolkata",
+      founderBrief: {
+        time: "09:00",
+        groupIds: new Set(["group@g.us"]),
+        generate,
+      },
+      logger: { info: vi.fn(), error: vi.fn() } as never,
+    });
+
+    const now = Date.parse("2026-08-11T03:31:00.000Z");
+    await scheduler.runOnce(now, send);
+
+    expect(generate).toHaveBeenCalledWith(tasks, [reminder]);
+    expect(send).toHaveBeenCalledWith("group@g.us", "🧭 Founder brief");
+    expect(setNextRun).toHaveBeenCalledWith(
+      "founder_brief:group@g.us",
+      expect.any(Number),
     );
   });
 });

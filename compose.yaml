@@ -12,6 +12,8 @@ services:
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - dia-data:/app/data
+    ports:
+      - "127.0.0.1:${NOTION_WEBHOOK_PORT:-3000}:${NOTION_WEBHOOK_PORT:-3000}"
 
 volumes:
   dia-data:

@@ -49,6 +49,15 @@ export class DedupeStore {
     return result.changes === 1;
   }
 
+  public has(messageId: unknown): boolean {
+    const dedupeKey = normalizeDedupeKey(messageId);
+    return Boolean(
+      this.database
+        .prepare("SELECT 1 FROM processed_messages WHERE message_id = ? LIMIT 1")
+        .get(dedupeKey),
+    );
+  }
+
   public close(): void {
     this.database.close();
   }

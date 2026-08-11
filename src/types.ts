@@ -13,6 +13,18 @@ export interface AssistantRequest {
   body: string;
   quotedMessage: string | null;
   recentContext: BufferedMessage[];
+  attachments?: AssistantAttachment[];
+}
+
+export type AssistantAttachmentKind = "audio" | "image" | "pdf" | "file";
+
+export interface AssistantAttachment {
+  kind: AssistantAttachmentKind;
+  mimeType: string;
+  fileName: string;
+  dataBase64: string;
+  sizeBytes: number;
+  transcript: string | null;
 }
 
 export interface TaskInput {
@@ -85,6 +97,19 @@ export interface TaskUpdateResult {
   taskTypes: string[] | null;
   clearedFields: Array<"due_date" | "assignee" | "priority" | "task_type">;
   pageContentMode: "append" | "replace" | null;
+}
+
+export interface TaskCommentSummary {
+  id: string;
+  author: string;
+  createdAt: string;
+  text: string;
+}
+
+export interface TaskAttachmentResult {
+  pageId: string;
+  fileName: string;
+  fileUploadId: string;
 }
 
 export interface ReminderCreateInput {

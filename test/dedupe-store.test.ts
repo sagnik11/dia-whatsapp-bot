@@ -31,7 +31,9 @@ describe("DedupeStore", () => {
     const store = new DedupeStore(join(directory, "messages.sqlite"));
     const messageId = { $1: "true_123@g.us_ABC" };
 
+    expect(store.has(messageId)).toBe(false);
     expect(store.claim(messageId)).toBe(true);
+    expect(store.has(messageId)).toBe(true);
     expect(store.claim(messageId)).toBe(false);
 
     store.close();

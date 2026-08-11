@@ -13,6 +13,84 @@ interface SchedulerOptions {
   timezone: string;
   logger: Logger;
   pollIntervalMs?: number;
+  founderBrief?: {
+    time: string;
+    groupIds: ReadonlySet<string>;
+    generate: (
+      tasks: TaskListResult,
+      reminders: readonly ReminderRecord[],
+    ) => Promise<string>;
+  };
+}
+
+function zonedParts(value: Date, timezone: string): Record<string, number> {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(value)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  );
+}
+
+function localTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string,
+): number {
+  const desired = Date.UTC(year, month - 1, day, hour, minute, 0);
+  let candidate = desired;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const actual = zonedParts(new Date(candidate), timezone);
+    const represented = Date.UTC(
+      actual.year ?? year,
+      (actual.month ?? month) - 1,
+      actual.day ?? day,
+      actual.hour ?? hour,
+      actual.minute ?? minute,
+      actual.second ?? 0,
+    );
+    candidate += desired - represented;
+  }
+  return candidate;
+}
+
+export function nextDailyRunAt(
+  nowMs: number,
+  time: string,
+  timezone: string,
+): number {
+  const [hourText, minuteText] = time.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const nowParts = zonedParts(new Date(nowMs), timezone);
+  const year = nowParts.year ?? 1970;
+  const month = nowParts.month ?? 1;
+  const day = nowParts.day ?? 1;
+  let candidate = localTimeToUtc(year, month, day, hour, minute, timezone);
+  if (candidate <= nowMs) {
+    const nextDate = new Date(Date.UTC(year, month - 1, day + 1));
+    candidate = localTimeToUtc(
+      nextDate.getUTCFullYear(),
+      nextDate.getUTCMonth() + 1,
+      nextDate.getUTCDate(),
+      hour,
+      minute,
+      timezone,
+    );
+  }
+  return candidate;
 }
 
 function formatDateTime(value: string, timezone: string): string {
@@ -133,8 +211,51 @@ export class ProactiveScheduler {
       }
 
       await this.sendTaskDigests(nowMs, send);
+      await this.sendFounderBriefs(nowMs, send);
     } finally {
       this.running = false;
+    }
+  }
+
+  private async sendFounderBriefs(
+    nowMs: number,
+    send: SendMessage,
+  ): Promise<void> {
+    const brief = this.options.founderBrief;
+    if (!brief || brief.groupIds.size === 0) return;
+    const dueGroups = [...brief.groupIds].filter((groupId) => {
+      const initialRun = nextDailyRunAt(nowMs, brief.time, this.options.timezone);
+      return (
+        this.options.reminders.getOrCreateNextRun(
+          `founder_brief:${groupId}`,
+          initialRun,
+        ) <= nowMs
+      );
+    });
+    if (dueGroups.length === 0) return;
+
+    const tasks = await this.options.notion.listIncompleteTasks();
+    for (const groupId of dueGroups) {
+      try {
+        const output = await brief.generate(
+          tasks,
+          this.options.reminders.listActive(groupId, 50),
+        );
+        await send(groupId, output);
+        this.options.reminders.setNextRun(
+          `founder_brief:${groupId}`,
+          nextDailyRunAt(nowMs + 60_000, brief.time, this.options.timezone),
+        );
+        this.options.logger.info(
+          { groupId, taskCount: tasks.tasks.length, output },
+          "Sent daily founder brief",
+        );
+      } catch (error) {
+        this.options.logger.error(
+          { error, groupId },
+          "Failed to send founder brief; it will be retried",
+        );
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 # Deploy Captain Patch on Amazon Lightsail
 
-This guide runs Captain Patch continuously on a standard Amazon Lightsail Linux instance. Captain Patch does not serve a website or accept incoming webhooks: it needs outbound internet access and SSH access for administration.
+This guide runs Captain Patch continuously on a standard Amazon Lightsail Linux instance. Its normal WhatsApp/AI/Notion operation needs outbound internet access and SSH administration. The optional Notion notification feature additionally exposes one signed HTTPS webhook through a reverse proxy.
 
 ## What to provision
 
@@ -20,8 +20,11 @@ In the Lightsail networking firewall, keep SSH/TCP port 22 open only to the IP r
 Use the browser-based SSH client in Lightsail or connect from your own terminal:
 
 ```bash
-ssh ubuntu@YOUR_LIGHTSAIL_IP
+chmod 400 /absolute/path/to/LightsailDefaultKey.pem
+ssh -i /absolute/path/to/LightsailDefaultKey.pem ubuntu@YOUR_LIGHTSAIL_IP
 ```
+
+If you downloaded the regional private key from Lightsail, use that file. A key created specifically for the instance works the same way. The browser-based SSH client does not need a local key.
 
 All remaining commands run on the Lightsail instance.
 
@@ -85,6 +88,10 @@ NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
 TAVILY_API_KEY=your_optional_tavily_key
 TASK_DIGEST_INTERVAL_HOURS=4
 TASK_DIGEST_GROUP_IDS=your_whatsapp_group_id
+FOUNDER_BRIEF_TIME=09:00
+FOUNDER_BRIEF_GROUP_IDS=your_whatsapp_group_id
+# Optional voice notes; choose a transcription model in the Gateway catalog.
+AI_GATEWAY_TRANSCRIPTION_MODEL=openai/gpt-4o-mini-transcribe
 BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
@@ -155,6 +162,50 @@ sudo docker compose logs -f --tail 100 dia
 Exit log streaming with `Ctrl+C`; the container continues running. The Compose policy `restart: unless-stopped` brings Captain Patch back after a process failure or instance reboot.
 
 The `dia-data` Docker volume holds the WhatsApp linked-device session and the SQLite deduplication database. Normal container rebuilds keep this volume, so you should not need to scan a QR on every deployment.
+
+## Optional public HTTPS for Notion webhooks
+
+Skip this section unless you want task/comment changes made in Notion to appear proactively in WhatsApp.
+
+1. Attach a Lightsail static IP and point a domain or subdomain (for example `patch.example.com`) to it with a DNS `A` record.
+2. Open TCP ports 80 and 443 in the Lightsail networking firewall. Keep the application's port 3000 closed publicly; Compose binds it only to loopback.
+3. Install Caddy and create `/etc/caddy/Caddyfile`:
+
+```caddyfile
+patch.example.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+On Ubuntu, install/start the packaged service and validate the configuration:
+
+```bash
+sudo apt update
+sudo apt install -y caddy
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+curl https://patch.example.com/health
+```
+
+The health response should be `{"ok":true}` after Patch is running with:
+
+```dotenv
+NOTION_WEBHOOK_ENABLED=true
+NOTION_WEBHOOK_PORT=3000
+NOTION_WEBHOOK_PATH=/notion/webhook
+NOTION_NOTIFICATION_GROUP_IDS=your_whatsapp_group_id
+NOTION_NOTIFY_BOT_EVENTS=false
+NOTION_WEBHOOK_VERIFICATION_TOKEN=
+```
+
+Create the Notion webhook subscription using `https://patch.example.com/notion/webhook` and subscribe to page and comment events. Watch `sudo docker compose logs -f dia`; the verification request logs a `verificationToken`. Copy it into `NOTION_WEBHOOK_VERIFICATION_TOKEN`, then recreate the container:
+
+```bash
+sudo docker compose up -d --force-recreate
+```
+
+Patch validates all subsequent webhook signatures. Keep the verification token private. Leaving `NOTION_NOTIFY_BOT_EVENTS=false` prevents Patch's own comments, uploads, and task edits from producing echo notifications.
 
 ## Updating Captain Patch
 

@@ -8,8 +8,10 @@ import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
+import type { MediaIngestionService } from "./media-ingestion.js";
 import { serializeMessageId } from "./message-id.js";
 import type { ProactiveScheduler } from "./scheduler.js";
+import type { AssistantAttachment } from "./types.js";
 import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
 const { Client, LocalAuth } = whatsapp;
@@ -26,6 +28,7 @@ interface BotOptions {
   botTrigger: string;
   dataDir: string;
   listGroupsOnStart: boolean;
+  mediaIngestion?: MediaIngestionService;
   scheduler?: ProactiveScheduler;
   puppeteerExecutablePath?: string;
   logger: Logger;
@@ -41,6 +44,7 @@ export function resolveGroupId(
 export class WhatsAppBot {
   private readonly client: InstanceType<typeof Client>;
   private readonly discoveredGroupIds = new Set<string>();
+  private ready = false;
 
   public constructor(private readonly options: BotOptions) {
     const profileDirectory = join(options.dataDir, "whatsapp", "session");
@@ -82,6 +86,7 @@ export class WhatsAppBot {
     });
 
     this.client.on("disconnected", (reason) => {
+      this.ready = false;
       this.options.logger.warn({ reason }, "WhatsApp disconnected");
     });
 
@@ -106,18 +111,31 @@ export class WhatsAppBot {
   }
 
   public async stop(): Promise<void> {
+    this.ready = false;
     await this.options.scheduler?.stop();
     await this.client.destroy();
   }
 
+  public async sendProactive(groupId: string, output: string): Promise<void> {
+    if (!this.ready) throw new Error("WhatsApp is not ready");
+    if (
+      this.options.allowedGroupIds.size > 0 &&
+      !this.options.allowedGroupIds.has(groupId)
+    ) {
+      throw new Error(`WhatsApp group ${groupId} is not allowlisted`);
+    }
+    await this.client.sendMessage(groupId, output);
+  }
+
   private async onReady(): Promise<void> {
+    this.ready = true;
     this.options.logger.info(
       { botId: this.client.info.wid._serialized },
       `${this.options.botName} is connected to WhatsApp`,
     );
 
     this.options.scheduler?.start(async (groupId, output) => {
-      await this.client.sendMessage(groupId, output);
+      await this.sendProactive(groupId, output);
     });
 
     if (!this.options.listGroupsOnStart) {
@@ -274,6 +292,36 @@ export class WhatsAppBot {
         })
       : null;
     const prompt = removeTextTrigger(message.body, this.options.botTrigger);
+    const attachments: AssistantAttachment[] = [];
+    const mediaMessage = message.hasMedia
+      ? message
+      : quotedMessage?.hasMedia
+        ? quotedMessage
+        : null;
+    if (mediaMessage && this.options.mediaIngestion) {
+      try {
+        const media = await mediaMessage.downloadMedia();
+        if (!media) throw new Error("WhatsApp returned no attachment data");
+        attachments.push(
+          await this.options.mediaIngestion.ingest({
+            mimeType: media.mimetype,
+            dataBase64: media.data,
+            ...(media.filename != null ? { fileName: media.filename } : {}),
+            ...(media.filesize != null ? { sizeBytes: media.filesize } : {}),
+          }),
+        );
+      } catch (error) {
+        this.options.logger.warn(
+          { error, messageId },
+          "Could not ingest WhatsApp attachment",
+        );
+        await this.client.sendMessage(
+          groupId,
+          "I couldn't process that attachment. Check the media-size limit and configure a transcription model for voice notes.",
+        );
+        return;
+      }
+    }
 
     try {
       const reply = await this.options.assistant.respond({
@@ -285,6 +333,7 @@ export class WhatsAppBot {
         body: prompt || message.body,
         quotedMessage: quotedMessage?.body ?? null,
         recentContext: this.options.context.get(groupId, true),
+        attachments,
       });
       this.options.logger.info(
         { author, groupId, messageId, output: reply },

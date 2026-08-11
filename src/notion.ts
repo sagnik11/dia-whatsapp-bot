@@ -11,6 +11,8 @@ import type {
   KnowledgeResourceResult,
   KnowledgeSearchResponse,
   TaskInput,
+  TaskAttachmentResult,
+  TaskCommentSummary,
   TaskListResult,
   TaskQuery,
   TaskResult,
@@ -19,6 +21,7 @@ import type {
   TaskUpdateInput,
   TaskUpdateResult,
 } from "./types.js";
+import type { AssistantAttachment } from "./types.js";
 
 export interface NotionPropertyNames {
   title: string;
@@ -31,6 +34,35 @@ export interface NotionPropertyNames {
 
 function escapeMarkdownInline(value: string): string {
   return value.replace(/[\\`*_{}[\]()#+.!|>-]/g, "\\$&");
+}
+
+function normalizeNotionId(value: string): string {
+  return value.replaceAll("-", "").toLowerCase();
+}
+
+function escapeXmlText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function attachmentMarkdown(
+  attachment: Pick<AssistantAttachment, "kind" | "fileName">,
+  uploadId: string,
+): string {
+  const source = `file-upload://${uploadId}`;
+  const caption = escapeXmlText(attachment.fileName);
+  switch (attachment.kind) {
+    case "image":
+      return `![${escapeMarkdownInline(attachment.fileName)}](${source})`;
+    case "pdf":
+      return `<pdf src="${source}">${caption}</pdf>`;
+    case "audio":
+      return `<audio src="${source}">${caption}</audio>`;
+    default:
+      return `<file src="${source}">${caption}</file>`;
+  }
 }
 
 export function brainDumpAppendMarkdown(
@@ -674,6 +706,108 @@ export class NotionTaskService {
       clearedFields: input.clearFields,
       pageContentMode: input.pageContentMode,
     };
+  }
+
+  public async getTaskById(pageId: string): Promise<TaskSummary | null> {
+    const response = await this.client.pages.retrieve({ page_id: pageId });
+    if (!("properties" in response) || response.object !== "page") return null;
+    const parent = response.parent;
+    const isTask =
+      (parent.type === "data_source_id" &&
+        normalizeNotionId(parent.data_source_id) ===
+          normalizeNotionId(this.options.dataSourceId)) ||
+      (parent.type === "database_id" &&
+        normalizeNotionId(parent.database_id) ===
+          normalizeNotionId(this.options.dataSourceId));
+    return isTask ? taskSummaryFromPage(response, this.options.properties) : null;
+  }
+
+  public async listTaskComments(
+    pageId: string,
+    limit = 20,
+  ): Promise<TaskCommentSummary[]> {
+    const response = await this.client.comments.list({
+      block_id: pageId,
+      page_size: Math.min(Math.max(limit, 1), 100),
+    });
+    const comments = response.results.map((comment) => ({
+      id: comment.id,
+      author: comment.display_name.resolved_name ?? comment.created_by.id,
+      createdAt: comment.created_time,
+      text: plainText(comment.rich_text, 2_000),
+    }));
+    this.options.logger.info(
+      { notionPageId: pageId, commentCount: comments.length },
+      "Read Notion task comments",
+    );
+    return comments;
+  }
+
+  public async getTaskComment(commentId: string): Promise<TaskCommentSummary | null> {
+    const comment = await this.client.comments.retrieve({ comment_id: commentId });
+    if (!("rich_text" in comment)) return null;
+    return {
+      id: comment.id,
+      author: comment.display_name.resolved_name ?? comment.created_by.id,
+      createdAt: comment.created_time,
+      text: plainText(comment.rich_text, 2_000),
+    };
+  }
+
+  public async addTaskComment(
+    pageId: string,
+    markdown: string,
+    requestedBy: string,
+  ): Promise<void> {
+    await this.client.comments.create({
+      parent: { page_id: pageId },
+      markdown,
+      display_name: { type: "custom", custom: { name: requestedBy } },
+    });
+    this.options.logger.info(
+      { notionPageId: pageId, requestedBy, characters: markdown.length },
+      "Added Notion task comment",
+    );
+  }
+
+  public async attachMediaToTask(
+    pageId: string,
+    attachment: AssistantAttachment,
+  ): Promise<TaskAttachmentResult> {
+    const created = await this.client.fileUploads.create({
+      mode: "single_part",
+      filename: attachment.fileName,
+      content_type: attachment.mimeType,
+    });
+    const data = Buffer.from(attachment.dataBase64, "base64");
+    const sent = await this.client.fileUploads.send({
+      file_upload_id: created.id,
+      file: {
+        filename: attachment.fileName,
+        data: new Blob([data], { type: attachment.mimeType }),
+      },
+    });
+    if (sent.status !== "uploaded") {
+      throw new Error(`Notion file upload ended in status ${sent.status}`);
+    }
+    await this.client.pages.updateMarkdown({
+      page_id: pageId,
+      type: "insert_content",
+      insert_content: {
+        content: attachmentMarkdown(attachment, sent.id),
+        position: { type: "end" },
+      },
+    });
+    this.options.logger.info(
+      {
+        notionPageId: pageId,
+        fileName: attachment.fileName,
+        fileSize: attachment.sizeBytes,
+        fileUploadId: sent.id,
+      },
+      "Attached WhatsApp media to Notion task",
+    );
+    return { pageId, fileName: attachment.fileName, fileUploadId: sent.id };
   }
 
   public async listTasks(input: TaskQuery): Promise<TaskListResult> {

@@ -205,6 +205,97 @@ describe("Notion Brain Dump appends", () => {
   });
 });
 
+describe("Notion task collaboration", () => {
+  it("reads and creates task comments", async () => {
+    const list = vi.fn().mockResolvedValue({
+      results: [
+        {
+          id: "comment-1",
+          display_name: { resolved_name: "Tanvi" },
+          created_by: { id: "user-2" },
+          created_time: "2026-08-11T10:00:00.000Z",
+          rich_text: [{ plain_text: "Please tighten the positioning." }],
+        },
+      ],
+    });
+    const create = vi.fn().mockResolvedValue({ id: "comment-2" });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { comments: { list, create } },
+    });
+
+    await expect(service.listTaskComments("page-1", 10)).resolves.toEqual([
+      {
+        id: "comment-1",
+        author: "Tanvi",
+        createdAt: "2026-08-11T10:00:00.000Z",
+        text: "Please tighten the positioning.",
+      },
+    ]);
+    await service.addTaskComment("page-1", "Looks good.", "Sagnik");
+    expect(create).toHaveBeenCalledWith({
+      parent: { page_id: "page-1" },
+      markdown: "Looks good.",
+      display_name: { type: "custom", custom: { name: "Sagnik" } },
+    });
+  });
+
+  it("uploads an image and appends it to an exact task page", async () => {
+    const createUpload = vi.fn().mockResolvedValue({ id: "upload-1" });
+    const sendUpload = vi.fn().mockResolvedValue({
+      id: "upload-1",
+      status: "uploaded",
+    });
+    const updateMarkdown = vi.fn().mockResolvedValue({});
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: {
+        fileUploads: { create: createUpload, send: sendUpload },
+        pages: { updateMarkdown },
+      },
+    });
+
+    await expect(
+      service.attachMediaToTask("page-1", {
+        kind: "image",
+        mimeType: "image/png",
+        fileName: "launch.png",
+        dataBase64: Buffer.from("image").toString("base64"),
+        sizeBytes: 5,
+        transcript: null,
+      }),
+    ).resolves.toEqual({
+      pageId: "page-1",
+      fileName: "launch.png",
+      fileUploadId: "upload-1",
+    });
+    expect(updateMarkdown).toHaveBeenCalledWith({
+      page_id: "page-1",
+      type: "insert_content",
+      insert_content: {
+        content: "![launch\\.png](file-upload://upload-1)",
+        position: { type: "end" },
+      },
+    });
+  });
+});
+
 describe("Notion company knowledge", () => {
   it("searches titles shared with the integration and returns compact matches", async () => {
     const search = vi.fn().mockResolvedValue({

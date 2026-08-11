@@ -28,7 +28,9 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/gateway": "^4.0.47",
     "@notionhq/client": "^5.24.0",
+    "ai": "^7.0.59",
     "dotenv": "^17.2.3",
     "openai": "^7.4.0",
     "patch-package": "^8.0.1",

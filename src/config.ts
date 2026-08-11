@@ -6,12 +6,19 @@ const optionalString = z
   .optional()
   .transform((value) => value?.trim() || undefined);
 
+const optionalTime = optionalString.refine(
+  (value) => !value || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value),
+  "Time must use 24-hour HH:mm format",
+);
+
 const schema = z.object({
   AI_GATEWAY_API_KEY: z.string().min(1, "AI_GATEWAY_API_KEY is required"),
   AI_GATEWAY_BASE_URL: z.url().default("https://ai-gateway.vercel.sh/v1"),
   AI_GATEWAY_MODEL: z
     .string()
     .regex(/^azure\/.+/, "AI_GATEWAY_MODEL must use the azure/<model-name> format"),
+  AI_GATEWAY_MEDIA_MODEL: optionalString,
+  AI_GATEWAY_TRANSCRIPTION_MODEL: optionalString,
   NOTION_API_KEY: z.string().min(1, "NOTION_API_KEY is required"),
   NOTION_DATA_SOURCE_ID: z.string().min(1, "NOTION_DATA_SOURCE_ID is required"),
   NOTION_BRAIN_DUMP_PAGE_ID: optionalString,
@@ -41,6 +48,21 @@ const schema = z.object({
   CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
   TASK_DIGEST_INTERVAL_HOURS: z.coerce.number().min(0).max(168).default(0),
   TASK_DIGEST_GROUP_IDS: z.string().default(""),
+  FOUNDER_BRIEF_TIME: optionalTime,
+  FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
+  MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
+  NOTION_WEBHOOK_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  NOTION_WEBHOOK_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  NOTION_WEBHOOK_PATH: z.string().regex(/^\//).default("/notion/webhook"),
+  NOTION_WEBHOOK_VERIFICATION_TOKEN: optionalString,
+  NOTION_NOTIFICATION_GROUP_IDS: z.string().default(""),
+  NOTION_NOTIFY_BOT_EVENTS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   LIST_GROUPS_ON_START: z
     .enum(["true", "false"])
     .default("true")
@@ -71,11 +93,17 @@ function parseIdSet(value: string): ReadonlySet<string> {
 
 const allowedGroupIds = parseIdSet(env.ALLOWED_GROUP_IDS);
 const configuredDigestGroupIds = parseIdSet(env.TASK_DIGEST_GROUP_IDS);
+const configuredBriefGroupIds = parseIdSet(env.FOUNDER_BRIEF_GROUP_IDS);
+const configuredNotionNotificationGroupIds = parseIdSet(
+  env.NOTION_NOTIFICATION_GROUP_IDS,
+);
 
 export const config = {
   aiGatewayApiKey: env.AI_GATEWAY_API_KEY,
   aiGatewayBaseUrl: env.AI_GATEWAY_BASE_URL,
   aiGatewayModel: env.AI_GATEWAY_MODEL,
+  aiGatewayMediaModel: env.AI_GATEWAY_MEDIA_MODEL ?? env.AI_GATEWAY_MODEL,
+  aiGatewayTranscriptionModel: env.AI_GATEWAY_TRANSCRIPTION_MODEL,
   notionApiKey: env.NOTION_API_KEY,
   notionDataSourceId: env.NOTION_DATA_SOURCE_ID,
   notionBrainDumpPageId: env.NOTION_BRAIN_DUMP_PAGE_ID,
@@ -104,6 +132,21 @@ export const config = {
     configuredDigestGroupIds.size > 0
       ? configuredDigestGroupIds
       : allowedGroupIds,
+  founderBriefTime: env.FOUNDER_BRIEF_TIME,
+  founderBriefGroupIds:
+    configuredBriefGroupIds.size > 0
+      ? configuredBriefGroupIds
+      : allowedGroupIds,
+  mediaMaxBytes: env.MEDIA_MAX_BYTES,
+  notionWebhookEnabled: env.NOTION_WEBHOOK_ENABLED,
+  notionWebhookPort: env.NOTION_WEBHOOK_PORT,
+  notionWebhookPath: env.NOTION_WEBHOOK_PATH,
+  notionWebhookVerificationToken: env.NOTION_WEBHOOK_VERIFICATION_TOKEN,
+  notionNotificationGroupIds:
+    configuredNotionNotificationGroupIds.size > 0
+      ? configuredNotionNotificationGroupIds
+      : allowedGroupIds,
+  notionNotifyBotEvents: env.NOTION_NOTIFY_BOT_EVENTS,
   listGroupsOnStart: env.LIST_GROUPS_ON_START,
   dataDir: env.DATA_DIR,
   logLevel: env.LOG_LEVEL,

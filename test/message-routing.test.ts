@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveGroupId } from "../src/bot.js";
+import { resolveGroupId, splitWhatsAppMessage } from "../src/bot.js";
 
 describe("resolveGroupId", () => {
   it("uses from for incoming group messages", () => {
@@ -30,5 +30,16 @@ describe("resolveGroupId", () => {
         to: "919999999999@c.us",
       }),
     ).toBeNull();
+  });
+});
+
+describe("splitWhatsAppMessage", () => {
+  it("delivers long reports in complete paragraph-aware chunks", () => {
+    const output = `${"A".repeat(1_900)}\n\n${"B".repeat(1_900)}\n\n${"C".repeat(1_900)}`;
+    const chunks = splitWhatsAppMessage(output, 3_500);
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks.every((chunk) => chunk.length <= 3_500)).toBe(true);
+    expect(chunks.join("\n\n")).toBe(output);
   });
 });

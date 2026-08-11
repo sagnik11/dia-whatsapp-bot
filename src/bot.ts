@@ -16,6 +16,29 @@ import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
 const { Client, LocalAuth } = whatsapp;
 const GROUP_LIST_ATTEMPTS = 4;
+const WHATSAPP_MESSAGE_CHUNK_SIZE = 3_500;
+
+export function splitWhatsAppMessage(
+  output: string,
+  maxCharacters = WHATSAPP_MESSAGE_CHUNK_SIZE,
+): string[] {
+  const chunks: string[] = [];
+  let remaining = output.trim();
+  while (remaining.length > maxCharacters) {
+    let splitAt = remaining.lastIndexOf("\n\n", maxCharacters);
+    if (splitAt < Math.floor(maxCharacters / 2)) {
+      splitAt = remaining.lastIndexOf("\n", maxCharacters);
+    }
+    if (splitAt < Math.floor(maxCharacters / 2)) {
+      splitAt = remaining.lastIndexOf(" ", maxCharacters);
+    }
+    if (splitAt < 1) splitAt = maxCharacters;
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks.length > 0 ? chunks : [""];
+}
 
 interface BotOptions {
   assistant: DiaAssistant;
@@ -124,7 +147,7 @@ export class WhatsAppBot {
     ) {
       throw new Error(`WhatsApp group ${groupId} is not allowlisted`);
     }
-    await this.client.sendMessage(groupId, output);
+    await this.sendCompleteMessage(groupId, output);
   }
 
   private async onReady(): Promise<void> {
@@ -339,7 +362,7 @@ export class WhatsAppBot {
         { author, groupId, messageId, output: reply },
         `Sending ${this.options.botName} response`,
       );
-      await this.client.sendMessage(groupId, reply);
+      await this.sendCompleteMessage(groupId, reply);
     } catch (error) {
       this.options.logger.error({ error, messageId }, "Assistant request failed");
       const fallbackReply =
@@ -349,6 +372,12 @@ export class WhatsAppBot {
         `Sending ${this.options.botName} error response`,
       );
       await this.client.sendMessage(groupId, fallbackReply);
+    }
+  }
+
+  private async sendCompleteMessage(groupId: string, output: string): Promise<void> {
+    for (const chunk of splitWhatsAppMessage(output)) {
+      await this.client.sendMessage(groupId, chunk);
     }
   }
 }

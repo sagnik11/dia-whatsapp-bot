@@ -46,7 +46,6 @@ export class FounderBriefGenerator {
           }),
         },
       ],
-      max_output_tokens: 900,
       store: false,
     });
     const output = response.output_text.trim().slice(0, 3_500);

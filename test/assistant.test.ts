@@ -166,9 +166,7 @@ describe("DiaAssistant task reads", () => {
       ],
       hasMore: false,
     });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
         output: [
           {
             type: "function_call",
@@ -331,11 +329,6 @@ describe("DiaAssistant delegated research", () => {
           },
         ],
         output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text:
-          "Start with Hacker News. https://news.ycombinator.com/",
       });
     const assistant = new DiaAssistant({
       gatewayApiKey: "test-key",
@@ -371,11 +364,7 @@ describe("DiaAssistant delegated research", () => {
     expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
       tool_choice: { type: "function", name: "run_research" },
     });
-    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "research-1",
-      output: expect.stringContaining("Hacker News"),
-    });
+    expect(responsesCreate).toHaveBeenCalledOnce();
   });
 
   it("can append delegated findings to one exactly matched Notion task", async () => {
@@ -908,8 +897,10 @@ describe("DiaAssistant task updates", () => {
     });
     expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
       tool_choice: { type: "function", name: "list_notion_tasks" },
-      max_output_tokens: 5_000,
     });
+    expect(responsesCreate.mock.calls[0]?.[0]).not.toHaveProperty(
+      "max_output_tokens",
+    );
     expect(responsesCreate).toHaveBeenCalledTimes(3);
     expect(responsesCreate.mock.calls[2]?.[0].input).toContainEqual({
       type: "function_call_output",

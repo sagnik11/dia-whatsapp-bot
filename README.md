@@ -400,6 +400,8 @@ When configured, Patch has two modes:
 - Quick lookup: one bounded search for a current fact or URL.
 - Delegated research: one specialist run with up to `RESEARCH_MAX_SEARCHES` distinct searches, a cited report, explicit unknowns, and a recommendation.
 
+Authorized assistant and research responses do not set an application-level output-token ceiling. Long standalone reports are delivered as consecutive, paragraph-aware WhatsApp messages instead of being discarded or shortened.
+
 Examples:
 
 ```text

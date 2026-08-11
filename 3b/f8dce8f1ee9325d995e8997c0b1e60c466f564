@@ -1,0 +1,49 @@
+compose.yaml
+  s_4f29094a4551ec::t_f598967f5cc44e 29-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "3bf8dce8f1ee9325d995e8997c0b1e60c466f564",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:98569d14d49fc2026b56c809914540ebaf0c9f484d4884fbbbbc7927eed46796",
+      "total_additions": 9,
+      "total_deletions": 8,
+      "accepted_lines": 9,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:98569d14d49fc2026b56c809914540ebaf0c9f484d4884fbbbbc7927eed46796",
+      "stats": {
+        "total_additions": 9,
+        "total_deletions": 8,
+        "accepted_lines": 9,
+        "overriden_lines": 0,
+        "files": {
+          "compose.yaml": {
+            "total_additions": 9,
+            "total_deletions": 8,
+            "accepted_lines": 9,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

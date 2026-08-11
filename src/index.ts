@@ -16,6 +16,7 @@ const notion = new NotionTaskService({
   ...(config.notionBrainDumpPageId
     ? { brainDumpPageId: config.notionBrainDumpPageId }
     : {}),
+  knowledgeEnabled: config.notionKnowledgeEnabled,
   properties: config.notionProperties,
   defaultStatus: config.notionDefaultStatus,
   defaultAssigneeId: config.notionDefaultAssigneeId,

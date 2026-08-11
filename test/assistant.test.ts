@@ -4,6 +4,7 @@ import {
   formatTaskConfirmation,
   isExplicitBrainDumpAppendRequest,
   isExplicitBrainDumpRequest,
+  isExplicitKnowledgeRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
   isExplicitWebSearchRequest,
@@ -90,6 +91,20 @@ describe("isExplicitBrainDumpAppendRequest", () => {
     "what should I add to the Brain Dump?",
   ])("does not mutate for a Brain Dump question: %s", (message) => {
     expect(isExplicitBrainDumpAppendRequest(message)).toBe(false);
+  });
+});
+
+describe("isExplicitKnowledgeRequest", () => {
+  it.each([
+    "search Autter HQ for our company goals",
+    "look in Notion for the sales process",
+    "summarize our company wiki",
+  ])("detects an explicit company knowledge request: %s", (message) => {
+    expect(isExplicitKnowledgeRequest(message)).toBe(true);
+  });
+
+  it("does not search internal knowledge for a general question", () => {
+    expect(isExplicitKnowledgeRequest("explain semantic versioning")).toBe(false);
   });
 });
 
@@ -375,6 +390,153 @@ describe("DiaAssistant Brain Dump appends", () => {
     );
     expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
       tool_choice: { type: "function", name: "append_brain_dump" },
+    });
+  });
+});
+
+describe("DiaAssistant Notion knowledge", () => {
+  it("searches, reads only a matched resource, and answers from its content", async () => {
+    const searchKnowledge = vi.fn().mockResolvedValue({
+      results: [
+        {
+          id: "goals-page",
+          type: "page",
+          title: "Company Goals - 2026",
+          url: "https://notion.so/goals-page",
+          lastEditedTime: "2026-08-10T12:00:00.000Z",
+        },
+      ],
+      hasMore: false,
+    });
+    const readKnowledgeResource = vi.fn().mockResolvedValue({
+      id: "goals-page",
+      type: "page",
+      markdown: "# Product\nShip all five enforcement pillars.",
+      truncated: false,
+    });
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "search_notion_knowledge",
+            call_id: "knowledge-search-1",
+            arguments: JSON.stringify({ query: "Company Goals", limit: 5 }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "read_notion_knowledge",
+            call_id: "knowledge-read-1",
+            arguments: JSON.stringify({
+              resource_id: "goals-page",
+              resource_type: "page",
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "Our product goal is to ship all five enforcement pillars.",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {
+        canReadKnowledge: true,
+        searchKnowledge,
+        readKnowledgeResource,
+      } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-6",
+      requestedBy: "Sagnik",
+      requestedById: "919999999999@c.us",
+      body: "search Autter HQ for our company goals",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("five enforcement pillars");
+    expect(searchKnowledge).toHaveBeenCalledWith("Company Goals", 5);
+    expect(readKnowledgeResource).toHaveBeenCalledWith("goals-page", "page");
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "search_notion_knowledge" },
+    });
+    expect(responsesCreate.mock.calls[2]?.[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "knowledge-read-1",
+      output: expect.stringContaining("Ship all five enforcement pillars"),
+    });
+  });
+
+  it("rejects a resource ID that was not returned by this request's search", async () => {
+    const readKnowledgeResource = vi.fn();
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "read_notion_knowledge",
+            call_id: "unmatched-read",
+            arguments: JSON.stringify({
+              resource_id: "untrusted-page-id",
+              resource_type: "page",
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "I couldn't access that unsearched resource.",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: { canReadKnowledge: true, readKnowledgeResource } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-7",
+      requestedBy: "Sagnik",
+      requestedById: "919999999999@c.us",
+      body: "read this Notion page",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(readKnowledgeResource).not.toHaveBeenCalled();
+    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "unmatched-read",
+      output: expect.stringContaining("not returned by the Notion knowledge search"),
     });
   });
 });

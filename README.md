@@ -44,6 +44,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
 - Optionally reads and appends notes to one configured Notion Brain Dump page.
+- Optionally searches and reads company knowledge shared with the Notion integration.
 - Optionally performs one bounded Tavily search and returns source URLs.
 - Keeps a short in-memory group context window for follow-up questions.
 - Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
@@ -76,9 +77,12 @@ flowchart LR
     A --> N1["Create Notion task"]
     A --> N2["Read Notion tasks"]
     A --> N3["Read or append Brain Dump"]
+    A --> N4["Search/read company Notion"]
     A --> S["One Tavily web search"]
     N1 --> O["WhatsApp response"]
     N2 --> O
+    N3 --> O
+    N4 --> O
     S --> O
 ```
 
@@ -200,7 +204,7 @@ To let Captain Patch answer questions from one Notion page, add the same interna
 NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
 ```
 
-The page can be a regular Notion page; it does not need to be a database. Captain Patch reads it only when an authorized founder asks about its contents and appends only when explicitly told to add something. The integration needs **Read content** and **Update content** capabilities plus access to the page. Existing content cannot be replaced, edited, or deleted through the bot. Reads are capped at 12,000 characters per request, appends at 4,000 characters, and the bot does not search the rest of the workspace.
+The page can be a regular Notion page; it does not need to be a database. Captain Patch reads it only when an authorized founder asks about its contents and appends only when explicitly told to add something. The integration needs **Read content** and **Update content** capabilities plus access to the page. Existing content cannot be replaced, edited, or deleted through the bot. Reads are capped at 12,000 characters per request and appends at 4,000 characters. General workspace search remains disabled unless the separate setting below is enabled.
 
 Examples:
 
@@ -208,6 +212,26 @@ Examples:
 @patch summarize the Brain Dump
 @patch add this to the Brain Dump: make the first repository review memorable
 @patch append the quoted feedback to the Brain Dump under Onboarding
+```
+
+### Optional company knowledge access
+
+Set this only after reviewing the integration's **Content access** in the Notion developer portal:
+
+```dotenv
+NOTION_KNOWLEDGE_ENABLED=true
+```
+
+This exposes read-only assistant tools that search page/database titles shared with the integration, read matched pages, and inspect the five most recently edited rows of matched databases. A page can be read only after its ID was returned by a search in the same WhatsApp request. The bot permits one title search and two resource reads per request; page bodies are capped at 12,000 characters.
+
+The public Notion API does not provide a teamspace filter. To scope this to one teamspace such as Autter HQ, connect the integration only to that teamspace's top-level pages and databases. Sharing a parent page includes its descendants. If some databases are separate top-level sidebar entries, add each one to the integration's Content access as well.
+
+Examples:
+
+```text
+@patch search Autter HQ for our company goals
+@patch what does our Notion say about expenses?
+@patch summarize the latest weekly product update from company knowledge
 ```
 
 ## Find group and sender IDs
@@ -282,6 +306,7 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `NOTION_API_KEY` | Yes | — | Notion internal integration token. |
 | `NOTION_DATA_SOURCE_ID` | Yes | — | Task tracker's data source ID. |
 | `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables bounded reads and append-only notes for one specific page. |
+| `NOTION_KNOWLEDGE_ENABLED` | No | `false` | Searches and reads all content shared with the Notion integration. Review Content access first. |
 | `NOTION_TITLE_PROPERTY` | No | `Task name` | Title property name. |
 | `NOTION_STATUS_PROPERTY` | No | `Status` | Status property name. |
 | `NOTION_DEFAULT_STATUS` | No | `Not started` | Status assigned to new tasks. |
@@ -341,6 +366,8 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - The unauthorized rejection call has no Notion or web-search tools.
 - Task writes use the strict `create_notion_task` schema; Brain Dump writes can only append a bounded note to the configured page.
 - Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
+- Company knowledge is opt-in, read-only in the bot, and limited to one title search plus two matched resource reads per request.
+- Notion's API has no teamspace filter; the integration's Content access is the security boundary for company knowledge.
 - Web search is limited to one bounded Tavily request per trigger.
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
@@ -361,6 +388,7 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - Notion is required at startup even if you only want ordinary AI answers.
 - Notion task property types and select options are currently fixed in code.
 - Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
+- Company knowledge search matches titles, not arbitrary page-body text, and database reads return only the five most recently edited rows before an individual row is opened.
 - Context is in-memory and is lost when the process restarts.
 - SQLite and local session storage assume a single bot process, not horizontal scaling.
 - A linked WhatsApp session can be paused or logged out and may require QR pairing again.
@@ -426,7 +454,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters, bounded Brain Dump reads, append-only writes, task confirmations, assistant tool loops, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, task confirmations, and Tavily request bounds.
 
 ## Project structure
 
@@ -439,7 +467,7 @@ src/
 ├── config.ts             Validated environment configuration
 ├── context-buffer.ts     Bounded in-memory group context
 ├── dedupe-store.ts       SQLite message deduplication
-├── notion.ts             Strict Notion task and Brain Dump service
+├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
 └── web-search.ts         Bounded Tavily search service
 
 docs/lightsail.md         Production VPS deployment guide

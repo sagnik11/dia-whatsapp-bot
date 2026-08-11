@@ -76,3 +76,41 @@ export interface BrainDumpAppendResult {
   heading: string | null;
   charactersAdded: number;
 }
+
+export interface KnowledgeSearchResult {
+  id: string;
+  type: "page" | "data_source";
+  title: string;
+  url: string | null;
+  lastEditedTime: string | null;
+}
+
+export interface KnowledgeSearchResponse {
+  results: KnowledgeSearchResult[];
+  hasMore: boolean;
+}
+
+export interface KnowledgePageResult {
+  id: string;
+  type: "page";
+  markdown: string;
+  truncated: boolean;
+}
+
+export interface KnowledgeDataSourceRow {
+  id: string;
+  url: string;
+  lastEditedTime: string;
+  properties: Readonly<Record<string, unknown>>;
+}
+
+export interface KnowledgeDataSourceResult {
+  id: string;
+  type: "data_source";
+  rows: KnowledgeDataSourceRow[];
+  hasMore: boolean;
+}
+
+export type KnowledgeResourceResult =
+  | KnowledgePageResult
+  | KnowledgeDataSourceResult;

@@ -1,9 +1,15 @@
-import { Client, type PageObjectResponse } from "@notionhq/client";
+import {
+  Client,
+  type PageObjectResponse,
+  type SearchResponse,
+} from "@notionhq/client";
 import type { Logger } from "./logger.js";
 import type {
   BrainDumpAppendInput,
   BrainDumpAppendResult,
   BrainDumpResult,
+  KnowledgeResourceResult,
+  KnowledgeSearchResponse,
   TaskInput,
   TaskListResult,
   TaskQuery,
@@ -50,6 +56,7 @@ interface NotionTaskServiceOptions {
   apiKey: string;
   dataSourceId: string;
   brainDumpPageId?: string;
+  knowledgeEnabled?: boolean;
   properties: NotionPropertyNames;
   defaultStatus: string;
   defaultAssigneeId: string | undefined;
@@ -58,6 +65,92 @@ interface NotionTaskServiceOptions {
 }
 
 const MAX_BRAIN_DUMP_CHARACTERS = 12_000;
+const MAX_KNOWLEDGE_PAGE_CHARACTERS = 12_000;
+
+type NotionSearchItem = SearchResponse["results"][number];
+type NotionPageProperty = PageObjectResponse["properties"][string];
+
+function plainText(
+  items: ReadonlyArray<{ plain_text: string }>,
+  maxCharacters = 400,
+): string {
+  return items.map((item) => item.plain_text).join("").trim().slice(0, maxCharacters);
+}
+
+function searchItemTitle(item: NotionSearchItem): string {
+  if (item.object === "page" && "properties" in item) {
+    const title = Object.values(item.properties).find(
+      (property) => property.type === "title",
+    );
+    return title?.type === "title" ? plainText(title.title) : "";
+  }
+
+  if (item.object === "data_source" && "title" in item) {
+    return plainText(item.title);
+  }
+
+  return "";
+}
+
+function summarizePageProperty(property: NotionPageProperty): unknown {
+  switch (property.type) {
+    case "title":
+      return plainText(property.title);
+    case "rich_text":
+      return plainText(property.rich_text);
+    case "number":
+      return property.number;
+    case "select":
+      return property.select?.name ?? null;
+    case "multi_select":
+      return property.multi_select.slice(0, 20).map((option) => option.name);
+    case "status":
+      return property.status?.name ?? null;
+    case "date":
+      return property.date;
+    case "checkbox":
+      return property.checkbox;
+    case "url":
+      return property.url;
+    case "email":
+      return property.email;
+    case "phone_number":
+      return property.phone_number;
+    case "people":
+      return property.people.slice(0, 10).map((person) =>
+        "name" in person && person.name ? person.name : person.id,
+      );
+    case "created_time":
+      return property.created_time;
+    case "last_edited_time":
+      return property.last_edited_time;
+    case "created_by":
+      return "name" in property.created_by && property.created_by.name
+        ? property.created_by.name
+        : property.created_by.id;
+    case "last_edited_by":
+      return "name" in property.last_edited_by && property.last_edited_by.name
+        ? property.last_edited_by.name
+        : property.last_edited_by.id;
+    case "relation":
+      return property.relation.slice(0, 10).map((relation) => relation.id);
+    case "unique_id":
+      return `${property.unique_id.prefix ?? ""}${property.unique_id.number}`;
+    default:
+      return undefined;
+  }
+}
+
+function summarizePageProperties(
+  properties: PageObjectResponse["properties"],
+): Readonly<Record<string, unknown>> {
+  return Object.fromEntries(
+    Object.entries(properties).slice(0, 20).flatMap(([name, property]) => {
+      const value = summarizePageProperty(property);
+      return value === undefined ? [] : [[name, value]];
+    }),
+  );
+}
 
 export function boundBrainDumpMarkdown(markdown: string): {
   markdown: string;
@@ -191,6 +284,103 @@ export class NotionTaskService {
 
   public get canReadBrainDump(): boolean {
     return Boolean(this.options.brainDumpPageId);
+  }
+
+  public get canReadKnowledge(): boolean {
+    return Boolean(this.options.knowledgeEnabled);
+  }
+
+  public async searchKnowledge(
+    query: string,
+    limit: number,
+  ): Promise<KnowledgeSearchResponse> {
+    if (!this.canReadKnowledge) {
+      throw new Error("NOTION_KNOWLEDGE_ENABLED is not enabled");
+    }
+
+    const response = await this.client.search({
+      query,
+      page_size: limit,
+      sort: { property: "relevance" },
+      filter: { in_trash: false },
+    });
+    const results = response.results.flatMap((item) => {
+      const title = searchItemTitle(item);
+      if (!title) return [];
+      return [
+        {
+          id: item.id,
+          type: item.object,
+          title,
+          url: "url" in item && typeof item.url === "string" ? item.url : null,
+          lastEditedTime:
+            "last_edited_time" in item &&
+            typeof item.last_edited_time === "string"
+              ? item.last_edited_time
+              : null,
+        },
+      ];
+    });
+
+    this.options.logger.info(
+      { resultCount: results.length, hasMore: response.has_more },
+      "Searched Notion knowledge",
+    );
+    return { results, hasMore: response.has_more };
+  }
+
+  public async readKnowledgeResource(
+    id: string,
+    type: "page" | "data_source",
+  ): Promise<KnowledgeResourceResult> {
+    if (!this.canReadKnowledge) {
+      throw new Error("NOTION_KNOWLEDGE_ENABLED is not enabled");
+    }
+
+    if (type === "page") {
+      const response = await this.client.pages.retrieveMarkdown({
+        page_id: id,
+        include_transcript: false,
+      });
+      const bounded =
+        response.markdown.length <= MAX_KNOWLEDGE_PAGE_CHARACTERS
+          ? { markdown: response.markdown, truncated: false }
+          : {
+              markdown: `${response.markdown.slice(0, MAX_KNOWLEDGE_PAGE_CHARACTERS)}\n\n[Notion page truncated by Captain Patch]`,
+              truncated: true,
+            };
+      const truncated = response.truncated || bounded.truncated;
+
+      this.options.logger.info(
+        { notionPageId: id, characters: bounded.markdown.length, truncated },
+        "Read Notion knowledge page",
+      );
+      return { id, type, markdown: bounded.markdown, truncated };
+    }
+
+    const response = await this.client.dataSources.query({
+      data_source_id: id,
+      page_size: 5,
+      result_type: "page",
+      sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+    });
+    const rows = response.results
+      .filter(
+        (result): result is PageObjectResponse =>
+          result.object === "page" && "properties" in result,
+      )
+      .map((page) => ({
+        id: page.id,
+        url: page.url,
+        lastEditedTime: page.last_edited_time,
+        properties: summarizePageProperties(page.properties),
+      }));
+
+    this.options.logger.info(
+      { notionDataSourceId: id, rowCount: rows.length, hasMore: response.has_more },
+      "Read Notion knowledge data source",
+    );
+    return { id, type, rows, hasMore: response.has_more };
   }
 
   public async readBrainDump(): Promise<BrainDumpResult> {

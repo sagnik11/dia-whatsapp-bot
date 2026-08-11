@@ -15,6 +15,10 @@ const schema = z.object({
   NOTION_API_KEY: z.string().min(1, "NOTION_API_KEY is required"),
   NOTION_DATA_SOURCE_ID: z.string().min(1, "NOTION_DATA_SOURCE_ID is required"),
   NOTION_BRAIN_DUMP_PAGE_ID: optionalString,
+  NOTION_KNOWLEDGE_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   NOTION_TITLE_PROPERTY: z.string().default("Task name"),
   NOTION_STATUS_PROPERTY: z.string().default("Status"),
   NOTION_DEFAULT_STATUS: z.string().default("Not started"),
@@ -61,6 +65,7 @@ export const config = {
   notionApiKey: env.NOTION_API_KEY,
   notionDataSourceId: env.NOTION_DATA_SOURCE_ID,
   notionBrainDumpPageId: env.NOTION_BRAIN_DUMP_PAGE_ID,
+  notionKnowledgeEnabled: env.NOTION_KNOWLEDGE_ENABLED,
   notionProperties: {
     title: env.NOTION_TITLE_PROPERTY,
     status: env.NOTION_STATUS_PROPERTY,

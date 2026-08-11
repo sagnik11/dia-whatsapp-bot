@@ -203,3 +203,157 @@ describe("Notion Brain Dump appends", () => {
     ).toContain("## WhatsApp note\n\nKeep this idea.");
   });
 });
+
+describe("Notion company knowledge", () => {
+  it("searches titles shared with the integration and returns compact matches", async () => {
+    const search = vi.fn().mockResolvedValue({
+      results: [
+        {
+          object: "page",
+          id: "goals-page",
+          url: "https://notion.so/goals-page",
+          last_edited_time: "2026-08-10T12:00:00.000Z",
+          properties: {
+            title: {
+              type: "title",
+              title: [{ plain_text: "Company Goals - 2026" }],
+            },
+          },
+        },
+        {
+          object: "data_source",
+          id: "updates-source",
+          url: "https://notion.so/updates-source",
+          last_edited_time: "2026-08-09T12:00:00.000Z",
+          title: [{ plain_text: "Weekly Product Updates" }],
+        },
+      ],
+      has_more: false,
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      knowledgeEnabled: true,
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, { client: { search } });
+
+    await expect(service.searchKnowledge("goals", 5)).resolves.toEqual({
+      results: [
+        {
+          id: "goals-page",
+          type: "page",
+          title: "Company Goals - 2026",
+          url: "https://notion.so/goals-page",
+          lastEditedTime: "2026-08-10T12:00:00.000Z",
+        },
+        {
+          id: "updates-source",
+          type: "data_source",
+          title: "Weekly Product Updates",
+          url: "https://notion.so/updates-source",
+          lastEditedTime: "2026-08-09T12:00:00.000Z",
+        },
+      ],
+      hasMore: false,
+    });
+    expect(search).toHaveBeenCalledWith({
+      query: "goals",
+      page_size: 5,
+      sort: { property: "relevance" },
+      filter: { in_trash: false },
+    });
+  });
+
+  it("reads only bounded page Markdown", async () => {
+    const retrieveMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "goals-page",
+      markdown: "Company goals",
+      truncated: false,
+      unknown_block_ids: [],
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      knowledgeEnabled: true,
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { retrieveMarkdown } },
+    });
+
+    await expect(
+      service.readKnowledgeResource("goals-page", "page"),
+    ).resolves.toEqual({
+      id: "goals-page",
+      type: "page",
+      markdown: "Company goals",
+      truncated: false,
+    });
+  });
+
+  it("returns compact recent rows for a matched data source", async () => {
+    const query = vi.fn().mockResolvedValue({
+      results: [
+        {
+          object: "page",
+          id: "update-row",
+          url: "https://notion.so/update-row",
+          last_edited_time: "2026-08-10T12:00:00.000Z",
+          properties: {
+            Name: {
+              type: "title",
+              title: [{ plain_text: "Week 32" }],
+            },
+            Status: { type: "status", status: { name: "Published" } },
+          },
+        },
+      ],
+      has_more: false,
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      knowledgeEnabled: true,
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { dataSources: { query } },
+    });
+
+    await expect(
+      service.readKnowledgeResource("updates-source", "data_source"),
+    ).resolves.toEqual({
+      id: "updates-source",
+      type: "data_source",
+      rows: [
+        {
+          id: "update-row",
+          url: "https://notion.so/update-row",
+          lastEditedTime: "2026-08-10T12:00:00.000Z",
+          properties: { Name: "Week 32", Status: "Published" },
+        },
+      ],
+      hasMore: false,
+    });
+    expect(query).toHaveBeenCalledWith({
+      data_source_id: "updates-source",
+      page_size: 5,
+      result_type: "page",
+      sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+    });
+  });
+});

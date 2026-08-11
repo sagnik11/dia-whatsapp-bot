@@ -48,7 +48,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Fully edits an exactly matched task's properties and page-body content.
 - Reads and adds comments on exactly matched task pages.
 - Understands attached images and PDFs, and can upload attachments to a matched task.
-- Transcribes quoted WhatsApp voice notes when a Gateway transcription model is configured.
+- Transcribes quoted WhatsApp voice notes locally with open-source `whisper.cpp`.
 - Optionally reads and appends notes to one configured Notion Brain Dump page.
 - Optionally searches and reads company knowledge shared with the Notion integration.
 - Stores persistent reminders in SQLite, including advance, due-time, and repeating notifications.
@@ -278,17 +278,20 @@ Examples:
 
 ## Voice notes, screenshots, and PDFs
 
-Images and PDFs are sent to `AI_GATEWAY_MEDIA_MODEL` for multimodal understanding. It defaults to the main Azure model, so that Azure deployment must support the attached input type. You can send media with an `@patch` caption or reply with an `@patch` command to an existing media message.
+Images and PDFs are sent to the existing `AI_GATEWAY_MODEL` for multimodal understanding. For this deployment that is `azure/gpt-luna`; no second hosted model is required. `AI_GATEWAY_MEDIA_MODEL` remains an optional override for other users. You can send media with an `@patch` caption or reply with an `@patch` command to an existing media message.
 
-Voice notes are transcribed first. Because WhatsApp voice notes do not carry a normal text caption, reply to the voice note with `@patch summarize this` (or another command). Enable transcription with a model available in the Vercel AI Gateway transcription catalog:
+Voice notes are transcribed first by a private [`whisper.cpp`](https://github.com/ggml-org/whisper.cpp) service in Docker Compose. Because WhatsApp voice notes do not carry a normal text caption, reply to the voice note with `@patch summarize this` (or another command).
 
 ```dotenv
-AI_GATEWAY_MEDIA_MODEL=azure/your-multimodal-model
-AI_GATEWAY_TRANSCRIPTION_MODEL=openai/gpt-4o-mini-transcribe
+AI_GATEWAY_MODEL=azure/gpt-luna
+AI_GATEWAY_MEDIA_MODEL=
+WHISPER_MODEL=tiny
+WHISPER_THREADS=2
+WHISPER_LANGUAGE=auto
 MEDIA_MAX_BYTES=5000000
 ```
 
-`AI_GATEWAY_TRANSCRIPTION_MODEL` is deliberately blank by default, so merely receiving an audio file cannot incur transcription cost. Transcripts, images, and documents are treated as untrusted user content. Do not enable media handling in groups whose participants have not agreed to this processing.
+The default multilingual `tiny` model is about 75 MiB on disk and uses roughly 273 MB of memory. Change `WHISPER_MODEL=base` for better accuracy at the cost of slower CPU inference, about 142 MiB on disk, and roughly 388 MB of memory. The model is downloaded once into the `whisper-models` Docker volume. Audio never goes to a transcription API; Luna receives only the resulting transcript. Transcripts, images, and documents are treated as untrusted user content.
 
 ## Reminders and proactive task digests
 
@@ -408,8 +411,12 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AI_GATEWAY_API_KEY` | Yes | — | Vercel AI Gateway credential. |
 | `AI_GATEWAY_BASE_URL` | No | `https://ai-gateway.vercel.sh/v1` | OpenAI-compatible Gateway base URL. |
 | `AI_GATEWAY_MODEL` | Yes | — | Model ID; must match `azure/<model-name>`. |
-| `AI_GATEWAY_MEDIA_MODEL` | No | `AI_GATEWAY_MODEL` | Azure Gateway model used for images and documents. |
-| `AI_GATEWAY_TRANSCRIPTION_MODEL` | No | Empty | Gateway transcription model; empty disables voice-note processing. |
+| `AI_GATEWAY_MEDIA_MODEL` | No | `AI_GATEWAY_MODEL` | Optional Azure override for images/documents; leave blank to use Luna. |
+| `WHISPER_MODEL` | No | `tiny` | Local whisper.cpp multilingual model downloaded by Compose; `base` improves accuracy. |
+| `WHISPER_THREADS` | No | `2` | CPU threads assigned to local transcription. |
+| `WHISPER_LANGUAGE` | No | `auto` | Spoken-language hint sent to local Whisper. |
+| `WHISPER_TIMEOUT_MS` | No | `180000` | Maximum local transcription request duration. |
+| `WHISPER_TRANSCRIPTION_URL` | No | Compose-managed | Local whisper.cpp inference URL for non-Compose runs. |
 | `NOTION_API_KEY` | Yes | — | Notion internal integration token. |
 | `NOTION_DATA_SOURCE_ID` | Yes | — | Task tracker's data source ID. |
 | `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables bounded reads and append-only notes for one specific page. |
@@ -492,7 +499,7 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
 - Triggered message bodies, resolved sender IDs, and outgoing replies are written to application logs.
 - Reminder text, schedules, requester IDs, group IDs, and digest schedule state are stored in the SQLite database.
-- The Docker volume contains a reusable WhatsApp linked-device session and must be treated as sensitive.
+- The `dia-data` Docker volume contains a reusable WhatsApp linked-device session and must be treated as sensitive. The separate `whisper-models` volume contains only public model weights.
 - `.env`, `.data`, WhatsApp auth directories, logs, and build output are excluded by `.gitignore`.
 
 Before adding the bot to a group, tell participants what data may be processed by Vercel AI Gateway, the selected Azure model provider, Notion, Tavily, and your server logs.
@@ -503,7 +510,7 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 - WhatsApp integration is unofficial and can break when WhatsApp Web changes.
 - Only group chats are handled; direct messages are ignored.
-- Voice transcription requires a separately configured Gateway transcription model; image/PDF understanding depends on the selected Azure deployment's multimodal support.
+- Voice transcription is CPU-bound and may take a while on the smallest Lightsail plan; image/PDF understanding depends on the selected Azure deployment's multimodal support.
 - Media must fit `MEDIA_MAX_BYTES`; reply with an `@patch` command when the original media message cannot carry a caption.
 - The current model configuration intentionally requires an `azure/...` Gateway model.
 - Notion is required at startup even if you only want ordinary AI answers.

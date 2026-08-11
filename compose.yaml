@@ -10,10 +10,45 @@ services:
     environment:
       DATA_DIR: /app/data
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      WHISPER_TRANSCRIPTION_URL: http://whisper:8080/inference
+    depends_on:
+      whisper:
+        condition: service_healthy
     volumes:
       - dia-data:/app/data
     ports:
       - "127.0.0.1:${NOTION_WEBHOOK_PORT:-3000}:${NOTION_WEBHOOK_PORT:-3000}"
 
+  whisper:
+    image: ghcr.io/ggml-org/whisper.cpp:main@sha256:9ef9cfbc906b5287da99c3dac70d90163c08da9aa7bb0822d0497d09ad024d26
+    init: true
+    restart: unless-stopped
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
+      WHISPER_THREADS: ${WHISPER_THREADS:-2}
+    command: >-
+      set -e;
+      model_path="/models/ggml-$${WHISPER_MODEL}.bin";
+      if [ ! -f "$${model_path}" ]; then
+        ./models/download-ggml-model.sh "$${WHISPER_MODEL}" /models;
+      fi;
+      exec whisper-server --host 0.0.0.0 --port 8080 --convert --no-gpu
+      --language auto --threads "$${WHISPER_THREADS}" --model "$${model_path}"
+    volumes:
+      - whisper-models:/models
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+
 volumes:
   dia-data:
+  whisper-models:

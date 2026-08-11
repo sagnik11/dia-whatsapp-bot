@@ -1,5 +1,4 @@
-import { createGateway, type GatewayTranscriptionModelId } from "@ai-sdk/gateway";
-import { transcribe } from "ai";
+import { z } from "zod";
 import type { Logger } from "./logger.js";
 import type {
   AssistantAttachment,
@@ -14,11 +13,14 @@ interface IncomingMedia {
 }
 
 interface MediaIngestionOptions {
-  gatewayApiKey: string;
-  transcriptionModel?: string;
+  transcriptionUrl?: string;
+  transcriptionLanguage: string;
+  transcriptionTimeoutMs: number;
   maxBytes: number;
   logger: Logger;
 }
+
+const whisperResponseSchema = z.object({ text: z.string() });
 
 function baseMimeType(value: string): string {
   return value.split(";", 1)[0]?.trim().toLowerCase() || "application/octet-stream";
@@ -57,28 +59,38 @@ export class MediaIngestionService {
     let transcript: string | null = null;
 
     if (kind === "audio") {
-      if (!this.options.transcriptionModel) {
+      if (!this.options.transcriptionUrl) {
         throw new Error(
-          "Voice transcription is disabled; configure AI_GATEWAY_TRANSCRIPTION_MODEL",
+          "Voice transcription is disabled; configure WHISPER_TRANSCRIPTION_URL",
         );
       }
-      const gateway = createGateway({ apiKey: this.options.gatewayApiKey });
-      const result = await transcribe({
-        model: gateway.transcriptionModel(
-          this.options.transcriptionModel as GatewayTranscriptionModelId,
-        ),
-        audio: Buffer.from(input.dataBase64, "base64"),
-        maxRetries: 2,
-        abortSignal: AbortSignal.timeout(90_000),
+      const form = new FormData();
+      form.append(
+        "file",
+        new Blob([Buffer.from(input.dataBase64, "base64")], { type: mimeType }),
+        fileName,
+      );
+      form.append("response_format", "json");
+      form.append("temperature", "0.0");
+      form.append("language", this.options.transcriptionLanguage);
+      const response = await fetch(this.options.transcriptionUrl, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(this.options.transcriptionTimeoutMs),
       });
-      transcript = result.text.trim();
+      if (!response.ok) {
+        throw new Error(
+          `Local Whisper returned HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`,
+        );
+      }
+      transcript = whisperResponseSchema.parse(await response.json()).text.trim();
+      if (!transcript) throw new Error("Local Whisper returned an empty transcript");
       this.options.logger.info(
         {
-          durationInSeconds: result.durationInSeconds,
-          language: result.language,
+          language: this.options.transcriptionLanguage,
           transcriptCharacters: transcript.length,
         },
-        "Transcribed WhatsApp voice attachment",
+        "Transcribed WhatsApp voice attachment with local Whisper",
       );
     }
 

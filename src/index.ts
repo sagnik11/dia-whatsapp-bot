@@ -46,10 +46,11 @@ const assistant = new DiaAssistant({
   logger,
 });
 const mediaIngestion = new MediaIngestionService({
-  gatewayApiKey: config.aiGatewayApiKey,
-  ...(config.aiGatewayTranscriptionModel
-    ? { transcriptionModel: config.aiGatewayTranscriptionModel }
+  ...(config.whisperTranscriptionUrl
+    ? { transcriptionUrl: config.whisperTranscriptionUrl }
     : {}),
+  transcriptionLanguage: config.whisperLanguage,
+  transcriptionTimeoutMs: config.whisperTimeoutMs,
   maxBytes: config.mediaMaxBytes,
   logger,
 });

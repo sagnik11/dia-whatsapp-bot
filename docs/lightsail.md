@@ -90,14 +90,16 @@ TASK_DIGEST_INTERVAL_HOURS=4
 TASK_DIGEST_GROUP_IDS=your_whatsapp_group_id
 FOUNDER_BRIEF_TIME=09:00
 FOUNDER_BRIEF_GROUP_IDS=your_whatsapp_group_id
-# Optional voice notes; choose a transcription model in the Gateway catalog.
-AI_GATEWAY_TRANSCRIPTION_MODEL=openai/gpt-4o-mini-transcribe
+# Local, open-source voice transcription. Use base for more accuracy.
+WHISPER_MODEL=tiny
+WHISPER_THREADS=2
+WHISPER_LANGUAGE=auto
 BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
 
-Replace `your-model-name` with the exact model name configured for your Azure endpoint. Captain Patch rejects model IDs that do not begin with `azure/`. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. Patch can then read the page and append notes, but cannot alter existing content.
+Replace `your-model-name` with the exact model name configured for your Azure endpoint, such as `gpt-luna`. The same Azure model handles ordinary messages, screenshots, and PDFs unless `AI_GATEWAY_MEDIA_MODEL` is explicitly overridden. Captain Patch rejects primary model IDs that do not begin with `azure/`. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables one controlled live-web search per command. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**.
 
 To enable company-wide Notion reads, review the integration's Content access, connect only the intended company pages/databases, and change `NOTION_KNOWLEDGE_ENABLED=true`. The Notion API cannot scope searches by teamspace, so do not enable this while unrelated personal pages are shared with the same integration.
 

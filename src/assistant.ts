@@ -799,7 +799,7 @@ export class DiaAssistant {
               },
             }
           : {}),
-        max_output_tokens: 700,
+        max_output_tokens: forceTaskUpdate ? 5_000 : 700,
         store: false,
         safety_identifier: this.safetyIdentifier(request),
       });
@@ -815,6 +815,46 @@ export class DiaAssistant {
         (item): item is OpenAI.Responses.ResponseFunctionToolCall =>
           item.type === "function_call",
       );
+
+      const responseWasTruncated =
+        response.incomplete_details?.reason === "max_output_tokens";
+      const malformedCalls = calls.filter((call) => {
+        try {
+          JSON.parse(call.arguments);
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      if (responseWasTruncated || malformedCalls.length > 0) {
+        this.options.logger.warn(
+          {
+            incompleteDetails: response.incomplete_details,
+            malformedToolNames: malformedCalls.map((call) => call.name),
+            messageId: request.messageId,
+            round,
+          },
+          "Model tool call was truncated or malformed; requesting a shorter retry",
+        );
+        for (const call of calls) {
+          input.push({
+            type: "function_call_output",
+            call_id: call.call_id,
+            output: JSON.stringify({
+              error:
+                "No action was taken because this tool-call round was truncated or malformed. Retry with valid JSON and keep page content under 6,000 characters.",
+            }),
+          });
+        }
+        if (calls.length === 0) {
+          input.push({
+            role: "user",
+            content:
+              "Your last response was truncated. Retry the requested action concisely and keep generated page content under 6,000 characters.",
+          });
+        }
+        continue;
+      }
 
       if (calls.length === 0) {
         return response.output_text.trim() || "I couldn't produce a reply. Please try again.";

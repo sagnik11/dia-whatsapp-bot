@@ -620,6 +620,19 @@ describe("DiaAssistant task updates", () => {
           {
             type: "function_call",
             name: "update_notion_task",
+            call_id: "truncated-task-update",
+            arguments:
+              '{"page_id":"task-page","matched_title":"Feedbacks from Intern Applications","page_content":"unfinished',
+          },
+        ],
+        output_text: "",
+        incomplete_details: { reason: "max_output_tokens" },
+      })
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "update_notion_task",
             call_id: "task-update",
             arguments: JSON.stringify({
               page_id: "task-page",
@@ -678,6 +691,13 @@ describe("DiaAssistant task updates", () => {
     });
     expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
       tool_choice: { type: "function", name: "list_notion_tasks" },
+      max_output_tokens: 5_000,
+    });
+    expect(responsesCreate).toHaveBeenCalledTimes(3);
+    expect(responsesCreate.mock.calls[2]?.[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "truncated-task-update",
+      output: expect.stringContaining("truncated or malformed"),
     });
   });
 });

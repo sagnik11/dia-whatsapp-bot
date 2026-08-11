@@ -1,0 +1,211 @@
+test/dedupe-store.test.ts
+  s_4f29094a4551ec::t_c86c5961a52c3d 34,36
+src/founder-brief.ts
+  s_4f29094a4551ec::t_21be0f8eb7c549 1-60
+src/notion-webhook.ts
+  s_4f29094a4551ec::t_c856e84fd9d1f2 1-151,158-208
+  s_4f29094a4551ec::t_de2291d3c15369 152-157
+src/index.ts
+  s_4f29094a4551ec::t_86489aa5172242 7,9-10,40,48-64,72-81,94,101-115,122-124,136-141,143
+src/config.ts
+  s_4f29094a4551ec::t_a5f746dbce4407 9-13,20-21,51-65,96-99,105-106,135-149
+test/scheduler.test.ts
+  s_4f29094a4551ec::t_c86c5961a52c3d 6,50-61,104-140
+test/notion.test.ts
+  s_4f29094a4551ec::t_5507cd6736c242 208-298
+.env.example
+  s_4f29094a4551ec::t_de2291d3c15369 4-7,39-56
+test/media-ingestion.test.ts
+  s_4f29094a4551ec::t_c86c5961a52c3d 1-47
+src/media-ingestion.ts
+  s_4f29094a4551ec::t_88484844195b6b 1-94
+src/scheduler.ts
+  s_4f29094a4551ec::t_21be0f8eb7c549 16-93,214,220-258
+src/types.ts
+  s_4f29094a4551ec::t_88484844195b6b 16-27,102-112
+src/notion.ts
+  s_4f29094a4551ec::t_a5f92f55ad223a 14-15,24,39-67,711-810
+src/bot.ts
+  s_4f29094a4551ec::t_e743451bb512e4 14,295
+  s_4f29094a4551ec::t_9ae2c6250df760 309-310
+  s_4f29094a4551ec::t_534bd226ad5da3 11,31,47,89,114,119-129,131,138,296-308,311-324,336
+src/dedupe-store.ts
+  s_4f29094a4551ec::t_c856e84fd9d1f2 52-60
+compose.yaml
+  s_4f29094a4551ec::t_de2291d3c15369 15-16
+README.md
+  s_4f29094a4551ec::t_ac0af5b77f669a 229-240,279-292,315-340
+  s_4f29094a4551ec::t_8935d5b6f4d662 411-412,436-444,506-507,513,582,595-597
+  s_4f29094a4551ec::t_37a6bbb7b3dbad 7,16-17,49-51,56-57,92,94-95,101,107,117
+docs/lightsail.md
+  s_4f29094a4551ec::t_f5efadf1074350 3,23-24,27-28,91-94,166-208
+src/assistant.ts
+  s_4f29094a4551ec::t_cbc1a0fcc06d99 558,561
+  s_4f29094a4551ec::t_de2291d3c15369 774
+  s_4f29094a4551ec::t_bac2fdcd4186d8 1583-1596,1610-1611
+  s_4f29094a4551ec::t_fe4d050421bc59 1226-1344,1557-1559
+  s_4f29094a4551ec::t_58a92522e1e59b 51-65,273-341
+  s_4f29094a4551ec::t_bafafbe1cd7667 683,749-751,859-861,873-897,899,910-913
+test/notion-webhook.test.ts
+  s_4f29094a4551ec::t_c86c5961a52c3d 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "50643623382bbf75e7005a61cb8608a197997df4",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:40731f07f833285817b7f5a02c3c45e63d68b684f4a694afe65968222df36416",
+      "total_additions": 1501,
+      "total_deletions": 21,
+      "accepted_lines": 1494,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:40731f07f833285817b7f5a02c3c45e63d68b684f4a694afe65968222df36416",
+      "stats": {
+        "total_additions": 1501,
+        "total_deletions": 21,
+        "accepted_lines": 1494,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 22,
+            "total_deletions": 0,
+            "accepted_lines": 22,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 85,
+            "total_deletions": 5,
+            "accepted_lines": 85,
+            "overriden_lines": 0
+          },
+          "compose.yaml": {
+            "total_additions": 2,
+            "total_deletions": 0,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 53,
+            "total_deletions": 2,
+            "accepted_lines": 53,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 266,
+            "total_deletions": 5,
+            "accepted_lines": 266,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 53,
+            "total_deletions": 4,
+            "accepted_lines": 50,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 43,
+            "total_deletions": 0,
+            "accepted_lines": 43,
+            "overriden_lines": 0
+          },
+          "src/dedupe-store.ts": {
+            "total_additions": 9,
+            "total_deletions": 0,
+            "accepted_lines": 9,
+            "overriden_lines": 0
+          },
+          "src/founder-brief.ts": {
+            "total_additions": 60,
+            "total_deletions": 0,
+            "accepted_lines": 60,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 57,
+            "total_deletions": 1,
+            "accepted_lines": 57,
+            "overriden_lines": 0
+          },
+          "src/media-ingestion.ts": {
+            "total_additions": 94,
+            "total_deletions": 0,
+            "accepted_lines": 94,
+            "overriden_lines": 0
+          },
+          "src/notion-webhook.ts": {
+            "total_additions": 212,
+            "total_deletions": 4,
+            "accepted_lines": 208,
+            "overriden_lines": 0
+          },
+          "src/notion.ts": {
+            "total_additions": 134,
+            "total_deletions": 0,
+            "accepted_lines": 134,
+            "overriden_lines": 0
+          },
+          "src/scheduler.ts": {
+            "total_additions": 121,
+            "total_deletions": 0,
+            "accepted_lines": 121,
+            "overriden_lines": 0
+          },
+          "src/types.ts": {
+            "total_additions": 25,
+            "total_deletions": 0,
+            "accepted_lines": 25,
+            "overriden_lines": 0
+          },
+          "test/dedupe-store.test.ts": {
+            "total_additions": 2,
+            "total_deletions": 0,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "test/media-ingestion.test.ts": {
+            "total_additions": 47,
+            "total_deletions": 0,
+            "accepted_lines": 47,
+            "overriden_lines": 0
+          },
+          "test/notion-webhook.test.ts": {
+            "total_additions": 73,
+            "total_deletions": 0,
+            "accepted_lines": 73,
+            "overriden_lines": 0
+          },
+          "test/notion.test.ts": {
+            "total_additions": 91,
+            "total_deletions": 0,
+            "accepted_lines": 91,
+            "overriden_lines": 0
+          },
+          "test/scheduler.test.ts": {
+            "total_additions": 52,
+            "total_deletions": 0,
+            "accepted_lines": 52,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

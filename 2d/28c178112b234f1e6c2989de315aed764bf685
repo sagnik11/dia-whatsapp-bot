@@ -1,0 +1,107 @@
+README.md
+  s_4f29094a4551ec::t_4dc88fd19e20ff 51,281,283,286-290,294
+  s_4f29094a4551ec::t_f1d107d2f6e694 414-419,502,513
+test/media-ingestion.test.ts
+  s_4f29094a4551ec::t_24856b564f0fe2 1,4-5
+  s_4f29094a4551ec::t_00f7845f67095f 16-17,38-39,51-81
+src/config.ts
+  s_4f29094a4551ec::t_023f092c013c98 21-23,108-110
+compose.yaml
+  s_4f29094a4551ec::t_787515a16a9a13 13-16,22-51,54
+docs/lightsail.md
+  s_4f29094a4551ec::t_f1d107d2f6e694 93-96,102
+.env.example
+  s_4f29094a4551ec::t_4dc88fd19e20ff 4,6-14
+src/media-ingestion.ts
+  s_4f29094a4551ec::t_023f092c013c98 1,16-18,23-24,62,64,67-79,81-87,90,93
+src/index.ts
+  s_4f29094a4551ec::t_023f092c013c98 49-50,52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "2d28c178112b234f1e6c2989de315aed764bf685",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:a938bc1eccd74574d8dc1e44728cbe520fc3db92077ff9fa544b02c9c54e45d5",
+      "total_additions": 147,
+      "total_deletions": 43,
+      "accepted_lines": 146,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:a938bc1eccd74574d8dc1e44728cbe520fc3db92077ff9fa544b02c9c54e45d5",
+      "stats": {
+        "total_additions": 147,
+        "total_deletions": 43,
+        "accepted_lines": 146,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 10,
+            "total_deletions": 3,
+            "accepted_lines": 10,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 17,
+            "total_deletions": 10,
+            "accepted_lines": 17,
+            "overriden_lines": 0
+          },
+          "compose.yaml": {
+            "total_additions": 35,
+            "total_deletions": 0,
+            "accepted_lines": 35,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 5,
+            "total_deletions": 3,
+            "accepted_lines": 5,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 6,
+            "total_deletions": 2,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 4,
+            "total_deletions": 3,
+            "accepted_lines": 4,
+            "overriden_lines": 0
+          },
+          "src/media-ingestion.ts": {
+            "total_additions": 30,
+            "total_deletions": 18,
+            "accepted_lines": 30,
+            "overriden_lines": 0
+          },
+          "test/media-ingestion.test.ts": {
+            "total_additions": 40,
+            "total_deletions": 4,
+            "accepted_lines": 39,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

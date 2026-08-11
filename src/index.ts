@@ -10,6 +10,7 @@ import { MediaIngestionService } from "./media-ingestion.js";
 import { NotionWebhookServer } from "./notion-webhook.js";
 import { NotionTaskService } from "./notion.js";
 import { ReminderStore } from "./reminder-store.js";
+import { ResearchAgent } from "./research-agent.js";
 import { ProactiveScheduler } from "./scheduler.js";
 import { TavilyWebSearchService } from "./web-search.js";
 
@@ -33,6 +34,17 @@ const notion = new NotionTaskService({
 const webSearch = config.tavilyApiKey
   ? new TavilyWebSearchService({ apiKey: config.tavilyApiKey, logger })
   : undefined;
+const researchAgent = webSearch
+  ? new ResearchAgent({
+      gatewayApiKey: config.aiGatewayApiKey,
+      gatewayBaseUrl: config.aiGatewayBaseUrl,
+      model: config.aiGatewayModel,
+      timezone: config.timezone,
+      maxSearches: config.researchMaxSearches,
+      webSearch,
+      logger,
+    })
+  : undefined;
 const assistant = new DiaAssistant({
   gatewayApiKey: config.aiGatewayApiKey,
   gatewayBaseUrl: config.aiGatewayBaseUrl,
@@ -43,6 +55,7 @@ const assistant = new DiaAssistant({
   notion,
   reminders,
   ...(webSearch ? { webSearch } : {}),
+  ...(researchAgent ? { researchAgent } : {}),
   logger,
 });
 const mediaIngestion = new MediaIngestionService({

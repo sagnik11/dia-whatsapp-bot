@@ -206,6 +206,51 @@ describe("Notion Brain Dump appends", () => {
 });
 
 describe("Notion task collaboration", () => {
+  it("reads an exact task page body as bounded research context", async () => {
+    const retrieve = vi.fn().mockResolvedValue({
+      object: "page",
+      id: "page-1",
+      url: "https://notion.so/page-1",
+      parent: { type: "data_source_id", data_source_id: "tasks-source" },
+      properties: {
+        "Task name": {
+          type: "title",
+          title: [{ plain_text: "Publishing" }],
+        },
+      },
+    });
+    const retrieveMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "page-1",
+      markdown: "# Brief\nResearch launch channels for developer audiences.",
+      truncated: false,
+      unknown_block_ids: [],
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { retrieve, retrieveMarkdown } },
+    });
+
+    await expect(service.readTaskPage("page-1")).resolves.toEqual({
+      pageId: "page-1",
+      title: "Publishing",
+      markdown: "# Brief\nResearch launch channels for developer audiences.",
+      truncated: false,
+    });
+    expect(retrieveMarkdown).toHaveBeenCalledWith({
+      page_id: "page-1",
+      include_transcript: false,
+    });
+  });
+
   it("reads and creates task comments", async () => {
     const list = vi.fn().mockResolvedValue({
       results: [

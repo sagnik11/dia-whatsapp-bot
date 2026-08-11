@@ -112,6 +112,13 @@ export interface TaskAttachmentResult {
   fileUploadId: string;
 }
 
+export interface TaskPageResult {
+  pageId: string;
+  title: string;
+  markdown: string;
+  truncated: boolean;
+}
+
 export interface ReminderCreateInput {
   groupId: string;
   requestedBy: string;

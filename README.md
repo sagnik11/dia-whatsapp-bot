@@ -56,6 +56,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Optionally generates a daily AI founder brief from open tasks and reminders.
 - Optionally forwards human Notion task edits and comments into WhatsApp through signed webhooks.
 - Optionally performs one bounded Tavily search and returns source URLs.
+- Delegates explicit research requests to a separate, multi-search Azure/Luna research agent with cited findings.
 - Keeps a short in-memory group context window for follow-up questions.
 - Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
 - Persists the linked WhatsApp session across Docker rebuilds.
@@ -91,6 +92,8 @@ flowchart LR
     A --> N4["Search/read company Notion"]
     A --> N6["Task comments and attachments"]
     A --> S["One Tavily web search"]
+    A --> RA["Patch Research agent"]
+    RA --> MS["Up to 3 focused Tavily searches"]
     NW["Signed Notion webhook"] --> PN["Proactive WhatsApp notification"]
     SC["SQLite scheduler"] --> FB["Reminders, digests, founder brief"]
     N1 --> O["WhatsApp response"]
@@ -389,9 +392,23 @@ Live search is optional:
 
 ```dotenv
 TAVILY_API_KEY=tvly-your-key
+RESEARCH_MAX_SEARCHES=3
 ```
 
-When configured, the assistant can call `search_web` with these server-enforced limits:
+When configured, Patch has two modes:
+
+- Quick lookup: one bounded search for a current fact or URL.
+- Delegated research: one specialist run with up to `RESEARCH_MAX_SEARCHES` distinct searches, a cited report, explicit unknowns, and a recommendation.
+
+Examples:
+
+```text
+@patch research the best places to launch Autter to developers
+@patch do a competitive analysis of AI code review tools
+@patch research publishing channels and append the report to the publishing task
+```
+
+Every individual Tavily call still uses these server-enforced limits:
 
 - At most one Tavily request per triggered WhatsApp message
 - Basic search depth
@@ -430,7 +447,8 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `NOTION_ASSIGNEE_MAP_JSON` | No | `{}` | JSON mapping of names to Notion user IDs. |
 | `NOTION_PRIORITY_PROPERTY` | No | `Priority` | Select property name. |
 | `NOTION_TASK_TYPE_PROPERTY` | No | `Task type` | Multi-select property name. |
-| `TAVILY_API_KEY` | No | Empty | Enables bounded live web search. |
+| `TAVILY_API_KEY` | No | Empty | Enables quick web lookup and delegated research. |
+| `RESEARCH_MAX_SEARCHES` | No | `3` | Maximum distinct Tavily searches in one research run; range `1-5`. |
 | `BOT_NAME` | No | `Captain Patch` | Name supplied to the model and logs. |
 | `BOT_TRIGGER` | No | `@patch` | Case-insensitive text trigger. |
 | `TIMEZONE` | No | `Asia/Kolkata` | IANA timezone used for relative dates. |
@@ -494,7 +512,7 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
 - Company knowledge is opt-in, read-only in the bot, and limited to one title search plus two matched resource reads per request.
 - Notion's API has no teamspace filter; the integration's Content access is the security boundary for company knowledge.
-- Web search is limited to one bounded Tavily request per trigger.
+- Quick web lookup is limited to one Tavily call. An explicit delegated research run is limited to `RESEARCH_MAX_SEARCHES` distinct calls and can run only once per trigger.
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
 - Triggered message bodies, resolved sender IDs, and outgoing replies are written to application logs.
@@ -586,7 +604,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, task confirmations, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, delegated research, task confirmations, and Tavily request bounds.
 
 ## Project structure
 
@@ -604,6 +622,7 @@ src/
 ├── notion-webhook.ts     Signed Notion event receiver and notifications
 ├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
 ├── reminder-store.ts     Persistent reminder and scheduler state
+├── research-agent.ts     Bounded multi-search research specialist
 ├── scheduler.ts          Proactive reminder and task-digest delivery
 └── web-search.ts         Bounded Tavily search service
 

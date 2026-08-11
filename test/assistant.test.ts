@@ -8,6 +8,7 @@ import {
   isExplicitBrainDumpAppendRequest,
   isExplicitBrainDumpRequest,
   isExplicitKnowledgeRequest,
+  isExplicitResearchRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
   isExplicitTaskUpdateRequest,
@@ -86,6 +87,20 @@ describe("isExplicitWebSearchRequest", () => {
 
   it("does not force web search for stable conversation", () => {
     expect(isExplicitWebSearchRequest("write a funny launch message")).toBe(false);
+  });
+});
+
+describe("isExplicitResearchRequest", () => {
+  it.each([
+    "research the best places to publish our launch",
+    "do a competitive analysis of AI code review tools",
+    "deep dive into developer trust signals",
+  ])("detects delegated research: %s", (message) => {
+    expect(isExplicitResearchRequest(message)).toBe(true);
+  });
+
+  it("does not turn a quick current-fact lookup into deep research", () => {
+    expect(isExplicitResearchRequest("what is today's GitHub news?")).toBe(false);
   });
 });
 
@@ -289,6 +304,208 @@ describe("DiaAssistant web search", () => {
       output: expect.stringContaining("https://autter.dev/"),
     });
     expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
+  });
+});
+
+describe("DiaAssistant delegated research", () => {
+  it("forces one bounded research run and returns its evidence to Patch", async () => {
+    const run = vi.fn().mockResolvedValue({
+      report: "## Summary\nPublish on Hacker News. https://news.ycombinator.com/",
+      searchesUsed: 3,
+      sources: [
+        { title: "Hacker News", url: "https://news.ycombinator.com/" },
+      ],
+    });
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "run_research",
+            call_id: "research-1",
+            arguments: JSON.stringify({
+              question: "Where should Autter publish its launch?",
+              context: "Developer audience",
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text:
+          "Start with Hacker News. https://news.ycombinator.com/",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {} as never,
+      researchAgent: { run } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-research",
+      requestedBy: "Tanvi",
+      requestedById: "tanvi@c.us",
+      body: "research the best places to publish our launch",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("https://news.ycombinator.com/");
+    expect(run).toHaveBeenCalledWith({
+      question: "Where should Autter publish its launch?",
+      context: "Developer audience",
+      requestedBy: "Tanvi",
+    });
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "run_research" },
+    });
+    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "research-1",
+      output: expect.stringContaining("Hacker News"),
+    });
+  });
+
+  it("can append delegated findings to one exactly matched Notion task", async () => {
+    const matchedTask = {
+      id: "publishing-page",
+      url: "https://notion.so/publishing-page",
+      title: "Publishing",
+      status: "In progress",
+      dueAt: null,
+      assignees: ["Sagnik"],
+      priority: null,
+      taskTypes: ["Marketing"],
+    };
+    const listTasks = vi.fn().mockResolvedValue({
+      tasks: [matchedTask],
+      hasMore: false,
+    });
+    const run = vi.fn().mockResolvedValue({
+      report: "## Findings\nTry Show HN. https://news.ycombinator.com/",
+      searchesUsed: 2,
+      sources: [
+        { title: "Hacker News", url: "https://news.ycombinator.com/" },
+      ],
+    });
+    const updateTask = vi.fn().mockResolvedValue({
+      id: matchedTask.id,
+      url: matchedTask.url,
+      title: matchedTask.title,
+      status: null,
+      dueAt: null,
+      assignee: null,
+      priority: null,
+      taskTypes: null,
+      clearedFields: [],
+      pageContentMode: "append",
+    });
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "list_notion_tasks",
+            call_id: "task-search",
+            arguments: JSON.stringify({
+              title_contains: "Publishing",
+              status: null,
+              due_from: null,
+              due_to: null,
+              limit: 10,
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "run_research",
+            call_id: "task-research",
+            arguments: JSON.stringify({
+              question: "Where should Autter publish its launch?",
+              context: "Append the result to the Publishing task",
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "update_notion_task",
+            call_id: "task-update",
+            arguments: JSON.stringify({
+              page_id: matchedTask.id,
+              matched_title: matchedTask.title,
+              new_title: null,
+              status: null,
+              due_at: null,
+              assignee: null,
+              priority: null,
+              task_types: null,
+              clear_fields: [],
+              page_content_mode: "append",
+              page_content:
+                "## Research\nTry Show HN. https://news.ycombinator.com/",
+            }),
+          },
+        ],
+        output_text: "",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: { listTasks, updateTask } as never,
+      researchAgent: { run } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "research-task-message",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "research publishing channels and append it to the publishing task",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("✅ Updated task: Publishing");
+    expect(run).toHaveBeenCalledOnce();
+    expect(updateTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageId: matchedTask.id,
+        pageContentMode: "append",
+        pageContent: expect.stringContaining("https://news.ycombinator.com/"),
+      }),
+    );
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "list_notion_tasks" },
+    });
   });
 });
 

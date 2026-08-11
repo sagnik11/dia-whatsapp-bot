@@ -14,6 +14,7 @@ import type {
   TaskAttachmentResult,
   TaskCommentSummary,
   TaskListResult,
+  TaskPageResult,
   TaskQuery,
   TaskResult,
   TaskSource,
@@ -720,6 +721,26 @@ export class NotionTaskService {
         normalizeNotionId(parent.database_id) ===
           normalizeNotionId(this.options.dataSourceId));
     return isTask ? taskSummaryFromPage(response, this.options.properties) : null;
+  }
+
+  public async readTaskPage(pageId: string): Promise<TaskPageResult> {
+    const task = await this.getTaskById(pageId);
+    if (!task) throw new Error("Page is not in the configured task tracker");
+    const response = await this.client.pages.retrieveMarkdown({
+      page_id: pageId,
+      include_transcript: false,
+    });
+    const bounded = boundBrainDumpMarkdown(response.markdown);
+    this.options.logger.info(
+      { notionPageId: pageId, taskTitle: task.title, truncated: bounded.truncated },
+      "Read Notion task page for research context",
+    );
+    return {
+      pageId,
+      title: task.title,
+      markdown: bounded.markdown,
+      truncated: bounded.truncated,
+    };
   }
 
   public async listTaskComments(

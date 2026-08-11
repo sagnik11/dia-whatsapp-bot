@@ -26,14 +26,15 @@ services:
     environment:
       WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
       WHISPER_THREADS: ${WHISPER_THREADS:-2}
-    command: >-
-      set -e;
-      model_path="/models/ggml-$${WHISPER_MODEL}.bin";
-      if [ ! -f "$${model_path}" ]; then
-        ./models/download-ggml-model.sh "$${WHISPER_MODEL}" /models;
-      fi;
-      exec whisper-server --host 0.0.0.0 --port 8080 --convert --no-gpu
-      --language auto --threads "$${WHISPER_THREADS}" --model "$${model_path}"
+    command:
+      - |-
+        set -e
+        model_path="/models/ggml-$${WHISPER_MODEL}.bin"
+        if [ ! -f "$${model_path}" ]; then
+          ./models/download-ggml-model.sh "$${WHISPER_MODEL}" /models
+        fi
+        exec whisper-server --host 0.0.0.0 --port 8080 --convert --no-gpu \
+          --language auto --threads "$${WHISPER_THREADS}" --model "$${model_path}"
     volumes:
       - whisper-models:/models
     tmpfs:

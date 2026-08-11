@@ -360,11 +360,18 @@ describe("Notion company knowledge", () => {
 });
 
 describe("Notion task updates and digests", () => {
-  it("updates only the requested status and mapped assignee", async () => {
+  it("updates task properties and appends task-page content", async () => {
     const update = vi.fn().mockResolvedValue({
       object: "page",
       id: "task-page",
       url: "https://notion.so/task-page",
+    });
+    const updateMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "task-page",
+      markdown: "Updated",
+      truncated: false,
+      unknown_block_ids: [],
     });
     const service = new NotionTaskService({
       apiKey: "test-key",
@@ -376,28 +383,118 @@ describe("Notion task updates and digests", () => {
       logger: { info: vi.fn() } as never,
     });
     Object.assign(service as unknown as { client: unknown }, {
-      client: { pages: { update } },
+      client: { pages: { update, updateMarkdown } },
     });
 
     await expect(
       service.updateTask({
         pageId: "task-page",
         title: "Feedbacks from Intern Applications",
+        newTitle: "Review Intern Application Feedback",
         status: "In progress",
+        dueAt: "2026-08-20",
         assignee: "Tanvi",
+        priority: "High",
+        taskTypes: ["Product", "Misc"],
+        clearFields: [],
+        pageContentMode: "append",
+        pageContent: "## Update\n\nReview the shortlisted feedback.",
       }),
     ).resolves.toEqual({
       id: "task-page",
       url: "https://notion.so/task-page",
-      title: "Feedbacks from Intern Applications",
+      title: "Review Intern Application Feedback",
       status: "In progress",
+      dueAt: "2026-08-20",
       assignee: "Tanvi",
+      priority: "High",
+      taskTypes: ["Product", "Misc"],
+      clearedFields: [],
+      pageContentMode: "append",
     });
     expect(update).toHaveBeenCalledWith({
       page_id: "task-page",
       properties: {
+        "Task name": {
+          type: "title",
+          title: [
+            {
+              type: "text",
+              text: { content: "Review Intern Application Feedback" },
+            },
+          ],
+        },
         Status: { type: "status", status: { name: "In progress" } },
+        "Due date": { type: "date", date: { start: "2026-08-20" } },
         Assignee: { type: "people", people: [{ id: "tanvi-user-id" }] },
+        Priority: { type: "select", select: { name: "High" } },
+        "Task type": {
+          type: "multi_select",
+          multi_select: [{ name: "Product" }, { name: "Misc" }],
+        },
+      },
+    });
+    expect(updateMarkdown).toHaveBeenCalledWith({
+      page_id: "task-page",
+      type: "insert_content",
+      insert_content: {
+        content: "## Update\n\nReview the shortlisted feedback.",
+        position: { type: "end" },
+      },
+    });
+  });
+
+  it("clears task properties and replaces page content without deleting children", async () => {
+    const update = vi.fn().mockResolvedValue({ object: "page", id: "task-page" });
+    const updateMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "task-page",
+      markdown: "Replacement",
+      truncated: false,
+      unknown_block_ids: [],
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { update, updateMarkdown } },
+    });
+
+    await service.updateTask({
+      pageId: "task-page",
+      title: "Old task",
+      newTitle: null,
+      status: null,
+      dueAt: null,
+      assignee: null,
+      priority: null,
+      taskTypes: null,
+      clearFields: ["due_date", "assignee", "priority", "task_type"],
+      pageContentMode: "replace",
+      pageContent: "## Fresh brief",
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      page_id: "task-page",
+      properties: {
+        "Due date": { type: "date", date: null },
+        Assignee: { type: "people", people: [] },
+        Priority: { type: "select", select: null },
+        "Task type": { type: "multi_select", multi_select: [] },
+      },
+    });
+    expect(updateMarkdown).toHaveBeenCalledWith({
+      page_id: "task-page",
+      type: "replace_content",
+      replace_content: {
+        new_str: "## Fresh brief",
+        allow_deleting_content: false,
       },
     });
   });

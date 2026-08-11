@@ -50,6 +50,11 @@ describe("task and reminder command detection", () => {
         "shift the intern feedback task from completed to in progress and assign it to Tanvi",
       ),
     ).toBe(true);
+    expect(
+      isExplicitTaskUpdateRequest(
+        "edit the launch task page and append the customer feedback as a note",
+      ),
+    ).toBe(true);
   });
 
   it("detects reminder creation, listing, and cancellation", () => {
@@ -563,7 +568,7 @@ describe("DiaAssistant Notion knowledge", () => {
 });
 
 describe("DiaAssistant task updates", () => {
-  it("looks up an exact task before changing its status and assignee", async () => {
+  it("looks up an exact task before editing it", async () => {
     const listTasks = vi.fn().mockResolvedValue({
       tasks: [
         {
@@ -584,7 +589,12 @@ describe("DiaAssistant task updates", () => {
       url: "https://notion.so/task-page",
       title: "Feedbacks from Intern Applications",
       status: "In progress",
+      dueAt: null,
       assignee: "Tanvi",
+      priority: null,
+      taskTypes: null,
+      clearedFields: [],
+      pageContentMode: null,
     });
     const responsesCreate = vi
       .fn()
@@ -613,9 +623,16 @@ describe("DiaAssistant task updates", () => {
             call_id: "task-update",
             arguments: JSON.stringify({
               page_id: "task-page",
-              title: "Feedbacks from Intern Applications",
+              matched_title: "Feedbacks from Intern Applications",
+              new_title: null,
               status: "In progress",
+              due_at: null,
               assignee: "Tanvi",
+              priority: null,
+              task_types: null,
+              clear_fields: [],
+              page_content_mode: null,
+              page_content: null,
             }),
           },
         ],
@@ -649,8 +666,15 @@ describe("DiaAssistant task updates", () => {
     expect(updateTask).toHaveBeenCalledWith({
       pageId: "task-page",
       title: "Feedbacks from Intern Applications",
+      newTitle: null,
       status: "In progress",
+      dueAt: null,
       assignee: null,
+      priority: null,
+      taskTypes: null,
+      clearFields: [],
+      pageContentMode: null,
+      pageContent: null,
     });
     expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
       tool_choice: { type: "function", name: "list_notion_tasks" },

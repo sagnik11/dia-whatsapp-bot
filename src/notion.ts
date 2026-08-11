@@ -519,11 +519,32 @@ export class NotionTaskService {
   }
 
   public async updateTask(input: TaskUpdateInput): Promise<TaskUpdateResult> {
-    if (!input.status && !input.assignee) {
-      throw new Error("A task update must include a status or assignee");
+    const p = this.options.properties;
+    const clearFields = new Set(input.clearFields);
+    if (
+      (clearFields.has("due_date") && input.dueAt) ||
+      (clearFields.has("assignee") && input.assignee) ||
+      (clearFields.has("priority") && input.priority) ||
+      (clearFields.has("task_type") && input.taskTypes)
+    ) {
+      throw new Error("A task field cannot be set and cleared in the same update");
+    }
+    if (Boolean(input.pageContentMode) !== Boolean(input.pageContent)) {
+      throw new Error("Page content and its edit mode must be provided together");
+    }
+    const hasPropertyChanges = Boolean(
+      input.newTitle ||
+        input.status ||
+        input.dueAt ||
+        input.assignee ||
+        input.priority ||
+        input.taskTypes ||
+        clearFields.size > 0,
+    );
+    if (!hasPropertyChanges && !input.pageContentMode) {
+      throw new Error("A task update must include at least one change");
     }
 
-    const p = this.options.properties;
     const assigneeId = input.assignee
       ? resolveAssigneeId(
           input.assignee,
@@ -537,43 +558,121 @@ export class NotionTaskService {
       );
     }
 
-    const response = await this.client.pages.update({
-      page_id: input.pageId,
-      properties: {
-        ...(input.status
-          ? {
-              [p.status]: {
-                type: "status" as const,
-                status: { name: input.status },
-              },
-            }
-          : {}),
-        ...(assigneeId
-          ? {
-              [p.assignee]: {
-                type: "people" as const,
-                people: [{ id: assigneeId }],
-              },
-            }
-          : {}),
-      },
-    });
+    let responseUrl: string | null = null;
+    if (hasPropertyChanges) {
+      const response = await this.client.pages.update({
+        page_id: input.pageId,
+        properties: {
+          ...(input.newTitle
+            ? {
+                [p.title]: {
+                  type: "title" as const,
+                  title: [
+                    {
+                      type: "text" as const,
+                      text: { content: input.newTitle },
+                    },
+                  ],
+                },
+              }
+            : {}),
+          ...(input.status
+            ? {
+                [p.status]: {
+                  type: "status" as const,
+                  status: { name: input.status },
+                },
+              }
+            : {}),
+          ...(input.dueAt || clearFields.has("due_date")
+            ? {
+                [p.dueDate]: {
+                  type: "date" as const,
+                  date: input.dueAt ? { start: input.dueAt } : null,
+                },
+              }
+            : {}),
+          ...(assigneeId || clearFields.has("assignee")
+            ? {
+                [p.assignee]: {
+                  type: "people" as const,
+                  people: assigneeId ? [{ id: assigneeId }] : [],
+                },
+              }
+            : {}),
+          ...(input.priority || clearFields.has("priority")
+            ? {
+                [p.priority]: {
+                  type: "select" as const,
+                  select: input.priority ? { name: input.priority } : null,
+                },
+              }
+            : {}),
+          ...(input.taskTypes || clearFields.has("task_type")
+            ? {
+                [p.taskType]: {
+                  type: "multi_select" as const,
+                  multi_select: (input.taskTypes ?? []).map((name) => ({ name })),
+                },
+              }
+            : {}),
+        },
+      });
+      responseUrl =
+        "url" in response && typeof response.url === "string"
+          ? response.url
+          : null;
+    }
+
+    if (input.pageContentMode && input.pageContent) {
+      if (input.pageContentMode === "append") {
+        await this.client.pages.updateMarkdown({
+          page_id: input.pageId,
+          type: "insert_content",
+          insert_content: {
+            content: input.pageContent,
+            position: { type: "end" },
+          },
+        });
+      } else {
+        await this.client.pages.updateMarkdown({
+          page_id: input.pageId,
+          type: "replace_content",
+          replace_content: {
+            new_str: input.pageContent,
+            allow_deleting_content: false,
+          },
+        });
+      }
+    }
 
     this.options.logger.info(
       {
         notionPageId: input.pageId,
         taskTitle: input.title,
+        newTitle: input.newTitle,
         status: input.status,
+        dueAt: input.dueAt,
         assignee: input.assignee,
+        priority: input.priority,
+        taskTypes: input.taskTypes,
+        clearedFields: input.clearFields,
+        pageContentMode: input.pageContentMode,
+        pageContentCharacters: input.pageContent?.length ?? 0,
       },
       "Updated Notion task",
     );
     return {
       id: input.pageId,
-      url: "url" in response && typeof response.url === "string" ? response.url : null,
-      title: input.title,
+      url: responseUrl,
+      title: input.newTitle ?? input.title,
       status: input.status,
+      dueAt: input.dueAt,
       assignee: input.assignee,
+      priority: input.priority,
+      taskTypes: input.taskTypes,
+      clearedFields: input.clearFields,
+      pageContentMode: input.pageContentMode,
     };
   }
 

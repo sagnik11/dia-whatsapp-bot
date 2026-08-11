@@ -43,7 +43,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
-- Updates an exactly matched task's status and assignee.
+- Fully edits an exactly matched task's properties and page-body content.
 - Optionally reads and appends notes to one configured Notion Brain Dump page.
 - Optionally searches and reads company knowledge shared with the Notion integration.
 - Stores persistent reminders in SQLite, including advance, due-time, and repeating notifications.
@@ -205,13 +205,15 @@ Unknown names remain unassigned, but the requested name is preserved in the task
 
 ### Existing-task updates
 
-Captain Patch can update the status and assignee of one existing task. It first searches the task tracker, accepts only a page ID returned by that search in the same request, and refuses ambiguous bulk changes.
+Captain Patch can update the title, status, due date, assignee, priority, task types, and page-body content of one existing task. It first searches the task tracker, accepts only a page ID returned by that search in the same request, and refuses ambiguous bulk changes.
 
 ```text
 @patch move Feedbacks from Intern Applications from Completed to In progress and assign it to Tanvi
+@patch add the interview notes to the Feedbacks from Intern Applications task page
+@patch change the launch task priority to High and its due date to Friday
 ```
 
-Assignee changes require the name in `NOTION_ASSIGNEE_MAP_JSON`. If the task is already assigned to that person, Patch skips the redundant assignee write. The Notion integration needs **Update content** capability.
+Notes are appended by default. Patch replaces the complete task-page body only when explicitly asked to replace or rewrite it, and it will not delete nested child pages/databases during a replacement. Properties can be cleared only by an explicit request. Assignee changes require the name in `NOTION_ASSIGNEE_MAP_JSON`; redundant writes are skipped. The Notion integration needs **Update content** capability.
 
 ### Optional Brain Dump access
 
@@ -406,7 +408,7 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Group and sender allowlists are checked before AI tools are exposed.
 - The unauthorized rejection call has no Notion or web-search tools.
 - Task creation uses the strict `create_notion_task` schema; Brain Dump writes can only append a bounded note to the configured page.
-- Existing-task updates require an exact result from the same request and are limited to status and assignee.
+- Existing-task updates require an exact result from the same request; whole-page replacement must be explicit and cannot delete nested child pages or databases.
 - Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
 - Company knowledge is opt-in, read-only in the bot, and limited to one title search plus two matched resource reads per request.
 - Notion's API has no teamspace filter; the integration's Content access is the security boundary for company knowledge.

@@ -63,8 +63,15 @@ export interface TaskListResult {
 export interface TaskUpdateInput {
   pageId: string;
   title: string;
+  newTitle: string | null;
   status: string | null;
+  dueAt: string | null;
   assignee: string | null;
+  priority: string | null;
+  taskTypes: string[] | null;
+  clearFields: Array<"due_date" | "assignee" | "priority" | "task_type">;
+  pageContentMode: "append" | "replace" | null;
+  pageContent: string | null;
 }
 
 export interface TaskUpdateResult {
@@ -72,7 +79,12 @@ export interface TaskUpdateResult {
   url: string | null;
   title: string;
   status: string | null;
+  dueAt: string | null;
   assignee: string | null;
+  priority: string | null;
+  taskTypes: string[] | null;
+  clearedFields: Array<"due_date" | "assignee" | "priority" | "task_type">;
+  pageContentMode: "append" | "replace" | null;
 }
 
 export interface ReminderCreateInput {

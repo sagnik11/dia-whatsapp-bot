@@ -1,0 +1,95 @@
+test/message-routing.test.ts
+  s_4f29094a4551ec::t_44587bcb3c7927 2,35-43
+src/research-agent.ts
+  s_4f29094a4551ec::t_6c9ce1dfe97898 75,125
+src/bot.ts
+  s_4f29094a4551ec::t_6c9ce1dfe97898 19-41,150,365,377-380
+src/assistant.ts
+  s_4f29094a4551ec::t_6c9ce1dfe97898 1048,1056,1668
+test/assistant.test.ts
+  s_4f29094a4551ec::t_44587bcb3c7927 169,367,901-903
+README.md
+  s_4f29094a4551ec::t_e41dd3493b6e2e 403-404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "e81f48f1bb0ab0582c59ce8b6946962453840381",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:34a229e5312b8178d77715185344f0eb0a7cb36c85a6e4772504f26f371721c5",
+      "total_additions": 55,
+      "total_deletions": 29,
+      "accepted_lines": 55,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:34a229e5312b8178d77715185344f0eb0a7cb36c85a6e4772504f26f371721c5",
+      "stats": {
+        "total_additions": 55,
+        "total_deletions": 29,
+        "accepted_lines": 55,
+        "overriden_lines": 0,
+        "files": {
+          "README.md": {
+            "total_additions": 2,
+            "total_deletions": 0,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 3,
+            "total_deletions": 4,
+            "accepted_lines": 3,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 31,
+            "total_deletions": 2,
+            "accepted_lines": 31,
+            "overriden_lines": 0
+          },
+          "src/founder-brief.ts": {
+            "total_additions": 0,
+            "total_deletions": 1,
+            "accepted_lines": 0,
+            "overriden_lines": 0
+          },
+          "src/research-agent.ts": {
+            "total_additions": 2,
+            "total_deletions": 7,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 5,
+            "total_deletions": 14,
+            "accepted_lines": 5,
+            "overriden_lines": 0
+          },
+          "test/message-routing.test.ts": {
+            "total_additions": 12,
+            "total_deletions": 1,
+            "accepted_lines": 12,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

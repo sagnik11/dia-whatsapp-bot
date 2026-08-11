@@ -1,0 +1,186 @@
+src/types.ts
+  s_4f29094a4551ec::t_48824a916f7045 63-103
+src/bot.ts
+  s_4f29094a4551ec::t_af57ee2b3ca5be 12,29,119-121
+  s_4f29094a4551ec::t_34f73b4f5bd972 109
+docs/lightsail.md
+  s_4f29094a4551ec::t_fa9161cbf91d78 86-87,97
+test/notion.test.ts
+  s_4f29094a4551ec::t_7108aa8132a744 415-469
+  s_4f29094a4551ec::t_8eb99ef7c2089d 7,361-413
+test/scheduler.test.ts
+  s_4f29094a4551ec::t_9659424b2759ea 46
+  s_4f29094a4551ec::t_a71ada3efc60c1 1-4,6-28,30-45,47-91
+  s_4f29094a4551ec::t_29ae8656f0010c 5,29
+src/index.ts
+  s_4f29094a4551ec::t_486777de88dcb2 9-10,14-16,40,44-51,63,79,89
+src/assistant.ts
+  s_4f29094a4551ec::t_500f2e0db6efd1 13,724,887,906-907,917-927,930,932,934-936,941-945
+  s_4f29094a4551ec::t_122966f83bae8b 1196-1200
+  s_4f29094a4551ec::t_46a69ab6bd5dc4 761-769,771-821
+  s_4f29094a4551ec::t_005d6a906cd5f2 42-53,56,770
+  s_4f29094a4551ec::t_309cdb185d47fb 407-436,490-499,501-525
+  s_4f29094a4551ec::t_2e935c9bc0ca4d 7-12,14-15,35-41,54-55,57-64,165-263
+  s_4f29094a4551ec::t_ecd38ffc23846a 886,888,896-905,908-916,928-929,931,933,937-940,946-957,1169
+  s_4f29094a4551ec::t_1854d44233cd08 597,599-605,620,642-653,655,658-661,663-666,668-669,691-700,704-707
+  s_4f29094a4551ec::t_ab8c7c8f8c55a4 537
+  s_4f29094a4551ec::t_2466588a07a96e 500
+README.md
+  s_4f29094a4551ec::t_8c0dc01e112c77 408
+  s_4f29094a4551ec::t_fa9161cbf91d78 46,49-50,82,88,96-97,206-215,254-273,366-367,409,417,434-435,503,517-518
+  s_4f29094a4551ec::t_29ae8656f0010c 274,436
+test/reminder-store.test.ts
+  s_4f29094a4551ec::t_a71ada3efc60c1 1-109
+.env.example
+  s_4f29094a4551ec::t_fa9161cbf91d78 31-34
+src/scheduler.ts
+  s_4f29094a4551ec::t_58e91a698f3d86 26-35,49,183-184
+  s_4f29094a4551ec::t_2466588a07a96e 60,63,67
+  s_4f29094a4551ec::t_34f73b4f5bd972 83,92,95,98,102,176-178,180-182,185-186
+  s_4f29094a4551ec::t_d8b132c46d8a66 105-110,116,135,141
+  s_4f29094a4551ec::t_7e5b7b7f72d367 1-25,36-48,50-54,56-57,59,61-62,74,77-82,84-91,93-94,96-97,99-101,103-104,111-115,117-134,136-140,142-154,157-159,161-165,167-175,187-188
+  s_4f29094a4551ec::t_005d6a906cd5f2 179
+  s_4f29094a4551ec::t_29ae8656f0010c 55,58,64-66,68-73,75-76,155-156,160,166
+src/reminder-store.ts
+  s_4f29094a4551ec::t_62797e98aeb914 81-82
+  s_4f29094a4551ec::t_48824a916f7045 1-80,83-138,145-215
+  s_4f29094a4551ec::t_1acee1c6ba5d5a 139-144
+test/assistant.test.ts
+  s_4f29094a4551ec::t_c6781c92c1b7e9 5-7,13,46-62,564-652,654-729
+  s_4f29094a4551ec::t_7e76280c21d8f5 653
+src/notion.ts
+  s_4f29094a4551ec::t_29ae8656f0010c 620,622-650,653,656
+  s_4f29094a4551ec::t_f8bde55b3951b8 19-20,182-193,521-579,619,621,652,654-655
+src/config.ts
+  s_4f29094a4551ec::t_486777de88dcb2 42-43,63-74,98-99,102-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "d451e42fbfacc8351ece775f6b81dd90ee118d8b",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:8eee7ae8b69bb73f04552eb40db0c1fd4a21faa1086c0cd3df3d353ac9f08330",
+      "total_additions": 1632,
+      "total_deletions": 110,
+      "accepted_lines": 1553,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:8eee7ae8b69bb73f04552eb40db0c1fd4a21faa1086c0cd3df3d353ac9f08330",
+      "stats": {
+        "total_additions": 1632,
+        "total_deletions": 110,
+        "accepted_lines": 1553,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 4,
+            "total_deletions": 0,
+            "accepted_lines": 4,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 52,
+            "total_deletions": 4,
+            "accepted_lines": 50,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 4,
+            "total_deletions": 0,
+            "accepted_lines": 4,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 403,
+            "total_deletions": 28,
+            "accepted_lines": 392,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 8,
+            "total_deletions": 1,
+            "accepted_lines": 7,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 21,
+            "total_deletions": 10,
+            "accepted_lines": 21,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 17,
+            "total_deletions": 1,
+            "accepted_lines": 17,
+            "overriden_lines": 0
+          },
+          "src/notion.ts": {
+            "total_additions": 136,
+            "total_deletions": 24,
+            "accepted_lines": 113,
+            "overriden_lines": 0
+          },
+          "src/reminder-store.ts": {
+            "total_additions": 216,
+            "total_deletions": 1,
+            "accepted_lines": 215,
+            "overriden_lines": 0
+          },
+          "src/scheduler.ts": {
+            "total_additions": 224,
+            "total_deletions": 36,
+            "accepted_lines": 188,
+            "overriden_lines": 0
+          },
+          "src/types.ts": {
+            "total_additions": 41,
+            "total_deletions": 0,
+            "accepted_lines": 41,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 191,
+            "total_deletions": 1,
+            "accepted_lines": 190,
+            "overriden_lines": 0
+          },
+          "test/notion.test.ts": {
+            "total_additions": 111,
+            "total_deletions": 0,
+            "accepted_lines": 111,
+            "overriden_lines": 0
+          },
+          "test/reminder-store.test.ts": {
+            "total_additions": 109,
+            "total_deletions": 0,
+            "accepted_lines": 109,
+            "overriden_lines": 0
+          },
+          "test/scheduler.test.ts": {
+            "total_additions": 95,
+            "total_deletions": 4,
+            "accepted_lines": 91,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

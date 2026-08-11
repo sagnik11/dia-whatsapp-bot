@@ -6,10 +6,14 @@ import { ContextBuffer } from "./context-buffer.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { createLogger } from "./logger.js";
 import { NotionTaskService } from "./notion.js";
+import { ReminderStore } from "./reminder-store.js";
+import { ProactiveScheduler } from "./scheduler.js";
 import { TavilyWebSearchService } from "./web-search.js";
 
 const logger = createLogger(config.logLevel);
-const dedupe = new DedupeStore(join(config.dataDir, "dia.sqlite"));
+const databasePath = join(config.dataDir, "dia.sqlite");
+const dedupe = new DedupeStore(databasePath);
+const reminders = new ReminderStore(databasePath);
 const notion = new NotionTaskService({
   apiKey: config.notionApiKey,
   dataSourceId: config.notionDataSourceId,
@@ -33,7 +37,16 @@ const assistant = new DiaAssistant({
   botName: config.botName,
   timezone: config.timezone,
   notion,
+  reminders,
   ...(webSearch ? { webSearch } : {}),
+  logger,
+});
+const scheduler = new ProactiveScheduler({
+  reminders,
+  notion,
+  digestGroupIds: config.taskDigestGroupIds,
+  digestIntervalHours: config.taskDigestIntervalHours,
+  timezone: config.timezone,
   logger,
 });
 const bot = new WhatsAppBot({
@@ -47,6 +60,7 @@ const bot = new WhatsAppBot({
   botTrigger: config.botTrigger,
   dataDir: config.dataDir,
   listGroupsOnStart: config.listGroupsOnStart,
+  scheduler,
   ...(config.puppeteerExecutablePath
     ? { puppeteerExecutablePath: config.puppeteerExecutablePath }
     : {}),
@@ -62,6 +76,7 @@ async function shutdown(signal: string): Promise<void> {
     logger.error({ error }, "Failed to close WhatsApp client cleanly");
   });
   dedupe.close();
+  reminders.close();
   process.exit(0);
 }
 
@@ -71,5 +86,6 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 bot.start().catch((error: unknown) => {
   logger.fatal({ error }, `${config.botName} failed to start`);
   dedupe.close();
+  reminders.close();
   process.exitCode = 1;
 });

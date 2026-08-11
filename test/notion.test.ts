@@ -4,6 +4,7 @@ import {
   boundBrainDumpMarkdown,
   brainDumpAppendMarkdown,
   buildTaskQueryFilter,
+  isIncompleteTaskStatus,
   resolveAssigneeId,
   taskSummaryFromPage,
 } from "../src/notion.js";
@@ -355,5 +356,115 @@ describe("Notion company knowledge", () => {
       result_type: "page",
       sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
     });
+  });
+});
+
+describe("Notion task updates and digests", () => {
+  it("updates only the requested status and mapped assignee", async () => {
+    const update = vi.fn().mockResolvedValue({
+      object: "page",
+      id: "task-page",
+      url: "https://notion.so/task-page",
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: { tanvi: "tanvi-user-id" },
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { update } },
+    });
+
+    await expect(
+      service.updateTask({
+        pageId: "task-page",
+        title: "Feedbacks from Intern Applications",
+        status: "In progress",
+        assignee: "Tanvi",
+      }),
+    ).resolves.toEqual({
+      id: "task-page",
+      url: "https://notion.so/task-page",
+      title: "Feedbacks from Intern Applications",
+      status: "In progress",
+      assignee: "Tanvi",
+    });
+    expect(update).toHaveBeenCalledWith({
+      page_id: "task-page",
+      properties: {
+        Status: { type: "status", status: { name: "In progress" } },
+        Assignee: { type: "people", people: [{ id: "tanvi-user-id" }] },
+      },
+    });
+  });
+
+  it.each([
+    ["Not started", true],
+    ["In progress", true],
+    [null, true],
+    ["Completed", false],
+    ["Done", false],
+    ["Cancelled", false],
+  ])("classifies task status %s as incomplete=%s", (status, expected) => {
+    expect(isIncompleteTaskStatus(status)).toBe(expected);
+  });
+
+  it("paginates the tracker and returns every incomplete task", async () => {
+    const taskPage = (id: string, title: string, status: string) => ({
+      object: "page",
+      id,
+      url: `https://notion.so/${id}`,
+      properties: {
+        "Task name": { type: "title", title: [{ plain_text: title }] },
+        Status: { type: "status", status: { name: status } },
+        "Due date": { type: "date", date: null },
+        Assignee: { type: "people", people: [] },
+        Priority: { type: "select", select: null },
+        "Task type": { type: "multi_select", multi_select: [] },
+      },
+    });
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          taskPage("open-1", "Open task", "Not started"),
+          taskPage("done-1", "Finished task", "Completed"),
+        ],
+        has_more: true,
+        next_cursor: "next-page",
+      })
+      .mockResolvedValueOnce({
+        results: [taskPage("open-2", "Ongoing task", "In progress")],
+        has_more: false,
+        next_cursor: null,
+      });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { dataSources: { query } },
+    });
+
+    await expect(service.listIncompleteTasks()).resolves.toMatchObject({
+      tasks: [
+        { id: "open-1", title: "Open task" },
+        { id: "open-2", title: "Ongoing task" },
+      ],
+      hasMore: false,
+    });
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ start_cursor: "next-page" }),
+    );
   });
 });

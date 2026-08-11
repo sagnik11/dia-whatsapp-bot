@@ -43,8 +43,11 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
+- Updates an exactly matched task's status and assignee.
 - Optionally reads and appends notes to one configured Notion Brain Dump page.
 - Optionally searches and reads company knowledge shared with the Notion integration.
+- Stores persistent reminders in SQLite, including advance, due-time, and repeating notifications.
+- Optionally posts an incomplete-task digest from Notion on a persistent interval.
 - Optionally performs one bounded Tavily search and returns source URLs.
 - Keeps a short in-memory group context window for follow-up questions.
 - Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
@@ -76,17 +79,21 @@ flowchart LR
     A --> Q["Normal WhatsApp answer"]
     A --> N1["Create Notion task"]
     A --> N2["Read Notion tasks"]
+    A --> N5["Update matched Notion task"]
     A --> N3["Read or append Brain Dump"]
     A --> N4["Search/read company Notion"]
     A --> S["One Tavily web search"]
     N1 --> O["WhatsApp response"]
     N2 --> O
+    N5 --> O
     N3 --> O
     N4 --> O
     S --> O
 ```
 
 Authorization happens before the assistant receives access to Notion or web search. An empty sender allowlist fails closed.
+
+The linked WhatsApp client also runs a small scheduler. It reads due reminders and digest state from SQLite, then sends proactive messages into configured groups without calling the AI model.
 
 ## Requirements
 
@@ -196,6 +203,16 @@ NOTION_ASSIGNEE_MAP_JSON={"sagnik":"user-id-1","tanvi":"user-id-2"}
 
 Unknown names remain unassigned, but the requested name is preserved in the task page body.
 
+### Existing-task updates
+
+Captain Patch can update the status and assignee of one existing task. It first searches the task tracker, accepts only a page ID returned by that search in the same request, and refuses ambiguous bulk changes.
+
+```text
+@patch move Feedbacks from Intern Applications from Completed to In progress and assign it to Tanvi
+```
+
+Assignee changes require the name in `NOTION_ASSIGNEE_MAP_JSON`. If the task is already assigned to that person, Patch skips the redundant assignee write. The Notion integration needs **Update content** capability.
+
 ### Optional Brain Dump access
 
 To let Captain Patch answer questions from one Notion page, add the same internal integration as a connection to that page and set:
@@ -233,6 +250,28 @@ Examples:
 @patch what does our Notion say about expenses?
 @patch summarize the latest weekly product update from company knowledge
 ```
+
+## Reminders and proactive task digests
+
+Reminders are stored in the same persistent SQLite file as message deduplication, so container rebuilds and restarts do not erase them. By default Patch asks the model to schedule an advance notification ten minutes before the due time and another when due. Repetition is added only when explicitly requested and continues until cancelled.
+
+```text
+@patch remind me to send the investor update tomorrow at 4 PM
+@patch remind me every 30 minutes after 6 PM to check the launch
+@patch show my reminders
+@patch cancel reminder 12
+```
+
+The reminder confirmation includes its numeric ID. A reminder belongs to the WhatsApp group where it was created, and cancellation is limited to that group.
+
+The incomplete-task digest is disabled by default. To send one immediately after first startup and then every four hours:
+
+```dotenv
+TASK_DIGEST_INTERVAL_HOURS=4
+TASK_DIGEST_GROUP_IDS=120363000000000000@g.us
+```
+
+If `TASK_DIGEST_GROUP_IDS` is empty, it uses `ALLOWED_GROUP_IDS`. The digest excludes statuses commonly treated as terminal (`Complete`, `Completed`, `Done`, `Cancelled`, `Canceled`, and `Archived`), includes due dates and assignees, paginates through the tracker, and splits long digests across WhatsApp messages. Its next delivery time is persisted in SQLite, so a restart does not restart the four-hour clock.
 
 ## Find group and sender IDs
 
@@ -324,6 +363,8 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AUTHORIZED_USER_IDS` | Yes for use | Empty | Comma-separated owner IDs; empty blocks everyone. |
 | `UNAUTHORIZED_REPLY` | No | Harbour-themed fallback | Used only if AI rejection generation fails. |
 | `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages retained in memory; `0` disables context. Maximum `20`. |
+| `TASK_DIGEST_INTERVAL_HOURS` | No | `0` | Incomplete-task digest interval; `0` disables it. Use `4` for four-hour digests. |
+| `TASK_DIGEST_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Optional comma-separated proactive digest destinations. |
 | `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. Disable after configuration. |
 | `DATA_DIR` | No | `.data` | WhatsApp session and SQLite directory outside Docker. |
 | `LOG_LEVEL` | No | `info` | Pino log level such as `debug`, `info`, or `warn`. |
@@ -364,7 +405,8 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Authorization uses WhatsApp sender IDs, not editable profile names.
 - Group and sender allowlists are checked before AI tools are exposed.
 - The unauthorized rejection call has no Notion or web-search tools.
-- Task writes use the strict `create_notion_task` schema; Brain Dump writes can only append a bounded note to the configured page.
+- Task creation uses the strict `create_notion_task` schema; Brain Dump writes can only append a bounded note to the configured page.
+- Existing-task updates require an exact result from the same request and are limited to status and assignee.
 - Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
 - Company knowledge is opt-in, read-only in the bot, and limited to one title search plus two matched resource reads per request.
 - Notion's API has no teamspace filter; the integration's Content access is the security boundary for company knowledge.
@@ -372,6 +414,7 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
 - Triggered message bodies, resolved sender IDs, and outgoing replies are written to application logs.
+- Reminder text, schedules, requester IDs, group IDs, and digest schedule state are stored in the SQLite database.
 - The Docker volume contains a reusable WhatsApp linked-device session and must be treated as sensitive.
 - `.env`, `.data`, WhatsApp auth directories, logs, and build output are excluded by `.gitignore`.
 
@@ -388,6 +431,9 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - Notion is required at startup even if you only want ordinary AI answers.
 - Notion task property types and select options are currently fixed in code.
 - Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
+- Reminder delivery is at-least-once: a crash after WhatsApp accepts a message but before SQLite advances it can cause one duplicate notification.
+- Repeating reminders continue until explicitly cancelled; the bot cannot infer that the underlying real-world action was completed.
+- The task digest recognizes a fixed set of terminal status names; customize `isIncompleteTaskStatus` if your tracker uses different completion labels.
 - Company knowledge search matches titles, not arbitrary page-body text, and database reads return only the five most recently edited rows before an individual row is opened.
 - Context is in-memory and is lost when the process restarts.
 - SQLite and local session storage assume a single bot process, not horizontal scaling.
@@ -454,7 +500,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, Notion query filters, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, task confirmations, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates, persistent reminders, proactive scheduling, incomplete-task digests, Notion query filters, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, task confirmations, and Tavily request bounds.
 
 ## Project structure
 
@@ -468,6 +514,8 @@ src/
 ├── context-buffer.ts     Bounded in-memory group context
 ├── dedupe-store.ts       SQLite message deduplication
 ├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
+├── reminder-store.ts     Persistent reminder and scheduler state
+├── scheduler.ts          Proactive reminder and task-digest delivery
 └── web-search.ts         Bounded Tavily search service
 
 docs/lightsail.md         Production VPS deployment guide

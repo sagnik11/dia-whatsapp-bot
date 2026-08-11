@@ -60,6 +60,47 @@ export interface TaskListResult {
   hasMore: boolean;
 }
 
+export interface TaskUpdateInput {
+  pageId: string;
+  title: string;
+  status: string | null;
+  assignee: string | null;
+}
+
+export interface TaskUpdateResult {
+  id: string;
+  url: string | null;
+  title: string;
+  status: string | null;
+  assignee: string | null;
+}
+
+export interface ReminderCreateInput {
+  groupId: string;
+  requestedBy: string;
+  requestedById: string;
+  sourceMessageId: string;
+  message: string;
+  dueAt: string;
+  notifyBeforeMinutes: number;
+  repeatEveryMinutes: number | null;
+}
+
+export type ReminderPhase = "pre_due" | "due" | "repeat";
+
+export interface ReminderRecord {
+  id: number;
+  groupId: string;
+  requestedBy: string;
+  requestedById: string;
+  message: string;
+  dueAt: string;
+  notifyBeforeMinutes: number;
+  repeatEveryMinutes: number | null;
+  nextFireAt: string;
+  phase: ReminderPhase;
+}
+
 export interface BrainDumpResult {
   pageId: string;
   markdown: string;

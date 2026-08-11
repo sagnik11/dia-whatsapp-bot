@@ -16,6 +16,8 @@ import type {
   TaskResult,
   TaskSource,
   TaskSummary,
+  TaskUpdateInput,
+  TaskUpdateResult,
 } from "./types.js";
 
 export interface NotionPropertyNames {
@@ -175,6 +177,18 @@ export function resolveAssigneeId(
     return defaultAssigneeId;
   }
   return assigneeMap[assignee.trim().toLowerCase()];
+}
+
+export function isIncompleteTaskStatus(status: string | null): boolean {
+  if (!status) return true;
+  return ![
+    "complete",
+    "completed",
+    "done",
+    "cancelled",
+    "canceled",
+    "archived",
+  ].includes(status.trim().toLowerCase());
 }
 
 function pageMarkdown(input: TaskInput, source: TaskSource): string {
@@ -504,6 +518,65 @@ export class NotionTaskService {
     };
   }
 
+  public async updateTask(input: TaskUpdateInput): Promise<TaskUpdateResult> {
+    if (!input.status && !input.assignee) {
+      throw new Error("A task update must include a status or assignee");
+    }
+
+    const p = this.options.properties;
+    const assigneeId = input.assignee
+      ? resolveAssigneeId(
+          input.assignee,
+          this.options.defaultAssigneeId,
+          this.options.assigneeMap,
+        )
+      : undefined;
+    if (input.assignee && !assigneeId) {
+      throw new Error(
+        `No Notion user ID is configured for assignee ${input.assignee}`,
+      );
+    }
+
+    const response = await this.client.pages.update({
+      page_id: input.pageId,
+      properties: {
+        ...(input.status
+          ? {
+              [p.status]: {
+                type: "status" as const,
+                status: { name: input.status },
+              },
+            }
+          : {}),
+        ...(assigneeId
+          ? {
+              [p.assignee]: {
+                type: "people" as const,
+                people: [{ id: assigneeId }],
+              },
+            }
+          : {}),
+      },
+    });
+
+    this.options.logger.info(
+      {
+        notionPageId: input.pageId,
+        taskTitle: input.title,
+        status: input.status,
+        assignee: input.assignee,
+      },
+      "Updated Notion task",
+    );
+    return {
+      id: input.pageId,
+      url: "url" in response && typeof response.url === "string" ? response.url : null,
+      title: input.title,
+      status: input.status,
+      assignee: input.assignee,
+    };
+  }
+
   public async listTasks(input: TaskQuery): Promise<TaskListResult> {
     const p = this.options.properties;
     const filter = buildTaskQueryFilter(input, p);
@@ -542,5 +615,44 @@ export class NotionTaskService {
     );
 
     return { tasks, hasMore: response.has_more };
+  }
+
+  public async listIncompleteTasks(): Promise<TaskListResult> {
+    const p = this.options.properties;
+    const tasks: TaskSummary[] = [];
+    let cursor: string | undefined;
+    let rowCount = 0;
+    do {
+      const response = await this.client.dataSources.query({
+        data_source_id: this.options.dataSourceId,
+        page_size: 100,
+        result_type: "page",
+        filter_properties: [
+          p.title,
+          p.status,
+          p.dueDate,
+          p.assignee,
+          p.priority,
+          p.taskType,
+        ],
+        sorts: [{ property: p.dueDate, direction: "ascending" }],
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
+      const pageTasks = response.results
+        .filter(
+          (result): result is PageObjectResponse =>
+            result.object === "page" && "properties" in result,
+        )
+        .map((page) => taskSummaryFromPage(page, p));
+      rowCount += pageTasks.length;
+      tasks.push(...pageTasks.filter((task) => isIncompleteTaskStatus(task.status)));
+      cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+    } while (cursor);
+
+    this.options.logger.info(
+      { count: tasks.length, rowCount },
+      "Read incomplete Notion tasks for digest",
+    );
+    return { tasks, hasMore: false };
   }
 }

@@ -9,6 +9,7 @@ import type { ContextBuffer } from "./context-buffer.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
 import { serializeMessageId } from "./message-id.js";
+import type { ProactiveScheduler } from "./scheduler.js";
 import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
 const { Client, LocalAuth } = whatsapp;
@@ -25,6 +26,7 @@ interface BotOptions {
   botTrigger: string;
   dataDir: string;
   listGroupsOnStart: boolean;
+  scheduler?: ProactiveScheduler;
   puppeteerExecutablePath?: string;
   logger: Logger;
 }
@@ -104,6 +106,7 @@ export class WhatsAppBot {
   }
 
   public async stop(): Promise<void> {
+    await this.options.scheduler?.stop();
     await this.client.destroy();
   }
 
@@ -112,6 +115,10 @@ export class WhatsAppBot {
       { botId: this.client.info.wid._serialized },
       `${this.options.botName} is connected to WhatsApp`,
     );
+
+    this.options.scheduler?.start(async (groupId, output) => {
+      await this.client.sendMessage(groupId, output);
+    });
 
     if (!this.options.listGroupsOnStart) {
       return;

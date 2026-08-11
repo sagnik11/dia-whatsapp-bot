@@ -39,6 +39,8 @@ const schema = z.object({
     .min(1)
     .default("Harbour's closed — only Autter's founders get the command deck. ⚓"),
   CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
+  TASK_DIGEST_INTERVAL_HOURS: z.coerce.number().min(0).max(168).default(0),
+  TASK_DIGEST_GROUP_IDS: z.string().default(""),
   LIST_GROUPS_ON_START: z
     .enum(["true", "false"])
     .default("true")
@@ -57,6 +59,18 @@ function parseAssigneeMap(value: string): Readonly<Record<string, string>> {
     Object.entries(validated).map(([name, id]) => [name.trim().toLowerCase(), id.trim()]),
   );
 }
+
+function parseIdSet(value: string): ReadonlySet<string> {
+  return new Set(
+    value
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+}
+
+const allowedGroupIds = parseIdSet(env.ALLOWED_GROUP_IDS);
+const configuredDigestGroupIds = parseIdSet(env.TASK_DIGEST_GROUP_IDS);
 
 export const config = {
   aiGatewayApiKey: env.AI_GATEWAY_API_KEY,
@@ -81,18 +95,15 @@ export const config = {
   botName: env.BOT_NAME,
   botTrigger: env.BOT_TRIGGER,
   timezone: env.TIMEZONE,
-  allowedGroupIds: new Set(
-    env.ALLOWED_GROUP_IDS.split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  ),
-  authorizedUserIds: new Set(
-    env.AUTHORIZED_USER_IDS.split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  ),
+  allowedGroupIds,
+  authorizedUserIds: parseIdSet(env.AUTHORIZED_USER_IDS),
   unauthorizedReply: env.UNAUTHORIZED_REPLY,
   contextMessageLimit: env.CONTEXT_MESSAGE_LIMIT,
+  taskDigestIntervalHours: env.TASK_DIGEST_INTERVAL_HOURS,
+  taskDigestGroupIds:
+    configuredDigestGroupIds.size > 0
+      ? configuredDigestGroupIds
+      : allowedGroupIds,
   listGroupsOnStart: env.LIST_GROUPS_ON_START,
   dataDir: env.DATA_DIR,
   logLevel: env.LOG_LEVEL,

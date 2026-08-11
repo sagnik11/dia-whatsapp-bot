@@ -2,11 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DiaAssistant,
   formatTaskConfirmation,
+  isExplicitReminderCancelRequest,
+  isExplicitReminderCreateRequest,
+  isExplicitReminderListRequest,
   isExplicitBrainDumpAppendRequest,
   isExplicitBrainDumpRequest,
   isExplicitKnowledgeRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
+  isExplicitTaskUpdateRequest,
   isExplicitWebSearchRequest,
 } from "../src/assistant.js";
 
@@ -36,6 +40,23 @@ describe("isExplicitTaskReadRequest", () => {
 
   it("does not read Notion for a planning question", () => {
     expect(isExplicitTaskReadRequest("what tasks should I add next?")).toBe(false);
+  });
+});
+
+describe("task and reminder command detection", () => {
+  it("detects an existing-task update", () => {
+    expect(
+      isExplicitTaskUpdateRequest(
+        "shift the intern feedback task from completed to in progress and assign it to Tanvi",
+      ),
+    ).toBe(true);
+  });
+
+  it("detects reminder creation, listing, and cancellation", () => {
+    expect(isExplicitReminderCreateRequest("remind me to send the proposal at 4"))
+      .toBe(true);
+    expect(isExplicitReminderListRequest("show my reminders")).toBe(true);
+    expect(isExplicitReminderCancelRequest("cancel reminder 4")).toBe(true);
   });
 });
 
@@ -537,6 +558,175 @@ describe("DiaAssistant Notion knowledge", () => {
       type: "function_call_output",
       call_id: "unmatched-read",
       output: expect.stringContaining("not returned by the Notion knowledge search"),
+    });
+  });
+});
+
+describe("DiaAssistant task updates", () => {
+  it("looks up an exact task before changing its status and assignee", async () => {
+    const listTasks = vi.fn().mockResolvedValue({
+      tasks: [
+        {
+          id: "task-page",
+          url: "https://notion.so/task-page",
+          title: "Feedbacks from Intern Applications",
+          status: "Completed",
+          dueAt: null,
+          assignees: ["Tanvi Bhole"],
+          priority: null,
+          taskTypes: [],
+        },
+      ],
+      hasMore: false,
+    });
+    const updateTask = vi.fn().mockResolvedValue({
+      id: "task-page",
+      url: "https://notion.so/task-page",
+      title: "Feedbacks from Intern Applications",
+      status: "In progress",
+      assignee: "Tanvi",
+    });
+    const responsesCreate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "list_notion_tasks",
+            call_id: "task-search",
+            arguments: JSON.stringify({
+              title_contains: "Feedbacks from Intern Applications",
+              status: null,
+              due_from: null,
+              due_to: null,
+              limit: 10,
+            }),
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "update_notion_task",
+            call_id: "task-update",
+            arguments: JSON.stringify({
+              page_id: "task-page",
+              title: "Feedbacks from Intern Applications",
+              status: "In progress",
+              assignee: "Tanvi",
+            }),
+          },
+        ],
+        output_text: "",
+      });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: { listTasks, updateTask } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-update",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "shift the intern feedback task from completed to in progress and assign it to Tanvi",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("✅ Updated task: Feedbacks from Intern Applications");
+    expect(updateTask).toHaveBeenCalledWith({
+      pageId: "task-page",
+      title: "Feedbacks from Intern Applications",
+      status: "In progress",
+      assignee: null,
+    });
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "list_notion_tasks" },
+    });
+  });
+});
+
+describe("DiaAssistant reminders", () => {
+  it("creates a persistent reminder with advance and due notifications", async () => {
+    const create = vi.fn().mockReturnValue({
+      id: 12,
+      groupId: "group@g.us",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      message: "Send the proposal",
+      dueAt: "2026-08-11T11:30:00.000Z",
+      notifyBeforeMinutes: 10,
+      repeatEveryMinutes: null,
+      nextFireAt: "2026-08-11T11:20:00.000Z",
+      phase: "pre_due",
+    });
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [
+        {
+          type: "function_call",
+          name: "create_reminder",
+          call_id: "reminder-create",
+          arguments: JSON.stringify({
+            message: "Send the proposal",
+            due_at: "2026-08-11T17:00:00+05:30",
+            notify_before_minutes: 10,
+            repeat_every_minutes: null,
+          }),
+        },
+      ],
+      output_text: "",
+    });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {} as never,
+      reminders: { create } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-reminder",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "remind me to send the proposal at 5 PM",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toContain("⏰ Reminder #12 set");
+    expect(reply).toContain("10 min before, when due");
+    expect(create).toHaveBeenCalledWith({
+      groupId: "group@g.us",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      sourceMessageId: "message-reminder",
+      message: "Send the proposal",
+      dueAt: "2026-08-11T17:00:00+05:30",
+      notifyBeforeMinutes: 10,
+      repeatEveryMinutes: null,
+    });
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "create_reminder" },
     });
   });
 });

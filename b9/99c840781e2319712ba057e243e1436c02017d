@@ -1,0 +1,127 @@
+test/assistant.test.ts
+  s_4f29094a4551ec::t_d4d0ed10fef135 7,97-110,396-485
+  s_4f29094a4551ec::t_34ea0d195b67ba 488-541
+src/assistant.ts
+  s_4f29094a4551ec::t_7162a3054c4186 638-751,801-802
+  s_4f29094a4551ec::t_2d46a28ed733ad 41-50,170-218,298-303,396-405,435-441,447,458-459,469-471,479-481,483
+  s_4f29094a4551ec::t_34ea0d195b67ba 445
+README.md
+  s_4f29094a4551ec::t_4c68c2265ecd02 47,80,207,217-236,309,369-370,391,457,470
+  s_4f29094a4551ec::t_be8a86eb333666 84-85
+src/notion.ts
+  s_4f29094a4551ec::t_b21b899aba62be 1-5,11-12,59,68-72,78-105,107-119,121-147,149-153,289-362,364-383
+  s_4f29094a4551ec::t_b7849412a04787 73-77,106,120,148,363
+src/types.ts
+  s_4f29094a4551ec::t_0d808cf100119a 79-116
+test/notion.test.ts
+  s_4f29094a4551ec::t_34ea0d195b67ba 303-358
+  s_4f29094a4551ec::t_d4d0ed10fef135 206-302,359
+docs/lightsail.md
+  s_4f29094a4551ec::t_4c68c2265ecd02 83,93
+src/config.ts
+  s_4f29094a4551ec::t_0d808cf100119a 18-21,68
+src/index.ts
+  s_4f29094a4551ec::t_0d808cf100119a 19
+.env.example
+  s_4f29094a4551ec::t_0d808cf100119a 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "b999c840781e2319712ba057e243e1436c02017d",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:b37208fc74288938b2dc7ccd154c62641677ea57acba91b126a1804c2a91ccec",
+      "total_additions": 803,
+      "total_deletions": 12,
+      "accepted_lines": 797,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:b37208fc74288938b2dc7ccd154c62641677ea57acba91b126a1804c2a91ccec",
+      "stats": {
+        "total_additions": 803,
+        "total_deletions": 12,
+        "accepted_lines": 797,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 2,
+            "total_deletions": 0,
+            "accepted_lines": 2,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 31,
+            "total_deletions": 3,
+            "accepted_lines": 31,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 3,
+            "total_deletions": 0,
+            "accepted_lines": 3,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 210,
+            "total_deletions": 2,
+            "accepted_lines": 210,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 5,
+            "total_deletions": 0,
+            "accepted_lines": 5,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 1,
+            "total_deletions": 0,
+            "accepted_lines": 1,
+            "overriden_lines": 0
+          },
+          "src/notion.ts": {
+            "total_additions": 197,
+            "total_deletions": 7,
+            "accepted_lines": 191,
+            "overriden_lines": 0
+          },
+          "src/types.ts": {
+            "total_additions": 38,
+            "total_deletions": 0,
+            "accepted_lines": 38,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 162,
+            "total_deletions": 0,
+            "accepted_lines": 162,
+            "overriden_lines": 0
+          },
+          "test/notion.test.ts": {
+            "total_additions": 154,
+            "total_deletions": 0,
+            "accepted_lines": 154,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,91 @@
+test/notion.test.ts
+  s_4f29094a4551ec::t_3572d1928764a1 363,369-375,386,393,395,397-401,406,408,410-413,418-426,428,430-497
+README.md
+  s_4f29094a4551ec::t_45bb2c365365b9 46,208,212-213,216,411
+src/notion.ts
+  s_4f29094a4551ec::t_94806f9dd72d42 522-545,561-647,653,655,657-661,667-668,670,672-675
+test/assistant.test.ts
+  s_4f29094a4551ec::t_e4705799e8c957 592,594-597,626-627,629,631-635,669,671,673-677
+  s_4f29094a4551ec::t_45bb2c365365b9 53-57,571
+src/assistant.ts
+  s_4f29094a4551ec::t_c8603181122aab 980,983,992-994,998-1017,1019-1029,1034,1036,1042-1049,1051-1052,1058
+  s_4f29094a4551ec::t_fda9924a9d6c28 37-38,40,42-48,178,187,191-194,199-203,209-239,241-253,470,473,658-659
+src/types.ts
+  s_4f29094a4551ec::t_7783db7b2e5ff8 66,68,70-74,82,84-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "207a7257e0dc4bf39e7366d2bc9daddbdf49e03b",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:1947a6095de12d98295bea29026b9a245688ba369c50ee75061c51711f7484ed",
+      "total_additions": 387,
+      "total_deletions": 48,
+      "accepted_lines": 387,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:1947a6095de12d98295bea29026b9a245688ba369c50ee75061c51711f7484ed",
+      "stats": {
+        "total_additions": 387,
+        "total_deletions": 48,
+        "accepted_lines": 387,
+        "overriden_lines": 0,
+        "files": {
+          "README.md": {
+            "total_additions": 6,
+            "total_deletions": 4,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 118,
+            "total_deletions": 13,
+            "accepted_lines": 118,
+            "overriden_lines": 0
+          },
+          "src/notion.ts": {
+            "total_additions": 125,
+            "total_deletions": 26,
+            "accepted_lines": 125,
+            "overriden_lines": 0
+          },
+          "src/types.ts": {
+            "total_additions": 12,
+            "total_deletions": 0,
+            "accepted_lines": 12,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 26,
+            "total_deletions": 2,
+            "accepted_lines": 26,
+            "overriden_lines": 0
+          },
+          "test/notion.test.ts": {
+            "total_additions": 100,
+            "total_deletions": 3,
+            "accepted_lines": 100,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,150 @@
+test/memory.test.ts
+  s_4f29094a4551ec::t_13462fc3d566d0 1-153
+test/assistant.test.ts
+  s_4f29094a4551ec::t_13462fc3d566d0 347-402
+.env.example
+  s_4f29094a4551ec::t_cc5e53d5bf090e 7-17
+README.md
+  s_4f29094a4551ec::t_cc5e53d5bf090e 46,90-91,118-119,153,155-156,192-243,542-548,740,755
+  s_4f29094a4551ec::t_277cd88bc61b63 151-152,154,244,604-606,609,637-638,689,692-693,707-717
+compose.yaml
+  s_4f29094a4551ec::t_2e5fa5421bbab9 53-87,89-93,97
+  s_4f29094a4551ec::t_77a27bb33d6d7d 88
+docs/lightsail.md
+  s_4f29094a4551ec::t_277cd88bc61b63 10,188,242,245,253-254,257,268-272
+  s_4f29094a4551ec::t_cc5e53d5bf090e 103-107,118-143,193-194,196,201
+src/assistant.ts
+  s_4f29094a4551ec::t_1b3df9ab553ef2 6,14,999,1051,1058-1064,1134,2140-2143,2163-2180,2191-2192
+src/bot.ts
+  s_4f29094a4551ec::t_1b3df9ab553ef2 11,56,351,362,364
+  s_4f29094a4551ec::t_2e5fa5421bbab9 15,352-361,370-374,384-388
+src/memory.ts
+  s_4f29094a4551ec::t_62b28462524dee 1-15,21-37,39-116,118-123,125-156
+  s_4f29094a4551ec::t_2e5fa5421bbab9 16-20,38,117,124
+src/types.ts
+  s_4f29094a4551ec::t_62b28462524dee 19-24
+src/config.ts
+  s_4f29094a4551ec::t_62b28462524dee 21-41,101-112,144-150
+src/index.ts
+  s_4f29094a4551ec::t_1b3df9ab553ef2 10,23-34,78,133
+Dockerfile
+  s_4f29094a4551ec::t_2e5fa5421bbab9 26-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "80564f45e2021c301eb2f495681628cb662db059",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:cde4157ad7b2b8d7d4a176521c993f0f09f7e04c8aaf34e9b4c841b24d2c6687",
+      "total_additions": 712,
+      "total_deletions": 44,
+      "accepted_lines": 701,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:cde4157ad7b2b8d7d4a176521c993f0f09f7e04c8aaf34e9b4c841b24d2c6687",
+      "stats": {
+        "total_additions": 712,
+        "total_deletions": 44,
+        "accepted_lines": 701,
+        "overriden_lines": 0,
+        "files": {
+          ".env.example": {
+            "total_additions": 11,
+            "total_deletions": 0,
+            "accepted_lines": 11,
+            "overriden_lines": 0
+          },
+          "Dockerfile": {
+            "total_additions": 16,
+            "total_deletions": 0,
+            "accepted_lines": 16,
+            "overriden_lines": 0
+          },
+          "README.md": {
+            "total_additions": 98,
+            "total_deletions": 11,
+            "accepted_lines": 94,
+            "overriden_lines": 0
+          },
+          "compose.yaml": {
+            "total_additions": 43,
+            "total_deletions": 1,
+            "accepted_lines": 42,
+            "overriden_lines": 0
+          },
+          "docs/lightsail.md": {
+            "total_additions": 49,
+            "total_deletions": 10,
+            "accepted_lines": 49,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 36,
+            "total_deletions": 2,
+            "accepted_lines": 36,
+            "overriden_lines": 0
+          },
+          "src/bot.ts": {
+            "total_additions": 30,
+            "total_deletions": 16,
+            "accepted_lines": 27,
+            "overriden_lines": 0
+          },
+          "src/config.ts": {
+            "total_additions": 40,
+            "total_deletions": 1,
+            "accepted_lines": 40,
+            "overriden_lines": 0
+          },
+          "src/index.ts": {
+            "total_additions": 15,
+            "total_deletions": 0,
+            "accepted_lines": 15,
+            "overriden_lines": 0
+          },
+          "src/memory.ts": {
+            "total_additions": 159,
+            "total_deletions": 3,
+            "accepted_lines": 156,
+            "overriden_lines": 0
+          },
+          "src/types.ts": {
+            "total_additions": 6,
+            "total_deletions": 0,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 56,
+            "total_deletions": 0,
+            "accepted_lines": 56,
+            "overriden_lines": 0
+          },
+          "test/memory.test.ts": {
+            "total_additions": 153,
+            "total_deletions": 0,
+            "accepted_lines": 153,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

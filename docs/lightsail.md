@@ -83,6 +83,8 @@ AI_GATEWAY_MODEL=azure/your-model-name
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 NOTION_BRAIN_DUMP_PAGE_ID=your_optional_notion_page_id
+NOTION_SPEND_DATA_SOURCE_ID=your_optional_spend_log_data_source_id
+NOTION_SPEND_PAYER_MAP_JSON={"sagnik":"notion-user-id-1","tanvi":"notion-user-id-2"}
 NOTION_KNOWLEDGE_ENABLED=false
 NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
 TAVILY_API_KEY=your_optional_tavily_key
@@ -100,7 +102,7 @@ BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
 
-Replace `your-model-name` with the exact model name configured for your Azure endpoint, such as `gpt-luna`. The same Azure model handles ordinary messages, screenshots, and PDFs unless `AI_GATEWAY_MEDIA_MODEL` is explicitly overridden. Captain Patch rejects primary model IDs that do not begin with `azure/`. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables quick lookup plus the delegated Patch Research agent; `RESEARCH_MAX_SEARCHES=3` caps each explicit research run. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**.
+Replace `your-model-name` with the exact model name configured for your Azure endpoint, such as `gpt-luna`. The same Azure model handles ordinary messages, screenshots, and PDFs unless `AI_GATEWAY_MEDIA_MODEL` is explicitly overridden. Captain Patch rejects primary model IDs that do not begin with `azure/`. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables quick lookup plus the delegated Patch Research agent; `RESEARCH_MAX_SEARCHES=3` caps each explicit research run. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. `NOTION_SPEND_DATA_SOURCE_ID` is optional; when set, connect the integration to the Daily Spend Log with **Read content** and **Insert content**. The separate payer map can be omitted when `NOTION_ASSIGNEE_MAP_JSON` already contains both founders.
 
 To enable company-wide Notion reads, review the integration's Content access, connect only the intended company pages/databases, and change `NOTION_KNOWLEDGE_ENABLED=true`. The Notion API cannot scope searches by teamspace, so do not enable this while unrelated personal pages are shared with the same integration.
 

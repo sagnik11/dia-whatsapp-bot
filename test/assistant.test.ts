@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   DiaAssistant,
+  formatSpendConfirmation,
   formatTaskConfirmation,
   isExplicitReminderCancelRequest,
   isExplicitReminderCreateRequest,
@@ -9,6 +10,8 @@ import {
   isExplicitBrainDumpRequest,
   isExplicitKnowledgeRequest,
   isExplicitResearchRequest,
+  isExplicitSpendCreateRequest,
+  isExplicitSpendReadRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
   isExplicitTaskUpdateRequest,
@@ -26,6 +29,19 @@ describe("isExplicitTaskRequest", () => {
 
   it("does not mistake a question about tasks for a creation command", () => {
     expect(isExplicitTaskRequest("what tasks should I add next?")).toBe(false);
+  });
+});
+
+describe("founder spend command detection", () => {
+  it("detects bulk spend writes without confusing them with reads", () => {
+    const message = "add to daily spend log: Expenses by Tanvi: 12th aug chai 100rs upi";
+    expect(isExplicitSpendCreateRequest(message)).toBe(true);
+    expect(isExplicitSpendReadRequest(message)).toBe(false);
+  });
+
+  it("detects spend-log questions", () => {
+    expect(isExplicitSpendReadRequest("how much did Tanvi spend this month?"))
+      .toBe(true);
   });
 });
 
@@ -73,6 +89,103 @@ describe("formatTaskConfirmation", () => {
         { id: "page-id", title: "Send proposal", url: "https://notion.so/page" },
       ]),
     ).toBe("✅ Task added: Send proposal\nhttps://notion.so/page");
+  });
+});
+
+describe("formatSpendConfirmation", () => {
+  it("confirms the batch count, INR total, and payer", () => {
+    expect(
+      formatSpendConfirmation({
+        paidBy: "Tanvi",
+        results: [],
+        createdCount: 9,
+        duplicateCount: 0,
+        failedCount: 0,
+        createdAmount: 6471,
+      }),
+    ).toBe("✅ Spend log updated: 9 entries · ₹6,471 · paid by Tanvi.");
+  });
+});
+
+describe("DiaAssistant founder spend log", () => {
+  it("forces a nine-row spend write and returns a deterministic confirmation", async () => {
+    const expenses = [100, 253, 4783, 148, 185, 219, 215, 333, 235].map(
+      (amount, index) => ({
+        spend: `Expense ${index + 1}`,
+        amount,
+        date: index < 2 ? "2026-08-12" : "2026-08-13",
+        category: index === 0 ? "Meals" : "Other",
+        payment_method: "UPI",
+        vendor: null,
+        notes: null,
+        reimbursable: false,
+      }),
+    );
+    const addSpends = vi.fn().mockResolvedValue({
+      paidBy: "Tanvi",
+      results: expenses.map((expense, index) => ({
+        index,
+        spend: expense.spend,
+        amount: expense.amount,
+        date: expense.date,
+        status: "created",
+        id: `page-${index}`,
+        url: null,
+        error: null,
+      })),
+      createdCount: 9,
+      duplicateCount: 0,
+      failedCount: 0,
+      createdAmount: 6471,
+    });
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [
+        {
+          type: "function_call",
+          name: "add_notion_spends",
+          call_id: "spend-create",
+          arguments: JSON.stringify({ paid_by: "Tanvi", expenses }),
+        },
+      ],
+      output_text: "",
+    });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {} as never,
+      notionSpend: { addSpends } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "spend-message",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "@patch add to daily spend log: Expenses by Tanvi: 9 entries",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toBe("✅ Spend log updated: 9 entries · ₹6,471 · paid by Tanvi.");
+    expect(addSpends).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ paidBy: "Tanvi" })]),
+      {
+        messageId: "spend-message",
+        groupName: "Autter",
+        requestedBy: "Sagnik",
+      },
+    );
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "add_notion_spends" },
+    });
   });
 });
 

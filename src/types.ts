@@ -48,6 +48,90 @@ export interface TaskResult {
   title: string;
 }
 
+export type SpendCategory =
+  | "Travel"
+  | "Software & SaaS"
+  | "Hosting & Infrastructure"
+  | "Meals"
+  | "Marketing"
+  | "Contractors"
+  | "Office"
+  | "Legal & Finance"
+  | "Other";
+
+export type SpendPaymentMethod =
+  | "Company card"
+  | "Personal card"
+  | "UPI"
+  | "Bank transfer"
+  | "Cash";
+
+export interface SpendInput {
+  spend: string;
+  amount: number;
+  date: string;
+  paidBy: string;
+  category: SpendCategory;
+  paymentMethod: SpendPaymentMethod | null;
+  vendor: string | null;
+  notes: string | null;
+  reimbursable: boolean;
+}
+
+export interface SpendSource {
+  messageId: string;
+  groupName: string;
+  requestedBy: string;
+}
+
+export interface SpendWriteResult {
+  index: number;
+  spend: string;
+  amount: number;
+  date: string;
+  status: "created" | "duplicate" | "failed";
+  id: string | null;
+  url: string | null;
+  error: string | null;
+}
+
+export interface SpendBatchResult {
+  paidBy: string;
+  results: SpendWriteResult[];
+  createdCount: number;
+  duplicateCount: number;
+  failedCount: number;
+  createdAmount: number;
+}
+
+export interface SpendQuery {
+  paidBy: string | null;
+  category: SpendCategory | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  limit: number;
+}
+
+export interface SpendSummary {
+  id: string;
+  url: string;
+  spend: string;
+  amount: number;
+  date: string | null;
+  paidBy: string[];
+  category: string | null;
+  paymentMethod: string | null;
+  vendor: string | null;
+  notes: string | null;
+  reimbursable: boolean;
+}
+
+export interface SpendListResult {
+  spends: SpendSummary[];
+  hasMore: boolean;
+  totalAmount: number;
+}
+
 export interface TaskQuery {
   titleContains: string | null;
   status: string | null;

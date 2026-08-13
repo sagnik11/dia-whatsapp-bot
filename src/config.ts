@@ -35,6 +35,8 @@ const schema = z.object({
   NOTION_ASSIGNEE_PROPERTY: z.string().default("Assignee"),
   NOTION_DEFAULT_ASSIGNEE_ID: optionalString,
   NOTION_ASSIGNEE_MAP_JSON: z.string().default("{}"),
+  NOTION_SPEND_DATA_SOURCE_ID: optionalString,
+  NOTION_SPEND_PAYER_MAP_JSON: optionalString,
   NOTION_PRIORITY_PROPERTY: z.string().default("Priority"),
   NOTION_TASK_TYPE_PROPERTY: z.string().default("Task type"),
   TAVILY_API_KEY: optionalString,
@@ -94,6 +96,7 @@ function parseIdSet(value: string): ReadonlySet<string> {
   );
 }
 
+const notionAssigneeMap = parseAssigneeMap(env.NOTION_ASSIGNEE_MAP_JSON);
 const allowedGroupIds = parseIdSet(env.ALLOWED_GROUP_IDS);
 const configuredDigestGroupIds = parseIdSet(env.TASK_DIGEST_GROUP_IDS);
 const configuredBriefGroupIds = parseIdSet(env.FOUNDER_BRIEF_GROUP_IDS);
@@ -123,7 +126,11 @@ export const config = {
   },
   notionDefaultStatus: env.NOTION_DEFAULT_STATUS,
   notionDefaultAssigneeId: env.NOTION_DEFAULT_ASSIGNEE_ID,
-  notionAssigneeMap: parseAssigneeMap(env.NOTION_ASSIGNEE_MAP_JSON),
+  notionAssigneeMap,
+  notionSpendDataSourceId: env.NOTION_SPEND_DATA_SOURCE_ID,
+  notionSpendPayerMap: env.NOTION_SPEND_PAYER_MAP_JSON
+    ? parseAssigneeMap(env.NOTION_SPEND_PAYER_MAP_JSON)
+    : notionAssigneeMap,
   tavilyApiKey: env.TAVILY_API_KEY,
   researchMaxSearches: env.RESEARCH_MAX_SEARCHES,
   botName: env.BOT_NAME,

@@ -45,6 +45,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
+- Optionally batch-adds and reads founder expenses in a separate Notion Daily Spend Log.
 - Fully edits an exactly matched task's properties and page-body content.
 - Reads and adds comments on exactly matched task pages.
 - Understands attached images and PDFs, and can upload attachments to a matched task.
@@ -91,6 +92,7 @@ flowchart LR
     A --> N3["Read or append Brain Dump"]
     A --> N4["Search/read company Notion"]
     A --> N6["Task comments and attachments"]
+    A --> N7["Read/write founder spend log"]
     A --> S["One Tavily web search"]
     A --> RA["Patch Research agent"]
     RA --> MS["Up to 3 focused Tavily searches"]
@@ -102,6 +104,7 @@ flowchart LR
     N3 --> O
     N4 --> O
     N6 --> O
+    N7 --> O
     S --> O
 ```
 
@@ -144,6 +147,8 @@ NOTION_API_KEY=your_notion_integration_token
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 # Optional bounded page context and append-only notes
 NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
+# Optional founder expense log
+NOTION_SPEND_DATA_SOURCE_ID=your_spend_log_data_source_id
 
 BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
@@ -216,6 +221,44 @@ NOTION_ASSIGNEE_MAP_JSON={"sagnik":"user-id-1","tanvi":"user-id-2"}
 ```
 
 Unknown names remain unassigned, but the requested name is preserved in the task page body.
+
+### Optional founder spend log
+
+Connect the same Notion integration to a separate expense database and set its **data source ID**:
+
+```dotenv
+NOTION_SPEND_DATA_SOURCE_ID=your_spend_log_data_source_id
+# Optional; falls back to NOTION_ASSIGNEE_MAP_JSON when blank.
+NOTION_SPEND_PAYER_MAP_JSON={"sagnik":"notion-user-id-1","tanvi":"notion-user-id-2"}
+```
+
+The database schema is intentionally fixed so amounts and totals remain reliable:
+
+| Property | Notion type | Expected values |
+| --- | --- | --- |
+| `Spend` | Title | Purchase description |
+| `Amount` | Number | INR amount |
+| `Date` | Date | Transaction date |
+| `Paid by` | People | Founder from the payer map |
+| `Payment method` | Select | `Company card`, `Personal card`, `UPI`, `Bank transfer`, `Cash` |
+| `Category` | Select | `Travel`, `Software & SaaS`, `Hosting & Infrastructure`, `Meals`, `Marketing`, `Contractors`, `Office`, `Legal & Finance`, `Other` |
+| `Vendor` | Text | Optional merchant |
+| `Notes` | Text | Optional context plus a private retry reference |
+| `Reimbursable` | Checkbox | Defaults to false unless explicitly stated |
+
+Patch accepts a single transaction or a numbered bulk list, creates one Notion row for each expense, resolves relative dates in `TIMEZONE`, and confirms the created count and INR total. Each row gets a hashed reference derived from the WhatsApp message and item position; replaying the same message skips rows already created instead of duplicating them. A newly retyped message is treated as a new instruction.
+
+```text
+@patch add to daily spend log:
+Expenses by Tanvi:
+1. 12th aug: chai 100rs upi
+2. 12th aug: bookbar 253rs upi
+
+@patch how much did Tanvi spend on travel this month?
+@patch show our expenses from 10 August to 13 August
+```
+
+The integration needs **Read content** and **Insert content** access to this database. The model uses the closest configured category and chooses `Other` when uncertain; it asks for clarification instead of guessing a genuinely ambiguous date or amount.
 
 ### Existing-task updates
 
@@ -447,6 +490,8 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `NOTION_ASSIGNEE_PROPERTY` | No | `Assignee` | People property name. |
 | `NOTION_DEFAULT_ASSIGNEE_ID` | No | Empty | Default Notion user ID. |
 | `NOTION_ASSIGNEE_MAP_JSON` | No | `{}` | JSON mapping of names to Notion user IDs. |
+| `NOTION_SPEND_DATA_SOURCE_ID` | No | Empty | Enables read/write access to a separate Daily Spend Log data source. |
+| `NOTION_SPEND_PAYER_MAP_JSON` | No | `NOTION_ASSIGNEE_MAP_JSON` | Optional JSON mapping of payer names to Notion user IDs. |
 | `NOTION_PRIORITY_PROPERTY` | No | `Priority` | Select property name. |
 | `NOTION_TASK_TYPE_PROPERTY` | No | `Task type` | Multi-select property name. |
 | `TAVILY_API_KEY` | No | Empty | Enables quick web lookup and delegated research. |
@@ -606,7 +651,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, delegated research, task confirmations, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, founder spend-log reads and retry-safe batch writes, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, delegated research, task confirmations, and Tavily request bounds.
 
 ## Project structure
 
@@ -623,6 +668,7 @@ src/
 ├── media-ingestion.ts    Attachment validation and voice transcription
 ├── notion-webhook.ts     Signed Notion event receiver and notifications
 ├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
+├── notion-spend.ts       Founder expense reads, batch writes, and retry safety
 ├── reminder-store.ts     Persistent reminder and scheduler state
 ├── research-agent.ts     Bounded multi-search research specialist
 ├── scheduler.ts          Proactive reminder and task-digest delivery

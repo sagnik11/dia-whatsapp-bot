@@ -8,6 +8,7 @@ import { FounderBriefGenerator } from "./founder-brief.js";
 import { createLogger } from "./logger.js";
 import { MediaIngestionService } from "./media-ingestion.js";
 import { NotionWebhookServer } from "./notion-webhook.js";
+import { NotionSpendService } from "./notion-spend.js";
 import { NotionTaskService } from "./notion.js";
 import { ReminderStore } from "./reminder-store.js";
 import { ResearchAgent } from "./research-agent.js";
@@ -31,6 +32,14 @@ const notion = new NotionTaskService({
   assigneeMap: config.notionAssigneeMap,
   logger,
 });
+const notionSpend = config.notionSpendDataSourceId
+  ? new NotionSpendService({
+      apiKey: config.notionApiKey,
+      dataSourceId: config.notionSpendDataSourceId,
+      payerMap: config.notionSpendPayerMap,
+      logger,
+    })
+  : undefined;
 const webSearch = config.tavilyApiKey
   ? new TavilyWebSearchService({ apiKey: config.tavilyApiKey, logger })
   : undefined;
@@ -53,6 +62,7 @@ const assistant = new DiaAssistant({
   botName: config.botName,
   timezone: config.timezone,
   notion,
+  ...(notionSpend ? { notionSpend } : {}),
   reminders,
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),

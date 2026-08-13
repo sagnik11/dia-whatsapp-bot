@@ -152,6 +152,7 @@ AI_GATEWAY_MODEL=azure/your-model-name
 SUPERMEMORY_ENABLED=false
 SUPERMEMORY_BASE_URL=http://supermemory:6767
 SUPERMEMORY_API_KEY=
+SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
 SUPERMEMORY_CONTAINER_TAG=autter-company
 
 NOTION_API_KEY=your_notion_integration_token
@@ -193,6 +194,8 @@ The `dia-data` Docker volume stores the WhatsApp linked-device session and SQLit
 
 Patch supports the open-source, self-hosted [Supermemory Local](https://github.com/supermemoryai/supermemory) server. It uses the existing Vercel AI Gateway credential and Azure model for extraction, local `Xenova/bge-base-en-v1.5` embeddings for retrieval, and a separate persistent Docker volume.
 
+The image currently pins `SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2`. Stable `0.0.6` has an upstream standalone-binary packaging regression that omits `@rivetkit/rivetkit-wasm`, leaving every ingested document queued indefinitely. The pinned release upgrades the cached binary at container startup without deleting the persistent graph or API key.
+
 The memory service is behind an explicit Compose profile, so it is not started for deployments that do not enable memory. Bootstrap it once:
 
 ```bash
@@ -206,6 +209,7 @@ On first boot, look for the local `sm_...` API key. Keep it secret and add it to
 SUPERMEMORY_ENABLED=true
 SUPERMEMORY_BASE_URL=http://supermemory:6767
 SUPERMEMORY_API_KEY=sm_your_generated_local_key
+SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
 SUPERMEMORY_CONTAINER_TAG=autter-company
 ```
 

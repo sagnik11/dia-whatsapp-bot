@@ -104,6 +104,7 @@ TIMEZONE=Asia/Kolkata
 SUPERMEMORY_ENABLED=false
 SUPERMEMORY_BASE_URL=http://supermemory:6767
 SUPERMEMORY_API_KEY=
+SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
 SUPERMEMORY_CONTAINER_TAG=autter-company
 ```
 
@@ -118,6 +119,8 @@ Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste 
 ### Optional: bootstrap Autter's persistent memory
 
 The `memory` Compose profile runs the open-source Supermemory Local binary inside the private Compose network. It reuses `AI_GATEWAY_API_KEY`, `AI_GATEWAY_BASE_URL`, and `AI_GATEWAY_MODEL` for extraction and keeps embeddings local.
+
+The profile pins server `0.0.7-rc.2` because stable `0.0.6` has an upstream Linux standalone-binary packaging defect that leaves ingestion queued. On startup, the launcher upgrades an older cached binary in place while retaining the graph and generated API key in `supermemory-data`.
 
 Start only the memory service first:
 
@@ -136,6 +139,7 @@ nano .env
 SUPERMEMORY_ENABLED=true
 SUPERMEMORY_BASE_URL=http://supermemory:6767
 SUPERMEMORY_API_KEY=sm_the_key_printed_at_first_boot
+SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
 SUPERMEMORY_CONTAINER_TAG=autter-company
 ```
 

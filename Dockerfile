@@ -34,8 +34,9 @@ COPY patches ./patches
 RUN npm ci --omit=dev
 ENV NODE_ENV=production \
     PORT=6767 \
+    SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2 \
     SUPERMEMORY_DATA_DIR=/var/lib/supermemory/data \
     SUPERMEMORY_INSTALL_DIR=/var/lib/supermemory/install \
     SUPERMEMORY_BIN_DIR=/var/lib/supermemory/bin
 VOLUME ["/var/lib/supermemory"]
-CMD ["npx", "supermemory", "local", "start", "--port", "6767"]
+CMD ["bash", "-lc", "npx supermemory local install --version \"$SUPERMEMORY_SERVER_VERSION\" && exec npx supermemory local start --no-install --port \"$PORT\""]

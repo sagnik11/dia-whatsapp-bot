@@ -57,9 +57,6 @@ services:
       target: supermemory-runtime
     init: true
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
     environment:
       PORT: 6767
       SUPERMEMORY_DATA_DIR: /var/lib/supermemory/data

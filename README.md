@@ -43,6 +43,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Accepts commands only from explicitly allowlisted WhatsApp accounts.
 - Gives unauthorized users a short AI-generated rejection without exposing normal tools.
 - Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
+- Optionally gives Autter a self-hosted Supermemory brain that recalls earlier founder conversations across restarts.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
 - Optionally batch-adds and reads founder expenses in a separate Notion Daily Spend Log.
@@ -86,6 +87,8 @@ flowchart LR
     U -- Yes --> A["Azure model through Vercel AI Gateway"]
     C -.->|included only on a later trigger| A
     A --> Q["Normal WhatsApp answer"]
+    A --> MR["Recall Autter memory"]
+    Q --> MW["Remember exact founder/Patch exchange"]
     A --> N1["Create Notion task"]
     A --> N2["Read Notion tasks"]
     A --> N5["Update matched Notion task"]
@@ -111,6 +114,8 @@ flowchart LR
 Authorization happens before the assistant receives access to Notion or web search. An empty sender allowlist fails closed.
 
 The linked WhatsApp client also runs a small scheduler. It reads due reminders, digest state, and daily-brief state from SQLite, then sends proactive messages into configured groups. Only the founder brief calls the AI model; reminders and task digests are deterministic.
+
+When persistent memory is enabled, Patch retrieves the shared Autter profile and relevant historical exchanges before each authorized response. After WhatsApp delivery, it stores the complete addressed exchange under a stable WhatsApp-derived ID. Memory failures fail open: Patch continues answering with its live tools and ordinary context.
 
 ## Requirements
 
@@ -142,6 +147,12 @@ Fill in the required values in `.env`:
 ```dotenv
 AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
 AI_GATEWAY_MODEL=azure/your-model-name
+
+# Leave disabled until the self-hosted memory service prints its local API key.
+SUPERMEMORY_ENABLED=false
+SUPERMEMORY_BASE_URL=http://supermemory:6767
+SUPERMEMORY_API_KEY=
+SUPERMEMORY_CONTAINER_TAG=autter-company
 
 NOTION_API_KEY=your_notion_integration_token
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
@@ -177,6 +188,60 @@ docker compose logs -f --since 2m dia
 ```
 
 The `dia-data` Docker volume stores the WhatsApp linked-device session and SQLite deduplication database. Rebuilding the container does not normally require scanning another QR.
+
+## Persistent Autter memory with Supermemory
+
+Patch supports the open-source, self-hosted [Supermemory Local](https://github.com/supermemoryai/supermemory) server. It uses the existing Vercel AI Gateway credential and Azure model for extraction, local `Xenova/bge-base-en-v1.5` embeddings for retrieval, and a separate persistent Docker volume.
+
+The memory service is behind an explicit Compose profile, so it is not started for deployments that do not enable memory. Bootstrap it once:
+
+```bash
+docker compose --profile memory up -d --build supermemory
+docker compose logs -f supermemory
+```
+
+On first boot, look for the local `sm_...` API key. Keep it secret and add it to `.env`:
+
+```dotenv
+SUPERMEMORY_ENABLED=true
+SUPERMEMORY_BASE_URL=http://supermemory:6767
+SUPERMEMORY_API_KEY=sm_your_generated_local_key
+SUPERMEMORY_CONTAINER_TAG=autter-company
+```
+
+Then start the full stack with the profile enabled:
+
+```bash
+docker compose --profile memory up -d --build
+docker compose ps
+docker compose logs -f --since 2m dia supermemory
+```
+
+Keep using `--profile memory` for Compose updates that should include the memory service. Both containers share only the internal Compose network; port 6767 is not published to the internet. `supermemory-data` holds the graph, authentication state, and local embedding model cache.
+
+### What Patch remembers
+
+For every authorized founder message addressed to Patch, memory stores:
+
+- The exact original message, including `@patch`.
+- Founder name and WhatsApp ID, group, message ID, and recording time.
+- Any explicitly quoted message.
+- Attachment names and complete voice-note transcripts.
+- Patch's complete delivered reply, including task/spend/reminder confirmations and research.
+
+It does not store ambient untriggered group chatter, unauthorized commands/rejections, or base64 attachment bytes. Images and documents are represented by their names plus Patch's resulting exchange; the existing model still inspects them during the live request.
+
+All Autter exchanges use one shared container, `autter-company`, so both authorized co-founders benefit from the same organizational memory. Replayed WhatsApp messages use the same `customId`, preventing a restart or retry from creating a second source document.
+
+Memory is historical context, not an operational database. The precedence enforced in the assistant is:
+
+```text
+fresh Notion/SQLite tool results → current founder request → recalled memory → ambient chat context
+```
+
+Patch therefore still reads Notion for current tasks and spend totals, and SQLite for current reminders. A stale recollection cannot override those live systems.
+
+On a small Lightsail instance, the Compose profile limits Supermemory ingestion to one concurrent job, one embedding worker/thread, and 512 MB of ingestion headroom. Every exchange is stored whole; `SUPERMEMORY_RECALL_LIMIT` controls only how many relevant results are injected into one model request. Chromium, local Whisper, and local embeddings can make a 2 GB instance tight under concurrent work; 4 GB is the safer starting point for the complete stack, and `docker stats` shows whether the instance is swapping or approaching its limit.
 
 ## Run directly with Node.js
 
@@ -474,6 +539,13 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AI_GATEWAY_BASE_URL` | No | `https://ai-gateway.vercel.sh/v1` | OpenAI-compatible Gateway base URL. |
 | `AI_GATEWAY_MODEL` | Yes | — | Model ID; must match `azure/<model-name>`. |
 | `AI_GATEWAY_MEDIA_MODEL` | No | `AI_GATEWAY_MODEL` | Optional Azure override for images/documents; leave blank to use Luna. |
+| `SUPERMEMORY_ENABLED` | No | `false` | Enables recall and complete authorized-exchange ingestion. |
+| `SUPERMEMORY_BASE_URL` | When enabled | `http://supermemory:6767` | Self-hosted or compatible Supermemory API URL. |
+| `SUPERMEMORY_API_KEY` | When enabled | Empty | Bearer key printed by the local server on first boot. |
+| `SUPERMEMORY_CONTAINER_TAG` | No | `autter-company` | Shared company-memory isolation boundary. |
+| `SUPERMEMORY_RECALL_LIMIT` | No | `12` | Relevant memory results retrieved per request; does not limit stored exchange size or Luna output. |
+| `SUPERMEMORY_RECALL_THRESHOLD` | No | `0.35` | Minimum relevance score from `0` to `1`. |
+| `SUPERMEMORY_TIMEOUT_MS` | No | `20000` | Per-request memory-service timeout; failures do not stop Patch. |
 | `WHISPER_MODEL` | No | `tiny` | Local whisper.cpp multilingual model downloaded by Compose; `base` improves accuracy. |
 | `WHISPER_THREADS` | No | `2` | CPU threads assigned to local transcription. |
 | `WHISPER_LANGUAGE` | No | `auto` | Spoken-language hint sent to local Whisper. |
@@ -529,12 +601,12 @@ Update an existing Docker deployment with:
 
 ```bash
 git pull --ff-only origin main
-docker compose build --no-cache
-docker compose up -d --force-recreate
-docker compose logs -f --since 2m dia
+docker compose --profile memory build --no-cache
+docker compose --profile memory up -d --force-recreate
+docker compose logs -f --since 2m dia supermemory
 ```
 
-Do not run `docker compose down --volumes` unless you intentionally want to remove the saved WhatsApp session and deduplication database.
+Omit `--profile memory` and `supermemory` when persistent memory is disabled. Do not run `docker compose down --volumes` unless you intentionally want to remove the saved WhatsApp session, deduplication/reminder database, Whisper model cache, and Supermemory graph.
 
 ## Customizing the bot
 
@@ -562,6 +634,8 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Quick web lookup is limited to one Tavily call. An explicit delegated research run is limited to `RESEARCH_MAX_SEARCHES` distinct calls and can run only once per trigger.
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
 - Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
+- When Supermemory is enabled, every authorized message addressed to Patch and Patch's full delivered reply are durably stored in the private `supermemory-data` volume. This includes quoted text and complete voice transcripts; it excludes ambient untriggered chat, unauthorized commands, and raw attachment bytes.
+- Recall is sent back through Vercel AI Gateway and the configured Azure model as prompt context. Treat the Supermemory API key and volume as sensitive, and do not address passwords, private keys, or other secrets to Patch.
 - Triggered message bodies, resolved sender IDs, and outgoing replies are written to application logs.
 - Reminder text, schedules, requester IDs, group IDs, and digest schedule state are stored in the SQLite database.
 - The `dia-data` Docker volume contains a reusable WhatsApp linked-device session and must be treated as sensitive. The separate `whisper-models` volume contains only public model weights.
@@ -612,8 +686,10 @@ docker compose logs --since 5m dia
 Copy every relevant `@lid`, `@c.us`, and raw-number variant from the `senderIds` log entry into `AUTHORIZED_USER_IDS`, then recreate the container so it reloads `.env`:
 
 ```bash
-docker compose up -d --force-recreate
+docker compose --profile memory up -d --force-recreate
 ```
+
+Omit `--profile memory` if `SUPERMEMORY_ENABLED=false`.
 
 ### Notion returns 403 or 404
 
@@ -628,7 +704,17 @@ The linked session was logged out, invalidated, or removed. Run the service in t
 
 ### Chromium crashes or repeatedly restarts
 
-Use the current `main` image, allow stale-profile lock cleanup to run, and ensure the host has enough memory. A VPS should have at least 2 GB RAM for Chromium and Node.js together.
+Use the current `main` image, allow stale-profile lock cleanup to run, and ensure the host has enough memory. Chromium and Node.js need at least 2 GB RAM; the full stack with local Whisper and Supermemory is safer with 4 GB.
+
+### Supermemory is unavailable
+
+Patch fails open: current messages, Notion tools, reminders, and ordinary replies continue without recalled context. Inspect the private sidecar, verify that `.env` contains the generated `sm_...` key, and recreate both services:
+
+```bash
+docker compose --profile memory ps
+docker compose --profile memory logs --tail 200 supermemory dia
+docker compose --profile memory up -d --force-recreate
+```
 
 ### Web search is unavailable
 
@@ -651,7 +737,7 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, founder spend-log reads and retry-safe batch writes, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, delegated research, task confirmations, and Tavily request bounds.
+The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, complete Supermemory exchange capture and fail-open recall, Chromium profile cleanup, task updates/comments/uploads, founder spend-log reads and retry-safe batch writes, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, delegated research, task confirmations, and Tavily request bounds.
 
 ## Project structure
 
@@ -666,6 +752,7 @@ src/
 ├── dedupe-store.ts       SQLite message deduplication
 ├── founder-brief.ts      Daily AI brief generation
 ├── media-ingestion.ts    Attachment validation and voice transcription
+├── memory.ts             Shared Supermemory recall and exact exchange ingestion
 ├── notion-webhook.ts     Signed Notion event receiver and notifications
 ├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
 ├── notion-spend.ts       Founder expense reads, batch writes, and retry safety

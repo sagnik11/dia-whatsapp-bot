@@ -50,6 +50,48 @@ services:
       retries: 30
       start_period: 180s
 
+  supermemory:
+    profiles: ["memory"]
+    build:
+      context: .
+      target: supermemory-runtime
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 6767
+      SUPERMEMORY_DATA_DIR: /var/lib/supermemory/data
+      SUPERMEMORY_INSTALL_DIR: /var/lib/supermemory/install
+      SUPERMEMORY_BIN_DIR: /var/lib/supermemory/bin
+      OPENAI_API_KEY: ${AI_GATEWAY_API_KEY:-}
+      OPENAI_BASE_URL: ${AI_GATEWAY_BASE_URL:-https://ai-gateway.vercel.sh/v1}
+      OPENAI_MODEL: ${AI_GATEWAY_MODEL:-azure/model-name}
+      OPENAI_FAST_MODEL: ${AI_GATEWAY_MODEL:-azure/model-name}
+      OPENAI_TEXT_MODEL: ${AI_GATEWAY_MODEL:-azure/model-name}
+      SUPERMEMORY_EMBEDDING_PROVIDER: local
+      SUPERMEMORY_LOCAL_EMBEDDING_POOL_SIZE: 1
+      SUPERMEMORY_LOCAL_EMBEDDING_WASM_THREADS: 1
+      SUPERMEMORY_INGEST_CONCURRENCY: 1
+      SUPERMEMORY_EMBEDDING_RAM_LIMIT: 512mb
+      SUPERMEMORY_DISABLE_TELEMETRY: 1
+    volumes:
+      - supermemory-data:/var/lib/supermemory
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "npx", "supermemory", "local", "status", "--url", "http://127.0.0.1:6767"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 180s
+
 volumes:
   dia-data:
   whisper-models:
+  supermemory-data:

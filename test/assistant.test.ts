@@ -344,6 +344,62 @@ describe("DiaAssistant task reads", () => {
   });
 });
 
+describe("DiaAssistant persistent Autter memory", () => {
+  it("recalls memory before answering and marks it subordinate to live data", async () => {
+    const recall = vi.fn().mockResolvedValue({
+      staticProfile: ["Sagnik and Tanvi are equal co-founders"],
+      dynamicProfile: ["Preparing the Autter launch"],
+      relevantMemories: ["Tanvi owns launch marketing"],
+    });
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [],
+      output_text: "Tanvi owns launch marketing.",
+    });
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {} as never,
+      memory: { recall } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const assistantRequest = {
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "memory-question",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "who owns launch marketing?",
+      quotedMessage: null,
+      recentContext: [],
+    };
+    const reply = await assistant.respond(assistantRequest);
+
+    expect(reply).toBe("Tanvi owns launch marketing.");
+    expect(recall).toHaveBeenCalledWith(assistantRequest);
+    expect(responsesCreate.mock.calls[0]?.[0].input).toContainEqual(
+      expect.objectContaining({
+        role: "user",
+        content: expect.arrayContaining([
+          {
+            type: "input_text",
+            text: expect.stringContaining("Tanvi owns launch marketing"),
+          },
+        ]),
+      }),
+    );
+    expect(responsesCreate.mock.calls[0]?.[0].instructions).toContain(
+      "fresh tool results always override recalled memory",
+    );
+  });
+});
+
 describe("DiaAssistant web search", () => {
   it("uses one search and gives its sources back to the model", async () => {
     const search = vi.fn().mockResolvedValue({

@@ -7,6 +7,7 @@ import { DedupeStore } from "./dedupe-store.js";
 import { FounderBriefGenerator } from "./founder-brief.js";
 import { createLogger } from "./logger.js";
 import { MediaIngestionService } from "./media-ingestion.js";
+import { AutterMemoryService } from "./memory.js";
 import { NotionWebhookServer } from "./notion-webhook.js";
 import { NotionSpendService } from "./notion-spend.js";
 import { NotionTaskService } from "./notion.js";
@@ -19,6 +20,18 @@ const logger = createLogger(config.logLevel);
 const databasePath = join(config.dataDir, "dia.sqlite");
 const dedupe = new DedupeStore(databasePath);
 const reminders = new ReminderStore(databasePath);
+const memory =
+  config.supermemoryEnabled && config.supermemoryApiKey
+    ? new AutterMemoryService({
+        apiKey: config.supermemoryApiKey,
+        baseUrl: config.supermemoryBaseUrl,
+        containerTag: config.supermemoryContainerTag,
+        recallLimit: config.supermemoryRecallLimit,
+        recallThreshold: config.supermemoryRecallThreshold,
+        timeoutMs: config.supermemoryTimeoutMs,
+        logger,
+      })
+    : undefined;
 const notion = new NotionTaskService({
   apiKey: config.notionApiKey,
   dataSourceId: config.notionDataSourceId,
@@ -62,6 +75,7 @@ const assistant = new DiaAssistant({
   botName: config.botName,
   timezone: config.timezone,
   notion,
+  ...(memory ? { memory } : {}),
   ...(notionSpend ? { notionSpend } : {}),
   reminders,
   ...(webSearch ? { webSearch } : {}),
@@ -116,6 +130,7 @@ const bot = new WhatsAppBot({
   dataDir: config.dataDir,
   listGroupsOnStart: config.listGroupsOnStart,
   mediaIngestion,
+  ...(memory ? { memory } : {}),
   scheduler,
   ...(config.puppeteerExecutablePath
     ? { puppeteerExecutablePath: config.puppeteerExecutablePath }

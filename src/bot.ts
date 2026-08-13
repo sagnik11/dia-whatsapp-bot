@@ -8,10 +8,11 @@ import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
+import type { AutterMemoryService } from "./memory.js";
 import type { MediaIngestionService } from "./media-ingestion.js";
 import { serializeMessageId } from "./message-id.js";
 import type { ProactiveScheduler } from "./scheduler.js";
-import type { AssistantAttachment } from "./types.js";
+import type { AssistantAttachment, AssistantRequest } from "./types.js";
 import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
 const { Client, LocalAuth } = whatsapp;
@@ -52,6 +53,7 @@ interface BotOptions {
   dataDir: string;
   listGroupsOnStart: boolean;
   mediaIngestion?: MediaIngestionService;
+  memory?: AutterMemoryService;
   scheduler?: ProactiveScheduler;
   puppeteerExecutablePath?: string;
   logger: Logger;
@@ -346,23 +348,30 @@ export class WhatsAppBot {
       }
     }
 
+    const assistantRequest = {
+      groupId,
+      groupName: chat?.name ?? groupId,
+      messageId,
+      requestedBy: author,
+      requestedById: message.author || contact.id._serialized,
+      body: prompt || message.body,
+      quotedMessage: quotedMessage?.body ?? null,
+      recentContext: this.options.context.get(groupId, true),
+      attachments,
+    } satisfies AssistantRequest;
+
     try {
-      const reply = await this.options.assistant.respond({
-        groupId,
-        groupName: chat?.name ?? groupId,
-        messageId,
-        requestedBy: author,
-        requestedById: message.author || contact.id._serialized,
-        body: prompt || message.body,
-        quotedMessage: quotedMessage?.body ?? null,
-        recentContext: this.options.context.get(groupId, true),
-        attachments,
-      });
+      const reply = await this.options.assistant.respond(assistantRequest);
       this.options.logger.info(
         { author, groupId, messageId, output: reply },
         `Sending ${this.options.botName} response`,
       );
       await this.sendCompleteMessage(groupId, reply);
+      await this.options.memory?.rememberExchange(
+        assistantRequest,
+        reply,
+        message.body,
+      );
     } catch (error) {
       this.options.logger.error({ error, messageId }, "Assistant request failed");
       const fallbackReply =
@@ -372,6 +381,11 @@ export class WhatsAppBot {
         `Sending ${this.options.botName} error response`,
       );
       await this.client.sendMessage(groupId, fallbackReply);
+      await this.options.memory?.rememberExchange(
+        assistantRequest,
+        fallbackReply,
+        message.body,
+      );
     }
   }
 

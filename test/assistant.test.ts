@@ -235,6 +235,7 @@ describe("isExplicitBrainDumpAppendRequest", () => {
     "add this onboarding feedback to the Brain Dump",
     "please append this to our brain-dump: improve secret detection",
     "Brain Dump — capture the idea from the quoted message",
+    "What you can do now is research this further and put my notes and your findings separately in the Brain Dump",
   ])("detects an explicit Brain Dump append: %s", (message) => {
     expect(isExplicitBrainDumpAppendRequest(message)).toBe(true);
   });
@@ -536,6 +537,93 @@ describe("DiaAssistant delegated research", () => {
     expect(responsesCreate).toHaveBeenCalledOnce();
   });
 
+  it("researches a long founder note and appends the complete note and report separately", async () => {
+    const longQuestion = `Research this fully: ${"founder context ".repeat(80)}`;
+    const longContext = "background ".repeat(300);
+    const report = `## Findings\n\n${"evidence and recommendation ".repeat(300)}`;
+    const run = vi.fn().mockResolvedValue({
+      report,
+      searchesUsed: 3,
+      sources: [{ title: "Source", url: "https://example.com/source" }],
+    });
+    const appendBrainDump = vi.fn().mockResolvedValue({
+      pageId: "brain-page",
+      heading: "Founder notes and Patch research",
+      charactersAdded: 15_000,
+    });
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [
+        {
+          type: "function_call",
+          name: "run_research",
+          call_id: "research-brain-dump",
+          arguments: JSON.stringify({
+            question: longQuestion,
+            context: longContext,
+          }),
+        },
+      ],
+      output_text: "",
+    });
+    const founderMessage = [
+      "These are my detailed launch ideas.",
+      "founder note ".repeat(500),
+      "Research them and add my notes and your research separately to the Brain Dump.",
+    ].join("\n");
+    const assistant = new DiaAssistant({
+      gatewayApiKey: "test-key",
+      gatewayBaseUrl: "https://example.com/v1",
+      model: "azure/test-model",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: { canReadBrainDump: true, appendBrainDump } as never,
+      researchAgent: { run } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "large-brain-dump-research",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: founderMessage,
+      quotedMessage: "Additional quoted founder detail.",
+      recentContext: [],
+    });
+
+    expect(reply).toBe(
+      "✅ Added your complete notes and Patch's research to Brain Dump as separate sections.",
+    );
+    expect(run).toHaveBeenCalledWith({
+      question: longQuestion,
+      context: longContext,
+      requestedBy: "Sagnik",
+    });
+    expect(appendBrainDump).toHaveBeenCalledWith(
+      {
+        heading: "Founder notes and Patch research",
+        content: expect.stringMatching(
+          /### Founder notes[\s\S]*Additional quoted founder detail\.[\s\S]*### Patch research/,
+        ),
+      },
+      {
+        groupName: "Autter",
+        messageId: "large-brain-dump-research",
+        requestedBy: "Sagnik",
+      },
+    );
+    expect(appendBrainDump.mock.calls[0]?.[0].content).toContain(founderMessage);
+    expect(appendBrainDump.mock.calls[0]?.[0].content).toContain(report.trim());
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "run_research" },
+    });
+    expect(responsesCreate).toHaveBeenCalledOnce();
+  });
+
   it("can append delegated findings to one exactly matched Notion task", async () => {
     const matchedTask = {
       id: "publishing-page",
@@ -730,11 +818,12 @@ describe("DiaAssistant Brain Dump reads", () => {
 });
 
 describe("DiaAssistant Brain Dump appends", () => {
-  it("appends once and returns a deterministic confirmation", async () => {
+  it("accepts a large note, appends once, and returns a deterministic confirmation", async () => {
+    const completeNote = `Make the first review memorable.\n\n${"Detailed founder context. ".repeat(300)}`;
     const appendBrainDump = vi.fn().mockResolvedValue({
       pageId: "brain-page",
       heading: "Onboarding",
-      charactersAdded: 120,
+      charactersAdded: completeNote.length,
     });
     const responsesCreate = vi.fn().mockResolvedValueOnce({
       output: [
@@ -744,7 +833,7 @@ describe("DiaAssistant Brain Dump appends", () => {
           call_id: "append-1",
           arguments: JSON.stringify({
             heading: "Onboarding",
-            content: "Make the first review memorable.",
+            content: completeNote,
           }),
         },
       ],
@@ -781,7 +870,7 @@ describe("DiaAssistant Brain Dump appends", () => {
     expect(appendBrainDump).toHaveBeenCalledWith(
       {
         heading: "Onboarding",
-        content: "Make the first review memorable.",
+        content: completeNote,
       },
       {
         groupName: "Autter",

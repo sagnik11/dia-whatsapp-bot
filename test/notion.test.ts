@@ -6,6 +6,7 @@ import {
   buildTaskQueryFilter,
   isIncompleteTaskStatus,
   resolveAssigneeId,
+  splitMarkdownForNotion,
   taskSummaryFromPage,
 } from "../src/notion.js";
 
@@ -202,6 +203,62 @@ describe("Notion Brain Dump appends", () => {
         { groupName: "Autter", requestedBy: "Sagnik", messageId: "message-5" },
       ),
     ).toContain("## WhatsApp note\n\nKeep this idea.");
+  });
+
+  it("splits very large Markdown without dropping or reordering content", () => {
+    const markdown = [
+      "## Founder notes\n\n",
+      "a".repeat(105_000),
+      "\n\n## Research\n\n",
+      "b".repeat(105_000),
+      "🚀".repeat(10_000),
+    ].join("");
+
+    const chunks = splitMarkdownForNotion(markdown);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.length <= 100_000)).toBe(true);
+    expect(chunks.join("")).toBe(markdown);
+  });
+
+  it("appends every large-content chunk to Notion in order", async () => {
+    const updateMarkdown = vi.fn().mockResolvedValue({
+      object: "page_markdown",
+      id: "brain-page",
+      markdown: "",
+      truncated: false,
+      unknown_block_ids: [],
+    });
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      brainDumpPageId: "brain-page",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { pages: { updateMarkdown } },
+    });
+    const content = `Start\n\n${"large paragraph ".repeat(16_000)}\n\nEnd`;
+
+    const result = await service.appendBrainDump(
+      { heading: "Large founder note", content },
+      {
+        groupName: "Autter founders",
+        requestedBy: "Sagnik",
+        messageId: "large-message",
+      },
+    );
+    const written = updateMarkdown.mock.calls
+      .map((call) => call[0].insert_content.content as string)
+      .join("");
+
+    expect(updateMarkdown.mock.calls.length).toBeGreaterThan(1);
+    expect(written).toContain(content);
+    expect(written.length).toBe(result.charactersAdded);
   });
 });
 

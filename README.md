@@ -51,7 +51,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Reads and adds comments on exactly matched task pages.
 - Understands attached images and PDFs, and can upload attachments to a matched task.
 - Transcribes quoted WhatsApp voice notes locally with open-source `whisper.cpp`.
-- Optionally reads and appends notes to one configured Notion Brain Dump page.
+- Optionally reads and appends large notes to one configured Notion Brain Dump page, chunking oversized writes without dropping content.
 - Optionally searches and reads company knowledge shared with the Notion integration.
 - Stores persistent reminders in SQLite, including advance, due-time, and repeating notifications.
 - Optionally posts an incomplete-task digest from Notion on a persistent interval.
@@ -361,7 +361,9 @@ To let Captain Patch answer questions from one Notion page, add the same interna
 NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
 ```
 
-The page can be a regular Notion page; it does not need to be a database. Captain Patch reads it only when an authorized founder asks about its contents and appends only when explicitly told to add something. The integration needs **Read content** and **Update content** capabilities plus access to the page. Existing content cannot be replaced, edited, or deleted through the bot. Reads are capped at 12,000 characters per request and appends at 4,000 characters. General workspace search remains disabled unless the separate setting below is enabled.
+The page can be a regular Notion page; it does not need to be a database. Captain Patch reads it only when an authorized founder asks about its contents and appends only when explicitly told to add something. The integration needs **Read content** and **Update content** capabilities plus access to the page. Existing content cannot be replaced, edited, or deleted through the bot. Reads are capped at 12,000 characters per model request. Appends have no application-level total-character ceiling: Patch divides unusually large Markdown into ordered Notion requests while preserving the complete note. General workspace search remains disabled unless the separate setting below is enabled.
+
+If one message asks Patch to research and save the result, Patch runs the research agent first and then appends two clearly separated sections: the founder's complete original notes and Patch's complete cited report.
 
 Examples:
 
@@ -369,6 +371,7 @@ Examples:
 @patch summarize the Brain Dump
 @patch add this to the Brain Dump: make the first repository review memorable
 @patch append the quoted feedback to the Brain Dump under Onboarding
+@patch research these launch ideas and add my complete notes and your findings separately to the Brain Dump
 ```
 
 ### Optional company knowledge access
@@ -630,7 +633,7 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Authorization uses WhatsApp sender IDs, not editable profile names.
 - Group and sender allowlists are checked before AI tools are exposed.
 - The unauthorized rejection call has no Notion or web-search tools.
-- Task creation uses the strict `create_notion_task` schema; Brain Dump writes can only append a bounded note to the configured page.
+- Task creation uses the strict `create_notion_task` schema; Brain Dump writes can only append to the configured page. Large appends are split into ordered transport-sized requests rather than truncated.
 - Existing-task updates require an exact result from the same request; whole-page replacement must be explicit and cannot delete nested child pages or databases.
 - Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
 - Company knowledge is opt-in, read-only in the bot, and limited to one title search plus two matched resource reads per request.

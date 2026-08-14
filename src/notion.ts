@@ -101,6 +101,7 @@ interface NotionTaskServiceOptions {
 
 const MAX_BRAIN_DUMP_CHARACTERS = 12_000;
 const MAX_KNOWLEDGE_PAGE_CHARACTERS = 12_000;
+const MAX_NOTION_MARKDOWN_CHUNK_CHARACTERS = 100_000;
 
 type NotionSearchItem = SearchResponse["results"][number];
 type NotionPageProperty = PageObjectResponse["properties"][string];
@@ -199,6 +200,51 @@ export function boundBrainDumpMarkdown(markdown: string): {
     markdown: `${markdown.slice(0, MAX_BRAIN_DUMP_CHARACTERS)}\n\n[Content truncated by Captain Patch]`,
     truncated: true,
   };
+}
+
+/**
+ * Keep each Notion Markdown request comfortably below the API payload limit
+ * while preserving the complete document and preferring Markdown boundaries.
+ */
+export function splitMarkdownForNotion(
+  markdown: string,
+  maxCharacters = MAX_NOTION_MARKDOWN_CHUNK_CHARACTERS,
+): string[] {
+  if (!Number.isInteger(maxCharacters) || maxCharacters < 1) {
+    throw new Error("maxCharacters must be a positive integer");
+  }
+  if (markdown.length === 0) return [];
+
+  const chunks: string[] = [];
+  let start = 0;
+  while (markdown.length - start > maxCharacters) {
+    const hardEnd = start + maxCharacters;
+    const minimumPreferredEnd = start + Math.floor(maxCharacters / 2);
+    const paragraphEnd = markdown.lastIndexOf("\n\n", hardEnd - 2);
+    const lineEnd = markdown.lastIndexOf("\n", hardEnd - 1);
+    const whitespaceEnd = markdown.lastIndexOf(" ", hardEnd - 1);
+    let end = hardEnd;
+    if (paragraphEnd >= minimumPreferredEnd) end = paragraphEnd + 2;
+    else if (lineEnd >= minimumPreferredEnd) end = lineEnd + 1;
+    else if (whitespaceEnd >= minimumPreferredEnd) end = whitespaceEnd + 1;
+
+    // Do not separate a UTF-16 surrogate pair at a hard boundary.
+    const previousCodeUnit = markdown.charCodeAt(end - 1);
+    const nextCodeUnit = markdown.charCodeAt(end);
+    if (
+      previousCodeUnit >= 0xd800 &&
+      previousCodeUnit <= 0xdbff &&
+      nextCodeUnit >= 0xdc00 &&
+      nextCodeUnit <= 0xdfff
+    ) {
+      end -= 1;
+    }
+
+    chunks.push(markdown.slice(start, end));
+    start = end;
+  }
+  chunks.push(markdown.slice(start));
+  return chunks;
 }
 
 export function resolveAssigneeId(
@@ -461,19 +507,23 @@ export class NotionTaskService {
     }
 
     const markdown = brainDumpAppendMarkdown(input, source);
-    await this.client.pages.updateMarkdown({
-      page_id: pageId,
-      type: "insert_content",
-      insert_content: {
-        content: markdown,
-        position: { type: "end" },
-      },
-    });
+    const chunks = splitMarkdownForNotion(markdown);
+    for (const chunk of chunks) {
+      await this.client.pages.updateMarkdown({
+        page_id: pageId,
+        type: "insert_content",
+        insert_content: {
+          content: chunk,
+          position: { type: "end" },
+        },
+      });
+    }
 
     this.options.logger.info(
       {
         notionPageId: pageId,
         charactersAdded: markdown.length,
+        chunksAdded: chunks.length,
         hasHeading: Boolean(input.heading),
       },
       "Appended to Notion Brain Dump",

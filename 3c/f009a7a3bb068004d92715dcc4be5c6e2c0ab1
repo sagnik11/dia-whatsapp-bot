@@ -1,0 +1,84 @@
+test/notion.test.ts
+  s_4f29094a4551ec::t_ed0945541075f2 9,207-261
+src/assistant.ts
+  s_4f29094a4551ec::t_c06390eb6ae8e5 152-153,162,881,1096,1157-1164,1169,1176,1183,1198,1207,1217,1228,1241,2064-2099
+  s_4f29094a4551ec::t_ed0945541075f2 1191
+test/assistant.test.ts
+  s_4f29094a4551ec::t_4e9b59aeb0e96d 620-626,821-822,826,836,873
+  s_4f29094a4551ec::t_ed0945541075f2 238,540-619
+src/notion.ts
+  s_4f29094a4551ec::t_c06390eb6ae8e5 205-222,230-249,510-520,526
+  s_4f29094a4551ec::t_ed0945541075f2 104,223-229
+README.md
+  s_4f29094a4551ec::t_4e9b59aeb0e96d 54,364-366,374,636
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "autter_version": "development:1.6.7",
+  "base_commit_sha": "3cf009a7a3bb068004d92715dcc4be5c6e2c0ab1",
+  "branch": "main",
+  "prompts": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:c2b645b7e03632fcca68600197f4660c232572c20f45f979dc1660a404403a4b",
+      "total_additions": 283,
+      "total_deletions": 30,
+      "accepted_lines": 272,
+      "overriden_lines": 0
+    }
+  },
+  "sessions": {
+    "s_4f29094a4551ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fec6c-8b65-7ea3-85d7-cd0836b2e05c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Sagnik Ghosh <sagnik@worqhat.com>",
+      "messages_url": "cas:c2b645b7e03632fcca68600197f4660c232572c20f45f979dc1660a404403a4b",
+      "stats": {
+        "total_additions": 283,
+        "total_deletions": 30,
+        "accepted_lines": 272,
+        "overriden_lines": 0,
+        "files": {
+          "README.md": {
+            "total_additions": 6,
+            "total_deletions": 3,
+            "accepted_lines": 6,
+            "overriden_lines": 0
+          },
+          "src/assistant.ts": {
+            "total_additions": 58,
+            "total_deletions": 4,
+            "accepted_lines": 58,
+            "overriden_lines": 0
+          },
+          "src/notion.ts": {
+            "total_additions": 68,
+            "total_deletions": 18,
+            "accepted_lines": 58,
+            "overriden_lines": 0
+          },
+          "test/assistant.test.ts": {
+            "total_additions": 94,
+            "total_deletions": 5,
+            "accepted_lines": 93,
+            "overriden_lines": 0
+          },
+          "test/notion.test.ts": {
+            "total_additions": 57,
+            "total_deletions": 0,
+            "accepted_lines": 57,
+            "overriden_lines": 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,12 +1,13 @@
-import OpenAI from "openai";
+import type OpenAI from "openai";
+import { createAzureOpenAIClient } from "./azure-openai.js";
 import { AUTTER_CONTEXT, CAPTAIN_PATCH_PERSONA } from "./captain-patch.js";
 import type { Logger } from "./logger.js";
 import type { ReminderRecord, TaskListResult } from "./types.js";
 
 interface FounderBriefOptions {
-  gatewayApiKey: string;
-  gatewayBaseUrl: string;
-  model: string;
+  azureApiKey: string;
+  azureBaseUrl: string;
+  deployment: string;
   timezone: string;
   logger: Logger;
 }
@@ -15,9 +16,9 @@ export class FounderBriefGenerator {
   private readonly client: OpenAI;
 
   public constructor(private readonly options: FounderBriefOptions) {
-    this.client = new OpenAI({
-      apiKey: options.gatewayApiKey,
-      baseURL: options.gatewayBaseUrl,
+    this.client = createAzureOpenAIClient({
+      apiKey: options.azureApiKey,
+      baseUrl: options.azureBaseUrl,
     });
   }
 
@@ -26,7 +27,7 @@ export class FounderBriefGenerator {
     reminders: readonly ReminderRecord[],
   ): Promise<string> {
     const response = await this.client.responses.create({
-      model: this.options.model,
+      model: this.options.deployment,
       instructions: [
         CAPTAIN_PATCH_PERSONA,
         AUTTER_CONTEXT,
@@ -49,7 +50,7 @@ export class FounderBriefGenerator {
       store: false,
     });
     const output = response.output_text.trim().slice(0, 3_500);
-    if (!output) throw new Error("AI Gateway returned an empty founder brief");
+    if (!output) throw new Error("Azure OpenAI returned an empty founder brief");
     this.options.logger.info(
       { taskCount: tasks.tasks.length, reminderCount: reminders.length },
       "Generated founder brief",

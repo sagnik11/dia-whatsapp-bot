@@ -58,9 +58,9 @@ const webSearch = config.tavilyApiKey
   : undefined;
 const researchAgent = webSearch
   ? new ResearchAgent({
-      gatewayApiKey: config.aiGatewayApiKey,
-      gatewayBaseUrl: config.aiGatewayBaseUrl,
-      model: config.aiGatewayModel,
+      azureApiKey: config.azureOpenAIApiKey,
+      azureBaseUrl: config.azureOpenAIBaseUrl,
+      deployment: config.azureOpenAIDeployment,
       timezone: config.timezone,
       maxSearches: config.researchMaxSearches,
       webSearch,
@@ -68,10 +68,10 @@ const researchAgent = webSearch
     })
   : undefined;
 const assistant = new DiaAssistant({
-  gatewayApiKey: config.aiGatewayApiKey,
-  gatewayBaseUrl: config.aiGatewayBaseUrl,
-  model: config.aiGatewayModel,
-  mediaModel: config.aiGatewayMediaModel,
+  azureApiKey: config.azureOpenAIApiKey,
+  azureBaseUrl: config.azureOpenAIBaseUrl,
+  deployment: config.azureOpenAIDeployment,
+  mediaDeployment: config.azureOpenAIMediaDeployment,
   botName: config.botName,
   timezone: config.timezone,
   notion,
@@ -93,9 +93,9 @@ const mediaIngestion = new MediaIngestionService({
 });
 const founderBrief = config.founderBriefTime
   ? new FounderBriefGenerator({
-      gatewayApiKey: config.aiGatewayApiKey,
-      gatewayBaseUrl: config.aiGatewayBaseUrl,
-      model: config.aiGatewayModel,
+      azureApiKey: config.azureOpenAIApiKey,
+      azureBaseUrl: config.azureOpenAIBaseUrl,
+      deployment: config.azureOpenAIDeployment,
       timezone: config.timezone,
       logger,
     })

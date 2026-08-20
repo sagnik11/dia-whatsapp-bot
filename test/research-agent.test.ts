@@ -35,9 +35,9 @@ describe("ResearchAgent", () => {
           "## Summary\nUse a factual Show HN post. https://news.ycombinator.com/newsguidelines.html",
       });
     const agent = new ResearchAgent({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       timezone: "Asia/Kolkata",
       maxSearches: 3,
       webSearch: { search } as never,

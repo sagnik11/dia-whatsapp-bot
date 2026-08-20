@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { z } from "zod";
+import { createAzureOpenAIClient } from "./azure-openai.js";
 import { AUTTER_CONTEXT } from "./captain-patch.js";
 import type { Logger } from "./logger.js";
 import type { TavilyWebSearchService } from "./web-search.js";
@@ -44,9 +45,9 @@ export interface ResearchResult {
 }
 
 interface ResearchAgentOptions {
-  gatewayApiKey: string;
-  gatewayBaseUrl: string;
-  model: string;
+  azureApiKey: string;
+  azureBaseUrl: string;
+  deployment: string;
   timezone: string;
   maxSearches: number;
   webSearch: TavilyWebSearchService;
@@ -57,9 +58,9 @@ export class ResearchAgent {
   private readonly client: OpenAI;
 
   public constructor(private readonly options: ResearchAgentOptions) {
-    this.client = new OpenAI({
-      apiKey: options.gatewayApiKey,
-      baseURL: options.gatewayBaseUrl,
+    this.client = createAzureOpenAIClient({
+      apiKey: options.azureApiKey,
+      baseUrl: options.azureBaseUrl,
     });
   }
 
@@ -92,7 +93,7 @@ export class ResearchAgent {
 
     for (let round = 0; round < this.options.maxSearches + 3; round += 1) {
       const response = await this.client.responses.create({
-        model: this.options.model,
+        model: this.options.deployment,
         instructions,
         input,
         tools: [searchTool],

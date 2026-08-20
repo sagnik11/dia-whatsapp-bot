@@ -78,8 +78,9 @@ nano .env
 Set at least these values:
 
 ```dotenv
-AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
-AI_GATEWAY_MODEL=azure/your-model-name
+AZURE_OPENAI_API_KEY=your_azure_resource_key
+AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
+AZURE_OPENAI_DEPLOYMENT=your-deployment-name
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 NOTION_BRAIN_DUMP_PAGE_ID=your_optional_notion_page_id
@@ -108,7 +109,9 @@ SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
 SUPERMEMORY_CONTAINER_TAG=autter-company
 ```
 
-Replace `your-model-name` with the exact model name configured for your Azure endpoint, such as `gpt-luna`. The same Azure model handles ordinary messages, screenshots, and PDFs unless `AI_GATEWAY_MEDIA_MODEL` is explicitly overridden. Captain Patch rejects primary model IDs that do not begin with `azure/`. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables quick lookup plus the delegated Patch Research agent; `RESEARCH_MAX_SEARCHES=3` caps each explicit research run. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. `NOTION_SPEND_DATA_SOURCE_ID` is optional; when set, connect the integration to the Daily Spend Log with **Read content** and **Insert content**. The separate payer map can be omitted when `NOTION_ASSIGNEE_MAP_JSON` already contains both founders.
+Copy the Azure resource endpoint and append `/openai/v1/` for `AZURE_OPENAI_BASE_URL`. Set `AZURE_OPENAI_DEPLOYMENT` to the deployment name shown in Azure—not the underlying catalog model name and not an `azure/...` provider identifier. The same deployment handles ordinary messages, screenshots, and PDFs unless `AZURE_OPENAI_MEDIA_DEPLOYMENT` is set to another deployment. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables quick lookup plus the delegated Patch Research agent; `RESEARCH_MAX_SEARCHES=3` caps each explicit research run. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. `NOTION_SPEND_DATA_SOURCE_ID` is optional; when set, connect the integration to the Daily Spend Log with **Read content** and **Insert content**. The separate payer map can be omitted when `NOTION_ASSIGNEE_MAP_JSON` already contains both founders.
+
+For an existing deployment, delete `AI_GATEWAY_API_KEY`, `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_MODEL`, and `AI_GATEWAY_MEDIA_MODEL` from `.env`. The bot intentionally no longer reads those variables; a Vercel key cannot authenticate directly to Azure.
 
 To enable company-wide Notion reads, review the integration's Content access, connect only the intended company pages/databases, and change `NOTION_KNOWLEDGE_ENABLED=true`. The Notion API cannot scope searches by teamspace, so do not enable this while unrelated personal pages are shared with the same integration.
 
@@ -118,7 +121,7 @@ Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste 
 
 ### Optional: bootstrap Autter's persistent memory
 
-The `memory` Compose profile runs the open-source Supermemory Local binary inside the private Compose network. It reuses `AI_GATEWAY_API_KEY`, `AI_GATEWAY_BASE_URL`, and `AI_GATEWAY_MODEL` for extraction and keeps embeddings local.
+The `memory` Compose profile runs the open-source Supermemory Local binary inside the private Compose network. It reuses `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_BASE_URL`, and `AZURE_OPENAI_DEPLOYMENT` for extraction and keeps embeddings local.
 
 The profile pins server `0.0.7-rc.2` because stable `0.0.6` has an upstream Linux standalone-binary packaging defect that leaves ingestion queued. On startup, the launcher upgrades an older cached binary in place while retaining the graph and generated API key in `supermemory-data`.
 
@@ -143,7 +146,7 @@ SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
 SUPERMEMORY_CONTAINER_TAG=autter-company
 ```
 
-The key is local authentication, not your Vercel credential. Do not post it in WhatsApp or commit it. The persistent `supermemory-data` volume retains the graph, auth state, and embedding cache across rebuilds.
+The key is local Supermemory authentication, not your Azure credential. Do not post it in WhatsApp or commit it. The persistent `supermemory-data` volume retains the graph, auth state, and embedding cache across rebuilds.
 
 ## 4. Pair the WhatsApp account over SSH
 

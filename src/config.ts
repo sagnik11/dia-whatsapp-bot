@@ -11,13 +11,28 @@ const optionalTime = optionalString.refine(
   "Time must use 24-hour HH:mm format",
 );
 
+const azureOpenAIBaseUrl = z
+  .url("AZURE_OPENAI_BASE_URL must be a valid URL")
+  .refine(
+    (value) => new URL(value).pathname.replace(/\/+$/, "") === "/openai/v1",
+    "AZURE_OPENAI_BASE_URL must end with /openai/v1/",
+  )
+  .transform((value) => `${value.replace(/\/+$/, "")}/`);
+
 const schema = z.object({
-  AI_GATEWAY_API_KEY: z.string().min(1, "AI_GATEWAY_API_KEY is required"),
-  AI_GATEWAY_BASE_URL: z.url().default("https://ai-gateway.vercel.sh/v1"),
-  AI_GATEWAY_MODEL: z
+  AZURE_OPENAI_API_KEY: z.string().min(1, "AZURE_OPENAI_API_KEY is required"),
+  AZURE_OPENAI_BASE_URL: azureOpenAIBaseUrl,
+  AZURE_OPENAI_DEPLOYMENT: z
     .string()
-    .regex(/^azure\/.+/, "AI_GATEWAY_MODEL must use the azure/<model-name> format"),
-  AI_GATEWAY_MEDIA_MODEL: optionalString,
+    .min(1, "AZURE_OPENAI_DEPLOYMENT is required")
+    .refine(
+      (value) => !value.startsWith("azure/"),
+      "AZURE_OPENAI_DEPLOYMENT must be the Azure deployment name without an azure/ prefix",
+    ),
+  AZURE_OPENAI_MEDIA_DEPLOYMENT: optionalString.refine(
+    (value) => !value?.startsWith("azure/"),
+    "AZURE_OPENAI_MEDIA_DEPLOYMENT must be the Azure deployment name without an azure/ prefix",
+  ),
   SUPERMEMORY_ENABLED: z
     .enum(["true", "false"])
     .default("false")
@@ -137,10 +152,11 @@ const configuredNotionNotificationGroupIds = parseIdSet(
 );
 
 export const config = {
-  aiGatewayApiKey: env.AI_GATEWAY_API_KEY,
-  aiGatewayBaseUrl: env.AI_GATEWAY_BASE_URL,
-  aiGatewayModel: env.AI_GATEWAY_MODEL,
-  aiGatewayMediaModel: env.AI_GATEWAY_MEDIA_MODEL ?? env.AI_GATEWAY_MODEL,
+  azureOpenAIApiKey: env.AZURE_OPENAI_API_KEY,
+  azureOpenAIBaseUrl: env.AZURE_OPENAI_BASE_URL,
+  azureOpenAIDeployment: env.AZURE_OPENAI_DEPLOYMENT,
+  azureOpenAIMediaDeployment:
+    env.AZURE_OPENAI_MEDIA_DEPLOYMENT ?? env.AZURE_OPENAI_DEPLOYMENT,
   supermemoryEnabled: env.SUPERMEMORY_ENABLED,
   supermemoryBaseUrl: env.SUPERMEMORY_BASE_URL,
   supermemoryApiKey: env.SUPERMEMORY_API_KEY,

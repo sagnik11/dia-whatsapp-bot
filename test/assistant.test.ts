@@ -150,9 +150,9 @@ describe("DiaAssistant founder spend log", () => {
       output_text: "",
     });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {} as never,
@@ -302,9 +302,9 @@ describe("DiaAssistant task reads", () => {
         output_text: "Send proposal is due Wednesday.",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Dia",
       timezone: "Asia/Kolkata",
       notion: { listTasks } as never,
@@ -357,9 +357,9 @@ describe("DiaAssistant persistent Autter memory", () => {
       output_text: "Tanvi owns launch marketing.",
     });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {} as never,
@@ -434,9 +434,9 @@ describe("DiaAssistant web search", () => {
         output_text: "The harbour is busy. https://autter.dev/",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {} as never,
@@ -501,9 +501,9 @@ describe("DiaAssistant delegated research", () => {
         output_text: "",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {} as never,
@@ -571,9 +571,9 @@ describe("DiaAssistant delegated research", () => {
       "Research them and add my notes and your research separately to the Brain Dump.",
     ].join("\n");
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: { canReadBrainDump: true, appendBrainDump } as never,
@@ -716,9 +716,9 @@ describe("DiaAssistant delegated research", () => {
         output_text: "",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: { listTasks, updateTask } as never,
@@ -780,9 +780,9 @@ describe("DiaAssistant Brain Dump reads", () => {
         output_text: "The main idea is to make the first review memorable.",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: { canReadBrainDump: true, readBrainDump } as never,
@@ -840,9 +840,9 @@ describe("DiaAssistant Brain Dump appends", () => {
       output_text: "",
     });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {
@@ -936,9 +936,9 @@ describe("DiaAssistant Notion knowledge", () => {
         output_text: "Our product goal is to ship all five enforcement pillars.",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {
@@ -999,9 +999,9 @@ describe("DiaAssistant Notion knowledge", () => {
         output_text: "I couldn't access that unsearched resource.",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: { canReadKnowledge: true, readKnowledgeResource } as never,
@@ -1116,9 +1116,9 @@ describe("DiaAssistant task updates", () => {
         output_text: "",
       });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: { listTasks, updateTask } as never,
@@ -1199,9 +1199,9 @@ describe("DiaAssistant reminders", () => {
       output_text: "",
     });
     const assistant = new DiaAssistant({
-      gatewayApiKey: "test-key",
-      gatewayBaseUrl: "https://example.com/v1",
-      model: "azure/test-model",
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
       botName: "Captain Patch",
       timezone: "Asia/Kolkata",
       notion: {} as never,

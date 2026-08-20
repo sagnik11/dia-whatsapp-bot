@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { z } from "zod";
+import { createAzureOpenAIClient } from "./azure-openai.js";
 import { AUTTER_CONTEXT, CAPTAIN_PATCH_PERSONA } from "./captain-patch.js";
 import type { Logger } from "./logger.js";
 import type { AutterMemoryService } from "./memory.js";
@@ -988,10 +989,10 @@ export function formatReminderList(
 }
 
 interface AssistantOptions {
-  gatewayApiKey: string;
-  gatewayBaseUrl: string;
-  model: string;
-  mediaModel?: string;
+  azureApiKey: string;
+  azureBaseUrl: string;
+  deployment: string;
+  mediaDeployment?: string;
   botName: string;
   timezone: string;
   notion: NotionTaskService;
@@ -1007,9 +1008,9 @@ export class DiaAssistant {
   private readonly client: OpenAI;
 
   public constructor(private readonly options: AssistantOptions) {
-    this.client = new OpenAI({
-      apiKey: options.gatewayApiKey,
-      baseURL: options.gatewayBaseUrl,
+    this.client = createAzureOpenAIClient({
+      apiKey: options.azureApiKey,
+      baseUrl: options.azureBaseUrl,
     });
   }
 
@@ -1020,7 +1021,7 @@ export class DiaAssistant {
     senderId: string;
   }): Promise<string> {
     const response = await this.client.responses.create({
-      model: this.options.model,
+      model: this.options.deployment,
       instructions: [
         CAPTAIN_PATCH_PERSONA,
         `Your configured display name is ${this.options.botName}.`,
@@ -1043,7 +1044,7 @@ export class DiaAssistant {
     });
 
     const rejection = response.output_text.trim();
-    if (!rejection) throw new Error("AI Gateway returned an empty rejection");
+    if (!rejection) throw new Error("Azure OpenAI returned an empty rejection");
     return rejection;
   }
 
@@ -1308,8 +1309,8 @@ export class DiaAssistant {
       const response = await this.client.responses.create({
         model:
           request.attachments?.some((attachment) => attachment.kind !== "audio")
-            ? (this.options.mediaModel ?? this.options.model)
-            : this.options.model,
+            ? (this.options.mediaDeployment ?? this.options.deployment)
+            : this.options.deployment,
         instructions,
         input,
         tools,

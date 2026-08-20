@@ -42,7 +42,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Listens in WhatsApp **group chats** and responds only when triggered.
 - Accepts commands only from explicitly allowlisted WhatsApp accounts.
 - Gives unauthorized users a short AI-generated rejection without exposing normal tools.
-- Answers ordinary questions through an Azure-hosted model routed by Vercel AI Gateway.
+- Answers ordinary questions by calling the Azure OpenAI v1 endpoint directly.
 - Optionally gives Autter a self-hosted Supermemory brain that recalls earlier founder conversations across restarts.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
@@ -84,7 +84,7 @@ flowchart LR
     G -- Yes --> D["SQLite deduplication"]
     D --> U{"Authorized sender?"}
     U -- No --> R["Sarcastic no-tools rejection"]
-    U -- Yes --> A["Azure model through Vercel AI Gateway"]
+    U -- Yes --> A["Direct Azure OpenAI v1 call"]
     C -.->|included only on a later trigger| A
     A --> Q["Normal WhatsApp answer"]
     A --> MR["Recall Autter memory"]
@@ -123,8 +123,7 @@ Required:
 
 - Node.js 24+ or Docker with Compose
 - A dedicated or non-critical WhatsApp account
-- A [Vercel AI Gateway API key](https://vercel.com/docs/ai-gateway/authentication-and-byok)
-- An Azure model available through AI Gateway using an `azure/<model-name>` identifier
+- An [Azure OpenAI resource](https://learn.microsoft.com/azure/ai-services/openai/overview), API key, and deployed model that supports the Responses API
 - A [Notion internal integration](https://www.notion.so/profile/integrations) connected to a task database, with read/insert/update/comment capabilities used by the features you enable
 
 Optional:
@@ -145,8 +144,9 @@ cp .env.example .env
 Fill in the required values in `.env`:
 
 ```dotenv
-AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
-AI_GATEWAY_MODEL=azure/your-model-name
+AZURE_OPENAI_API_KEY=your_azure_resource_key
+AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
+AZURE_OPENAI_DEPLOYMENT=your-deployment-name
 
 # Leave disabled until the self-hosted memory service prints its local API key.
 SUPERMEMORY_ENABLED=false
@@ -166,6 +166,8 @@ BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
+
+`AZURE_OPENAI_BASE_URL` is the endpoint shown on the Azure resource with `/openai/v1/` appended. `AZURE_OPENAI_DEPLOYMENT` is the deployment name from Azure, which can differ from the underlying model name. Existing installations must remove the four `AI_GATEWAY_*` variables and add the corresponding `AZURE_OPENAI_*` values; Vercel credentials and `azure/model-name` identifiers are no longer accepted.
 
 Build and run in the foreground for the first pairing:
 
@@ -192,7 +194,7 @@ The `dia-data` Docker volume stores the WhatsApp linked-device session and SQLit
 
 ## Persistent Autter memory with Supermemory
 
-Patch supports the open-source, self-hosted [Supermemory Local](https://github.com/supermemoryai/supermemory) server. It uses the existing Vercel AI Gateway credential and Azure model for extraction, local `Xenova/bge-base-en-v1.5` embeddings for retrieval, and a separate persistent Docker volume.
+Patch supports the open-source, self-hosted [Supermemory Local](https://github.com/supermemoryai/supermemory) server. It uses the same direct Azure OpenAI v1 connection and deployment for extraction, local `Xenova/bge-base-en-v1.5` embeddings for retrieval, and a separate persistent Docker volume.
 
 The image currently pins `SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2`. Stable `0.0.6` has an upstream standalone-binary packaging regression that omits `@rivetkit/rivetkit-wasm`, leaving every ingested document queued indefinitely. The pinned release upgrades the cached binary at container startup without deleting the persistent graph or API key.
 
@@ -396,13 +398,13 @@ Examples:
 
 ## Voice notes, screenshots, and PDFs
 
-Images and PDFs are sent to the existing `AI_GATEWAY_MODEL` for multimodal understanding. For this deployment that is `azure/gpt-luna`; no second hosted model is required. `AI_GATEWAY_MEDIA_MODEL` remains an optional override for other users. You can send media with an `@patch` caption or reply with an `@patch` command to an existing media message.
+Images and PDFs are sent to `AZURE_OPENAI_DEPLOYMENT` for multimodal understanding. No second hosted model is required when the primary Azure deployment supports the input type. `AZURE_OPENAI_MEDIA_DEPLOYMENT` remains an optional override for deployments that use a separate multimodal model. You can send media with an `@patch` caption or reply with an `@patch` command to an existing media message.
 
 Voice notes are transcribed first by a private [`whisper.cpp`](https://github.com/ggml-org/whisper.cpp) service in Docker Compose. Because WhatsApp voice notes do not carry a normal text caption, reply to the voice note with `@patch summarize this` (or another command).
 
 ```dotenv
-AI_GATEWAY_MODEL=azure/gpt-luna
-AI_GATEWAY_MEDIA_MODEL=
+AZURE_OPENAI_DEPLOYMENT=gpt-luna
+AZURE_OPENAI_MEDIA_DEPLOYMENT=
 WHISPER_MODEL=tiny
 WHISPER_THREADS=2
 WHISPER_LANGUAGE=auto
@@ -442,7 +444,7 @@ FOUNDER_BRIEF_TIME=09:00
 FOUNDER_BRIEF_GROUP_IDS=120363000000000000@g.us
 ```
 
-The time uses `TIMEZONE`. If the group list is empty, Patch uses `ALLOWED_GROUP_IDS`. Unlike the deterministic four-hour digest, this feature calls `AI_GATEWAY_MODEL` once per destination per day.
+The time uses `TIMEZONE`. If the group list is empty, Patch uses `ALLOWED_GROUP_IDS`. Unlike the deterministic four-hour digest, this feature calls `AZURE_OPENAI_DEPLOYMENT` once per destination per day.
 
 ## Notion change notifications
 
@@ -542,10 +544,10 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `AI_GATEWAY_API_KEY` | Yes | — | Vercel AI Gateway credential. |
-| `AI_GATEWAY_BASE_URL` | No | `https://ai-gateway.vercel.sh/v1` | OpenAI-compatible Gateway base URL. |
-| `AI_GATEWAY_MODEL` | Yes | — | Model ID; must match `azure/<model-name>`. |
-| `AI_GATEWAY_MEDIA_MODEL` | No | `AI_GATEWAY_MODEL` | Optional Azure override for images/documents; leave blank to use Luna. |
+| `AZURE_OPENAI_API_KEY` | Yes | — | API key from the Azure OpenAI resource. |
+| `AZURE_OPENAI_BASE_URL` | Yes | — | Direct Azure v1 URL, for example `https://resource.openai.azure.com/openai/v1/`. |
+| `AZURE_OPENAI_DEPLOYMENT` | Yes | — | Azure deployment name, without the old `azure/` provider prefix. |
+| `AZURE_OPENAI_MEDIA_DEPLOYMENT` | No | `AZURE_OPENAI_DEPLOYMENT` | Optional deployment override for images and PDFs. |
 | `SUPERMEMORY_ENABLED` | No | `false` | Enables recall and complete authorized-exchange ingestion. |
 | `SUPERMEMORY_BASE_URL` | When enabled | `http://supermemory:6767` | Self-hosted or compatible Supermemory API URL. |
 | `SUPERMEMORY_API_KEY` | When enabled | Empty | Bearer key printed by the local server on first boot. |
@@ -640,15 +642,15 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Notion's API has no teamspace filter; the integration's Content access is the security boundary for company knowledge.
 - Quick web lookup is limited to one Tavily call. An explicit delegated research run is limited to `RESEARCH_MAX_SEARCHES` distinct calls and can run only once per trigger.
 - Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
-- Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent to the AI Gateway when a later authorized trigger occurs.
+- Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent directly to Azure OpenAI when a later authorized trigger occurs.
 - When Supermemory is enabled, every authorized message addressed to Patch and Patch's full delivered reply are durably stored in the private `supermemory-data` volume. This includes quoted text and complete voice transcripts; it excludes ambient untriggered chat, unauthorized commands, and raw attachment bytes.
-- Recall is sent back through Vercel AI Gateway and the configured Azure model as prompt context. Treat the Supermemory API key and volume as sensitive, and do not address passwords, private keys, or other secrets to Patch.
+- Recall is sent directly to the configured Azure OpenAI deployment as prompt context. Treat the Supermemory API key and volume as sensitive, and do not address passwords, private keys, or other secrets to Patch.
 - Triggered message bodies, resolved sender IDs, and outgoing replies are written to application logs.
 - Reminder text, schedules, requester IDs, group IDs, and digest schedule state are stored in the SQLite database.
 - The `dia-data` Docker volume contains a reusable WhatsApp linked-device session and must be treated as sensitive. The separate `whisper-models` volume contains only public model weights.
 - `.env`, `.data`, WhatsApp auth directories, logs, and build output are excluded by `.gitignore`.
 
-Before adding the bot to a group, tell participants what data may be processed by Vercel AI Gateway, the selected Azure model provider, Notion, Tavily, and your server logs.
+Before adding the bot to a group, tell participants what data may be processed by Azure OpenAI, Notion, Tavily, and your server logs.
 
 Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
@@ -658,7 +660,7 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - Only group chats are handled; direct messages are ignored.
 - Voice transcription is CPU-bound and may take a while on the smallest Lightsail plan; image/PDF understanding depends on the selected Azure deployment's multimodal support.
 - Media must fit `MEDIA_MAX_BYTES`; reply with an `@patch` command when the original media message cannot carry a caption.
-- The current model configuration intentionally requires an `azure/...` Gateway model.
+- The configured Azure deployment must support the Responses API and every input type routed to it.
 - Notion is required at startup even if you only want ordinary AI answers.
 - Notion task property types and select options are currently fixed in code.
 - Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
@@ -752,6 +754,7 @@ The test suite covers trigger routing, owner authorization, current and legacy W
 src/
 ├── assistant.ts          AI instructions and tool orchestration
 ├── authorization.ts      WhatsApp sender-ID normalization and allowlist
+├── azure-openai.ts       Direct Azure OpenAI v1 client
 ├── bot.ts                WhatsApp lifecycle and message routing
 ├── captain-patch.ts      Replaceable persona and Autter context
 ├── config.ts             Validated environment configuration

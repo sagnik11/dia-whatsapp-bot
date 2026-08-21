@@ -101,6 +101,83 @@ describe("formatTaskConfirmation", () => {
   });
 });
 
+describe("DiaAssistant task creation", () => {
+  it("accepts long founder-supplied notes without leaking recalled memory", async () => {
+    const notes = "Complete founder brief.\n".repeat(250);
+    const createTask = vi.fn().mockResolvedValue({
+      id: "page-id",
+      title: "Improve website agent search",
+      url: "https://notion.so/page-id",
+    });
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [
+        {
+          type: "function_call",
+          name: "create_notion_task",
+          call_id: "task-create",
+          arguments: JSON.stringify({
+            title: "Improve website agent search",
+            due_at: null,
+            assignee: null,
+            priority: null,
+            task_type: "Tech",
+            notes,
+          }),
+        },
+      ],
+      output_text: "",
+    });
+    const assistant = new DiaAssistant({
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
+      botName: "Patch",
+      timezone: "Asia/Kolkata",
+      notion: {
+        canReadBrainDump: false,
+        canReadKnowledge: false,
+        createTask,
+      } as never,
+      memory: {
+        recall: vi.fn().mockResolvedValue({
+          staticProfile: [],
+          dynamicProfile: ["Unrelated historical context"],
+          relevantMemories: ["A very long unrelated memory"],
+        }),
+      } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "task-message",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "@patch add a notion task that I need to improve website agent search",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toBe(
+      "✅ Task added: Improve website agent search\nhttps://notion.so/page-id",
+    );
+    expect(createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ notes }),
+      expect.objectContaining({ messageId: "task-message" }),
+    );
+    expect(responsesCreate.mock.calls[0]?.[0].instructions).toContain(
+      "Never copy recalled memory",
+    );
+    const modelInput = JSON.stringify(responsesCreate.mock.calls[0]?.[0].input);
+    expect(modelInput).not.toContain("Unrelated historical context");
+    expect(modelInput).not.toContain("A very long unrelated memory");
+  });
+});
+
 describe("formatSpendConfirmation", () => {
   it("confirms the batch count, INR total, and payer", () => {
     expect(

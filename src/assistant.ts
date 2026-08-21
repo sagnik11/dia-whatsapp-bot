@@ -140,7 +140,7 @@ const reminderCreateSchema = z.object({
   repeat_every_minutes: z.number().int().min(5).max(43_200).nullable(),
 });
 
-const reminderCancelSchema = z.object({
+const reminderActionSchema = z.object({
   reminder_id: z.number().int().positive(),
 });
 
@@ -639,6 +639,22 @@ const cancelReminderTool = {
   },
 };
 
+const completeReminderTool = {
+  type: "function" as const,
+  name: "complete_reminder",
+  description:
+    "Mark one active reminder as completed by its ID. This stops all future notifications, including repeats.",
+  strict: true,
+  parameters: {
+    type: "object",
+    properties: {
+      reminder_id: { type: "integer", minimum: 1 },
+    },
+    required: ["reminder_id"],
+    additionalProperties: false,
+  },
+};
+
 const readBrainDumpTool = {
   type: "function" as const,
   name: "read_brain_dump",
@@ -855,6 +871,16 @@ export function isExplicitReminderListRequest(message: string): boolean {
 export function isExplicitReminderCancelRequest(message: string): boolean {
   return /\b(?:cancel|stop|remove|delete|dismiss)\b[\s\S]{0,50}\breminders?\b/i.test(
     message,
+  );
+}
+
+export function isExplicitReminderCompleteRequest(message: string): boolean {
+  const referencesReminderId =
+    /\breminders?\b[\s\S]{0,20}\b(?:number|no\.?)?\s*#?\d+\b/i.test(message) ||
+    /#?\d+\b[\s\S]{0,20}\breminders?\b/i.test(message);
+  return (
+    referencesReminderId &&
+    /\b(?:complete|completed|done|finish|finished)\b/i.test(message)
   );
 }
 
@@ -1087,7 +1113,7 @@ export class DiaAssistant {
         ? [
             "Use create_reminder whenever a founder explicitly asks to be reminded. Resolve the time to an ISO 8601 datetime with an offset using the group timezone.",
             "Use a 10-minute advance notification by default, unless the reminder is too soon or the founder asks otherwise. Repeat only when explicitly requested; otherwise use null. Repeating reminders continue after the due time until cancelled.",
-            "If a reminder request has no usable time, ask for one instead of guessing. Use list_reminders and cancel_reminder for reminder management.",
+            "If a reminder request has no usable time, ask for one instead of guessing. Use list_reminders, complete_reminder, and cancel_reminder for reminder management. Completing a reminder stops all future repeats.",
           ]
         : ["Persistent reminders are not configured in this process."]),
       ...(this.options.notion.canReadBrainDump
@@ -1134,14 +1160,20 @@ export class DiaAssistant {
     ].join("\n");
 
     const prompt = this.buildPrompt(request, recalledMemory);
+    const forceReminderComplete =
+      Boolean(this.options.reminders) &&
+      isExplicitReminderCompleteRequest(request.body);
     const forceReminderCancel =
+      !forceReminderComplete &&
       Boolean(this.options.reminders) &&
       isExplicitReminderCancelRequest(request.body);
     const forceReminderList =
+      !forceReminderComplete &&
       !forceReminderCancel &&
       Boolean(this.options.reminders) &&
       isExplicitReminderListRequest(request.body);
     const forceReminderCreate =
+      !forceReminderComplete &&
       !forceReminderCancel &&
       !forceReminderList &&
       Boolean(this.options.reminders) &&
@@ -1234,7 +1266,8 @@ export class DiaAssistant {
       Boolean(this.options.webSearch) &&
       isExplicitWebSearchRequest(request.body);
     let forcedToolName: string | null = null;
-    if (forceReminderCancel) forcedToolName = "cancel_reminder";
+    if (forceReminderComplete) forcedToolName = "complete_reminder";
+    else if (forceReminderCancel) forcedToolName = "cancel_reminder";
     else if (forceReminderList) forcedToolName = "list_reminders";
     else if (forceReminderCreate) forcedToolName = "create_reminder";
     else if (forceSpendCreate) forcedToolName = "add_notion_spends";
@@ -1257,7 +1290,12 @@ export class DiaAssistant {
       addTaskCommentTool,
       ...(request.attachments?.length ? [attachMediaToTaskTool] : []),
       ...(this.options.reminders
-        ? [createReminderTool, listRemindersTool, cancelReminderTool]
+        ? [
+            createReminderTool,
+            listRemindersTool,
+            completeReminderTool,
+            cancelReminderTool,
+          ]
         : []),
       ...(this.options.notion.canReadBrainDump
         ? [readBrainDumpTool, appendBrainDumpTool]
@@ -1425,6 +1463,24 @@ export class DiaAssistant {
         );
       }
 
+      const completeReminderCalls = calls.filter(
+        (call) => call.name === "complete_reminder",
+      );
+      if (completeReminderCalls.length > 0) {
+        const call = completeReminderCalls[0];
+        if (!call || !this.options.reminders) {
+          return "Persistent reminders are not available right now.";
+        }
+        const parsed = reminderActionSchema.parse(JSON.parse(call.arguments));
+        const completed = this.options.reminders.complete(
+          parsed.reminder_id,
+          request.groupId,
+        );
+        return completed
+          ? `✅ Reminder #${parsed.reminder_id} marked completed. Future notifications have been stopped.`
+          : `I couldn't find active reminder #${parsed.reminder_id} in this group.`;
+      }
+
       const cancelReminderCalls = calls.filter(
         (call) => call.name === "cancel_reminder",
       );
@@ -1433,7 +1489,7 @@ export class DiaAssistant {
         if (!call || !this.options.reminders) {
           return "Persistent reminders are not available right now.";
         }
-        const parsed = reminderCancelSchema.parse(JSON.parse(call.arguments));
+        const parsed = reminderActionSchema.parse(JSON.parse(call.arguments));
         const cancelled = this.options.reminders.cancel(
           parsed.reminder_id,
           request.groupId,

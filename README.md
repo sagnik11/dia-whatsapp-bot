@@ -421,10 +421,11 @@ Reminders are stored in the same persistent SQLite file as message deduplication
 @patch remind me to send the investor update tomorrow at 4 PM
 @patch remind me every 30 minutes after 6 PM to check the launch
 @patch show my reminders
+@patch mark reminder number 7 as completed
 @patch cancel reminder 12
 ```
 
-The reminder confirmation includes its numeric ID. A reminder belongs to the WhatsApp group where it was created, and cancellation is limited to that group.
+The reminder confirmation includes its numeric ID. Marking a reminder completed stops all future notifications, including repeats. A reminder belongs to the WhatsApp group where it was created, and completion or cancellation is limited to that group.
 
 The incomplete-task digest is disabled by default. To send one immediately after first startup and then every four hours:
 
@@ -666,7 +667,7 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
 - Reminder delivery is at-least-once: a crash after WhatsApp accepts a message but before SQLite advances it can cause one duplicate notification.
 - Webhook notifications are also at-least-once around the small interval between WhatsApp delivery and the SQLite deduplication write.
-- Repeating reminders continue until explicitly cancelled; the bot cannot infer that the underlying real-world action was completed.
+- Repeating reminders continue until explicitly completed or cancelled; the bot cannot infer that the underlying real-world action was completed.
 - The task digest recognizes a fixed set of terminal status names; customize `isIncompleteTaskStatus` if your tracker uses different completion labels.
 - Company knowledge search matches titles, not arbitrary page-body text, and database reads return only the five most recently edited rows before an individual row is opened.
 - Context is in-memory and is lost when the process restarts.

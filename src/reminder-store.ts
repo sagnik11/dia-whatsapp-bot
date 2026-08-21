@@ -135,6 +135,13 @@ export class ReminderStore {
     return result.changes === 1;
   }
 
+  public complete(id: number, groupId: string): boolean {
+    const result = this.database
+      .prepare("UPDATE reminders SET active = 0 WHERE id = ? AND group_id = ?")
+      .run(id, groupId);
+    return result.changes === 1;
+  }
+
   public due(nowMs = Date.now(), limit = 50): ReminderRecord[] {
     this.database
       .prepare(

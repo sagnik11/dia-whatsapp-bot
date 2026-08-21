@@ -87,6 +87,30 @@ describe("ReminderStore", () => {
     store.close();
   });
 
+  it("stops a repeating reminder when it is marked completed", () => {
+    const store = createStore();
+    const now = Date.parse("2026-08-11T10:00:00.000Z");
+    const reminder = store.create(
+      {
+        groupId: "group@g.us",
+        requestedBy: "Sagnik",
+        requestedById: "sagnik@c.us",
+        sourceMessageId: "message-complete",
+        message: "Finish the community website",
+        dueAt: "2026-08-11T10:05:00.000Z",
+        notifyBeforeMinutes: 0,
+        repeatEveryMinutes: 240,
+      },
+      now,
+    );
+
+    expect(store.complete(reminder.id, "another-group@g.us")).toBe(false);
+    expect(store.complete(reminder.id, "group@g.us")).toBe(true);
+    expect(store.listActive("group@g.us")).toEqual([]);
+    expect(store.due(Date.parse("2026-08-12T10:00:00.000Z"))).toEqual([]);
+    store.close();
+  });
+
   it("deduplicates reminder creation by source message ID", () => {
     const store = createStore();
     const input = {

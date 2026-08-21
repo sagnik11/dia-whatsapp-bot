@@ -4,6 +4,7 @@ import {
   formatSpendConfirmation,
   formatTaskConfirmation,
   isExplicitReminderCancelRequest,
+  isExplicitReminderCompleteRequest,
   isExplicitReminderCreateRequest,
   isExplicitReminderListRequest,
   isExplicitBrainDumpAppendRequest,
@@ -74,10 +75,18 @@ describe("task and reminder command detection", () => {
     ).toBe(true);
   });
 
-  it("detects reminder creation, listing, and cancellation", () => {
+  it("detects reminder creation, listing, completion, and cancellation", () => {
     expect(isExplicitReminderCreateRequest("remind me to send the proposal at 4"))
       .toBe(true);
     expect(isExplicitReminderListRequest("show my reminders")).toBe(true);
+    expect(
+      isExplicitReminderCompleteRequest(
+        "mark reminder number 7 as completed",
+      ),
+    ).toBe(true);
+    expect(isExplicitReminderCompleteRequest("which reminders are completed?")).toBe(
+      false,
+    );
     expect(isExplicitReminderCancelRequest("cancel reminder 4")).toBe(true);
   });
 });
@@ -1237,6 +1246,53 @@ describe("DiaAssistant reminders", () => {
     });
     expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
       tool_choice: { type: "function", name: "create_reminder" },
+    });
+  });
+
+  it("marks an active reminder completed and stops its future notifications", async () => {
+    const complete = vi.fn().mockReturnValue(true);
+    const responsesCreate = vi.fn().mockResolvedValueOnce({
+      output: [
+        {
+          type: "function_call",
+          name: "complete_reminder",
+          call_id: "reminder-complete",
+          arguments: JSON.stringify({ reminder_id: 7 }),
+        },
+      ],
+      output_text: "",
+    });
+    const assistant = new DiaAssistant({
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
+      botName: "Captain Patch",
+      timezone: "Asia/Kolkata",
+      notion: {} as never,
+      reminders: { complete } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "message-reminder-complete",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "mark reminder number 7 as completed",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toBe(
+      "✅ Reminder #7 marked completed. Future notifications have been stopped.",
+    );
+    expect(complete).toHaveBeenCalledWith(7, "group@g.us");
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "complete_reminder" },
     });
   });
 });

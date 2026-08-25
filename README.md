@@ -67,7 +67,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 
 ## Captain Patch and Autter
 
-The default persona is Captain Patch, [Autter's](https://autter.dev/) suspicious harbour master. Patch is dry, highly sarcastic, and unimpressed by bad code, vague plans, avoidable chaos, and meetings that should have been messages. The prompt explicitly keeps the humour non-abusive and requires the useful answer to win over the joke.
+The default persona is Captain Patch, [Autter's](https://autter.dev/) suspicious harbour master. Patch is dry, highly sarcastic, and unimpressed by bad code, vague plans, avoidable chaos, and meetings that should have been messages. Patch is calm and gentle with Sagnik and performs an intentionally annoying comic rivalry with Tanvi without changing her equal permissions or the quality of her results. Serious or sensitive messages always drop the rivalry. The prompt explicitly keeps the humour non-abusive and requires the useful answer to win over the joke. The persona from before this founder-specific variation is preserved in [`docs/prompts/captain-patch-original.md`](docs/prompts/captain-patch-original.md).
 
 The included context describes Autter as an independent assurance layer and merge gate for the AI coding era. It also records Sagnik Ghosh and Tanvi as equal co-founders and close friends. This context is used only as assistant background; WhatsApp authorization still depends exclusively on resolved sender IDs, never names.
 
@@ -146,7 +146,7 @@ Fill in the required values in `.env`:
 ```dotenv
 AZURE_OPENAI_API_KEY=your_azure_resource_key
 AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
-AZURE_OPENAI_DEPLOYMENT=your-deployment-name
+AZURE_OPENAI_DEPLOYMENT=gpt-luna
 
 # Leave disabled until the self-hosted memory service prints its local API key.
 SUPERMEMORY_ENABLED=false

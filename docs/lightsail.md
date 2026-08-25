@@ -80,7 +80,7 @@ Set at least these values:
 ```dotenv
 AZURE_OPENAI_API_KEY=your_azure_resource_key
 AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
-AZURE_OPENAI_DEPLOYMENT=your-deployment-name
+AZURE_OPENAI_DEPLOYMENT=gpt-luna
 NOTION_API_KEY=your_notion_key
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 NOTION_BRAIN_DUMP_PAGE_ID=your_optional_notion_page_id

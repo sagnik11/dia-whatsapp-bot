@@ -399,6 +399,111 @@ describe("Notion task collaboration", () => {
 });
 
 describe("Notion company knowledge", () => {
+  it("discovers and reads live scripts across multiple data sources", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            object: "page",
+            id: "episode-1",
+            url: "https://notion.so/episode-1",
+            last_edited_time: "2026-08-20T10:00:00.000Z",
+            properties: {
+              "Doc name": {
+                type: "title",
+                title: [{ plain_text: "Dekhte Hai Ep 1" }],
+              },
+            },
+          },
+          {
+            object: "page",
+            id: "topics",
+            url: "https://notion.so/topics",
+            last_edited_time: "2026-08-21T10:00:00.000Z",
+            properties: {
+              "Doc name": {
+                type: "title",
+                title: [{ plain_text: "Dekhte Hai Topics" }],
+              },
+            },
+          },
+        ],
+        has_more: false,
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            object: "page",
+            id: "episode-5",
+            url: "https://notion.so/episode-5",
+            last_edited_time: "2026-08-25T10:00:00.000Z",
+            properties: {
+              "Post name": {
+                type: "title",
+                title: [{ plain_text: "Dekhte Hai Ep5" }],
+              },
+            },
+          },
+        ],
+        has_more: false,
+      });
+    const retrieveMarkdown = vi.fn(async ({ page_id }: { page_id: string }) => ({
+      object: "page_markdown",
+      id: page_id,
+      markdown: `Live content for ${page_id}`,
+      truncated: false,
+      unknown_block_ids: [],
+    }));
+    const service = new NotionTaskService({
+      apiKey: "test-key",
+      dataSourceId: "tasks-source",
+      scriptSources: [
+        { dataSourceId: "document-hub", titleProperty: "Doc name" },
+        { dataSourceId: "content-planner", titleProperty: "Post name" },
+      ],
+      scriptSeriesName: "Dekhte Hai",
+      properties,
+      defaultStatus: "Not started",
+      defaultAssigneeId: undefined,
+      assigneeMap: {},
+      logger: { info: vi.fn(), warn: vi.fn() } as never,
+    });
+    Object.assign(service as unknown as { client: unknown }, {
+      client: { dataSources: { query }, pages: { retrieveMarkdown } },
+    });
+
+    await expect(service.readScriptLibrary()).resolves.toEqual({
+      seriesName: "Dekhte Hai",
+      scripts: [
+        expect.objectContaining({
+          episode: 1,
+          id: "episode-1",
+          markdown: "Live content for episode-1",
+        }),
+        expect.objectContaining({
+          episode: 5,
+          id: "episode-5",
+          markdown: "Live content for episode-5",
+        }),
+      ],
+    });
+    expect(retrieveMarkdown).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data_source_id: "document-hub",
+        filter: { property: "Doc name", title: { contains: "Dekhte Hai" } },
+      }),
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data_source_id: "content-planner",
+        filter: { property: "Post name", title: { contains: "Dekhte Hai" } },
+      }),
+    );
+  });
+
   it("searches titles shared with the integration and returns compact matches", async () => {
     const search = vi.fn().mockResolvedValue({
       results: [

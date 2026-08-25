@@ -10,6 +10,8 @@ import type {
   BrainDumpResult,
   KnowledgeResourceResult,
   KnowledgeSearchResponse,
+  ScriptLibraryResult,
+  ScriptSource,
   TaskInput,
   TaskAttachmentResult,
   TaskCommentSummary,
@@ -92,6 +94,8 @@ interface NotionTaskServiceOptions {
   dataSourceId: string;
   brainDumpPageId?: string;
   knowledgeEnabled?: boolean;
+  scriptSources?: ReadonlyArray<ScriptSource>;
+  scriptSeriesName?: string;
   properties: NotionPropertyNames;
   defaultStatus: string;
   defaultAssigneeId: string | undefined;
@@ -126,6 +130,16 @@ function searchItemTitle(item: NotionSearchItem): string {
   }
 
   return "";
+}
+
+function scriptEpisodeNumber(title: string, seriesName: string): number | null {
+  const escapedSeries = seriesName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = title.match(
+    new RegExp(`^${escapedSeries}\\s+Ep(?:isode)?\\.?\\s*(\\d+)\\s*$`, "i"),
+  );
+  if (!match?.[1]) return null;
+  const episode = Number.parseInt(match[1], 10);
+  return Number.isSafeInteger(episode) && episode > 0 ? episode : null;
 }
 
 function summarizePageProperty(property: NotionPageProperty): unknown {
@@ -381,6 +395,94 @@ export class NotionTaskService {
 
   public get canReadKnowledge(): boolean {
     return Boolean(this.options.knowledgeEnabled);
+  }
+
+  public get canReadScriptLibrary(): boolean {
+    return Boolean(this.options.scriptSources?.length);
+  }
+
+  public async readScriptLibrary(): Promise<ScriptLibraryResult> {
+    const sources = this.options.scriptSources ?? [];
+    const seriesName = this.options.scriptSeriesName?.trim() || "Dekhte Hai";
+    if (sources.length === 0) {
+      throw new Error("NOTION_SCRIPT_SOURCE_MAP_JSON is not configured");
+    }
+
+    const queryResults = await Promise.all(
+      sources.map(async (source) => ({
+        source,
+        response: await this.client.dataSources.query({
+          data_source_id: source.dataSourceId,
+          page_size: 100,
+          result_type: "page",
+          filter: {
+            property: source.titleProperty,
+            title: { contains: seriesName },
+          },
+          sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+        }),
+      })),
+    );
+
+    const newestByEpisode = new Map<
+      number,
+      { episode: number; page: PageObjectResponse; title: string }
+    >();
+    for (const { source, response } of queryResults) {
+      for (const result of response.results) {
+        if (result.object !== "page" || !("properties" in result)) continue;
+        const page = result as PageObjectResponse;
+        const property = page.properties[source.titleProperty];
+        const title = property?.type === "title" ? plainText(property.title) : "";
+        const episode = scriptEpisodeNumber(title, seriesName);
+        if (episode === null) continue;
+        const current = newestByEpisode.get(episode);
+        if (!current || page.last_edited_time > current.page.last_edited_time) {
+          newestByEpisode.set(episode, { episode, page, title });
+        }
+      }
+    }
+
+    const matches = [...newestByEpisode.values()]
+      .sort((left, right) => left.episode - right.episode);
+    const scripts = (
+      await Promise.all(
+        matches.map(async ({ episode, page, title }) => {
+          try {
+            const content = await this.client.pages.retrieveMarkdown({
+              page_id: page.id,
+              include_transcript: false,
+            });
+            return {
+              episode,
+              id: page.id,
+              title,
+              url: page.url,
+              lastEditedTime: page.last_edited_time,
+              markdown: content.markdown,
+              truncated: content.truncated,
+            };
+          } catch (error) {
+            this.options.logger.warn(
+              { error, notionPageId: page.id, title },
+              "Could not read one Notion script page",
+            );
+            return null;
+          }
+        }),
+      )
+    ).filter((script): script is NonNullable<typeof script> => script !== null);
+
+    this.options.logger.info(
+      {
+        seriesName,
+        sourceCount: sources.length,
+        scriptCount: scripts.length,
+        episodes: scripts.map((script) => script.episode),
+      },
+      "Read live Notion script library",
+    );
+    return { seriesName, scripts };
   }
 
   public async searchKnowledge(

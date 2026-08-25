@@ -64,6 +64,8 @@ const schema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  NOTION_SCRIPT_SOURCE_MAP_JSON: z.string().default("{}"),
+  NOTION_SCRIPT_SERIES_NAME: z.string().min(1).default("Dekhte Hai"),
   NOTION_TITLE_PROPERTY: z.string().default("Task name"),
   NOTION_STATUS_PROPERTY: z.string().default("Status"),
   NOTION_DEFAULT_STATUS: z.string().default("Not started"),
@@ -134,6 +136,17 @@ function parseAssigneeMap(value: string): Readonly<Record<string, string>> {
   );
 }
 
+function parseScriptSourceMap(
+  value: string,
+): ReadonlyArray<{ dataSourceId: string; titleProperty: string }> {
+  const parsed: unknown = JSON.parse(value);
+  const validated = z.record(z.string().min(1), z.string().min(1)).parse(parsed);
+  return Object.entries(validated).map(([dataSourceId, titleProperty]) => ({
+    dataSourceId: dataSourceId.trim(),
+    titleProperty: titleProperty.trim(),
+  }));
+}
+
 function parseIdSet(value: string): ReadonlySet<string> {
   return new Set(
     value
@@ -171,6 +184,8 @@ export const config = {
   notionDataSourceId: env.NOTION_DATA_SOURCE_ID,
   notionBrainDumpPageId: env.NOTION_BRAIN_DUMP_PAGE_ID,
   notionKnowledgeEnabled: env.NOTION_KNOWLEDGE_ENABLED,
+  notionScriptSources: parseScriptSourceMap(env.NOTION_SCRIPT_SOURCE_MAP_JSON),
+  notionScriptSeriesName: env.NOTION_SCRIPT_SERIES_NAME,
   notionProperties: {
     title: env.NOTION_TITLE_PROPERTY,
     status: env.NOTION_STATUS_PROPERTY,

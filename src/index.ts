@@ -39,6 +39,8 @@ const notion = new NotionTaskService({
     ? { brainDumpPageId: config.notionBrainDumpPageId }
     : {}),
   knowledgeEnabled: config.notionKnowledgeEnabled,
+  scriptSources: config.notionScriptSources,
+  scriptSeriesName: config.notionScriptSeriesName,
   properties: config.notionProperties,
   defaultStatus: config.notionDefaultStatus,
   defaultAssigneeId: config.notionDefaultAssigneeId,

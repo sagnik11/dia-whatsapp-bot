@@ -17,6 +17,7 @@ import {
   isExplicitTaskRequest,
   isExplicitTaskUpdateRequest,
   isExplicitWebSearchRequest,
+  isDekhteHaiRequest,
 } from "../src/assistant.js";
 
 describe("isExplicitTaskRequest", () => {
@@ -346,6 +347,87 @@ describe("isExplicitKnowledgeRequest", () => {
 
   it("does not search internal knowledge for a general question", () => {
     expect(isExplicitKnowledgeRequest("explain semantic versioning")).toBe(false);
+  });
+});
+
+describe("Dekhte Hai live-script routing", () => {
+  it.each([
+    "summarize all Dekhte Hai scripts",
+    "write the next dekhte hain episode using our previous voice",
+  ])("recognizes a series request: %s", (message) => {
+    expect(isDekhteHaiRequest(message)).toBe(true);
+  });
+
+  it("loads the complete live library before answering", async () => {
+    const readScriptLibrary = vi.fn().mockResolvedValue({
+      seriesName: "Dekhte Hai",
+      scripts: [
+        {
+          episode: 1,
+          id: "episode-1",
+          title: "Dekhte Hai Ep 1",
+          url: "https://notion.so/episode-1",
+          lastEditedTime: "2026-08-26T10:00:00.000Z",
+          markdown: "Sagnik: Two founders.\nTanvi: One otter.",
+          truncated: false,
+        },
+      ],
+    });
+    const responsesCreate = vi.fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: "function_call",
+            name: "read_dekhte_hai_scripts",
+            call_id: "script-library",
+            arguments: "{}",
+          },
+        ],
+        output_text: "",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "Episode 1 establishes the two-founders, one-otter rhythm.",
+      });
+    const assistant = new DiaAssistant({
+      azureApiKey: "test-key",
+      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
+      deployment: "test-deployment",
+      botName: "Patch",
+      timezone: "Asia/Kolkata",
+      notion: {
+        canReadBrainDump: false,
+        canReadKnowledge: false,
+        canReadScriptLibrary: true,
+        readScriptLibrary,
+      } as never,
+      logger: { warn: vi.fn() } as never,
+    });
+    Object.assign(assistant as unknown as { client: unknown }, {
+      client: { responses: { create: responsesCreate } },
+    });
+
+    const reply = await assistant.respond({
+      groupId: "group@g.us",
+      groupName: "Autter",
+      messageId: "script-message",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      body: "@patch summarize all Dekhte Hai scripts",
+      quotedMessage: null,
+      recentContext: [],
+    });
+
+    expect(reply).toBe(
+      "Episode 1 establishes the two-founders, one-otter rhythm.",
+    );
+    expect(readScriptLibrary).toHaveBeenCalledOnce();
+    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
+      tool_choice: { type: "function", name: "read_dekhte_hai_scripts" },
+    });
+    expect(JSON.stringify(responsesCreate.mock.calls[1]?.[0].input)).toContain(
+      "Two founders",
+    );
   });
 });
 

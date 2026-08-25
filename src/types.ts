@@ -265,6 +265,26 @@ export interface KnowledgeSearchResponse {
   hasMore: boolean;
 }
 
+export interface ScriptSource {
+  dataSourceId: string;
+  titleProperty: string;
+}
+
+export interface ScriptLibraryEntry {
+  episode: number;
+  id: string;
+  title: string;
+  url: string;
+  lastEditedTime: string;
+  markdown: string;
+  truncated: boolean;
+}
+
+export interface ScriptLibraryResult {
+  seriesName: string;
+  scripts: ScriptLibraryEntry[];
+}
+
 export interface KnowledgePageResult {
   id: string;
   type: "page";

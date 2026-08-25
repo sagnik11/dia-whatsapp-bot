@@ -44,6 +44,7 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - Gives unauthorized users a short AI-generated rejection without exposing normal tools.
 - Answers ordinary questions by calling the Azure OpenAI v1 endpoint directly.
 - Optionally gives Autter a self-hosted Supermemory brain that recalls earlier founder conversations across restarts.
+- Fetches the complete current Dekhte Hai script library from multiple Notion databases whenever the series is mentioned.
 - Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
 - Reads and filters Notion tasks by title, exact status, and due-date range.
 - Optionally batch-adds and reads founder expenses in a separate Notion Daily Spend Log.
@@ -159,6 +160,9 @@ NOTION_API_KEY=your_notion_integration_token
 NOTION_DATA_SOURCE_ID=your_notion_data_source_id
 # Optional bounded page context and append-only notes
 NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
+# Autter's live Dekhte Hai scripts span Document Hub and Content Planner.
+NOTION_SCRIPT_SOURCE_MAP_JSON={"06e38545-b932-83be-b4c1-87b686b45ee7":"Doc name","89c38545-b932-830f-95bc-07ed911e3893":"Post name"}
+NOTION_SCRIPT_SERIES_NAME=Dekhte Hai
 # Optional founder expense log
 NOTION_SPEND_DATA_SOURCE_ID=your_spend_log_data_source_id
 
@@ -168,6 +172,14 @@ TIMEZONE=Asia/Kolkata
 ```
 
 `AZURE_OPENAI_BASE_URL` is the endpoint shown on the Azure resource with `/openai/v1/` appended. `AZURE_OPENAI_DEPLOYMENT` is the deployment name from Azure, which can differ from the underlying model name. Existing installations must remove the four `AI_GATEWAY_*` variables and add the corresponding `AZURE_OPENAI_*` values; Vercel credentials and `azure/model-name` identifiers are no longer accepted.
+
+The optional script source map gives Patch a dedicated live series reader. It queries every configured data source for active pages named like `Dekhte Hai Ep 7`, fetches their current page bodies, deduplicates by episode number, and sends the ordered library to Luna. Notion edits are visible on the next request, and future episode pages are discovered without another deployment as long as they are created in one of those databases. Both databases must be connected to the bot's Notion integration with **Read content** access.
+
+```text
+@patch compare the tone across all Dekhte Hai scripts
+@patch draft Dekhte Hai Ep 7 using the format and callbacks from earlier episodes
+@patch which topics have we already covered in Dekhte Hai?
+```
 
 Build and run in the foreground for the first pairing:
 

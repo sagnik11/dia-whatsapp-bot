@@ -18,6 +18,7 @@ import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 const { Client, LocalAuth } = whatsapp;
 const GROUP_LIST_ATTEMPTS = 4;
 const WHATSAPP_MESSAGE_CHUNK_SIZE = 3_500;
+const WHATSAPP_READY_TIMEOUT_MS = 120_000;
 
 export function splitWhatsAppMessage(
   output: string,
@@ -56,6 +57,8 @@ interface BotOptions {
   memory?: AutterMemoryService;
   scheduler?: ProactiveScheduler;
   puppeteerExecutablePath?: string;
+  readyTimeoutMs?: number;
+  client?: InstanceType<typeof Client>;
   logger: Logger;
 }
 
@@ -84,19 +87,39 @@ export class WhatsAppBot {
       );
     }
 
-    this.client = new Client({
-      authStrategy: new LocalAuth({ dataPath: join(options.dataDir, "whatsapp") }),
-      puppeteer: {
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-        ...(options.puppeteerExecutablePath
-          ? { executablePath: options.puppeteerExecutablePath }
-          : {}),
-      },
-    });
+    this.client = options.client ??
+      new Client({
+        authStrategy: new LocalAuth({ dataPath: join(options.dataDir, "whatsapp") }),
+        puppeteer: {
+          headless: true,
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+          ...(options.puppeteerExecutablePath
+            ? { executablePath: options.puppeteerExecutablePath }
+            : {}),
+        },
+      });
   }
 
   public async start(): Promise<void> {
+    let readyTimeout: NodeJS.Timeout | null = null;
+    let resolveReady!: () => void;
+    let rejectReady!: (error: Error) => void;
+    let startupSettled = false;
+    const readyPromise = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    const clearReadyTimeout = (): void => {
+      if (readyTimeout) clearTimeout(readyTimeout);
+      readyTimeout = null;
+    };
+    const failStartup = (error: Error): void => {
+      if (startupSettled) return;
+      startupSettled = true;
+      clearReadyTimeout();
+      rejectReady(error);
+    };
+
     this.client.on("qr", (code) => {
       this.options.logger.info("Scan the QR code with the dedicated WhatsApp account");
       qrcode.generate(code, { small: true });
@@ -104,18 +127,45 @@ export class WhatsAppBot {
 
     this.client.on("authenticated", () => {
       this.options.logger.info("WhatsApp session authenticated");
+      if (!this.ready && !readyTimeout) {
+        const timeoutMs = this.options.readyTimeoutMs ?? WHATSAPP_READY_TIMEOUT_MS;
+        readyTimeout = setTimeout(() => {
+          const error = new Error(
+            `WhatsApp authenticated but did not become ready within ${timeoutMs}ms`,
+          );
+          this.options.logger.error(
+            { timeoutMs },
+            "WhatsApp startup stalled after authentication; restarting container",
+          );
+          failStartup(error);
+        }, timeoutMs);
+      }
     });
 
     this.client.on("auth_failure", (message) => {
       this.options.logger.error({ message }, "WhatsApp authentication failed");
+      failStartup(new Error(`WhatsApp authentication failed: ${message}`));
     });
 
     this.client.on("disconnected", (reason) => {
       this.ready = false;
       this.options.logger.warn({ reason }, "WhatsApp disconnected");
+      failStartup(new Error(`WhatsApp disconnected during startup: ${reason}`));
+    });
+
+    this.client.on("loading_screen", (percent, message) => {
+      this.options.logger.info(
+        { percent, message },
+        "WhatsApp is synchronizing messages",
+      );
     });
 
     this.client.on("ready", () => {
+      if (!startupSettled) {
+        startupSettled = true;
+        clearReadyTimeout();
+        resolveReady();
+      }
       void this.onReady().catch((error: unknown) => {
         this.options.logger.error(
           { error },
@@ -132,7 +182,11 @@ export class WhatsAppBot {
       });
     });
 
-    await this.client.initialize();
+    try {
+      await Promise.all([this.client.initialize(), readyPromise]);
+    } finally {
+      clearReadyTimeout();
+    }
   }
 
   public async stop(): Promise<void> {

@@ -180,6 +180,7 @@ async function start(): Promise<void> {
 start().catch(async (error: unknown) => {
   logger.fatal({ error }, `${config.botName} failed to start`);
   await notionWebhook?.stop().catch(() => undefined);
+  await bot.stop().catch(() => undefined);
   dedupe.close();
   reminders.close();
   process.exitCode = 1;

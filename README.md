@@ -678,6 +678,8 @@ Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 ### The bot connects but does not reply
 
+`WhatsApp session authenticated` means only that WhatsApp accepted the saved login. The bot can receive commands only after `<BOT_NAME> is connected to WhatsApp` appears. If authentication succeeds but readiness stalls for two minutes, Patch exits cleanly so Docker can restart it automatically; synchronization progress is logged in between.
+
 Check, in order:
 
 1. The message was sent in a group.

@@ -285,6 +285,8 @@ Restart the bot:
 sudo docker compose restart dia
 ```
 
+`WhatsApp session authenticated` is not the final ready signal. Wait for `Patch is connected to WhatsApp`. If the saved login authenticates but WhatsApp Web never becomes message-ready, the built-in two-minute watchdog exits the process and Docker restarts it automatically.
+
 If WhatsApp logs the linked device out, remove only the saved authentication directory from the volume or recreate the volume, then repeat the foreground QR-pairing step. Back up the volume before deleting anything.
 
 If Chromium exits because the instance is out of memory, move Captain Patch to a larger Lightsail bundle. Avoid relying on swap as the permanent fix.

@@ -33,27 +33,6 @@ const schema = z.object({
     (value) => !value?.startsWith("azure/"),
     "AZURE_OPENAI_MEDIA_DEPLOYMENT must be the Azure deployment name without an azure/ prefix",
   ),
-  SUPERMEMORY_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
-  SUPERMEMORY_BASE_URL: z.url().default("http://supermemory:6767"),
-  SUPERMEMORY_API_KEY: optionalString,
-  SUPERMEMORY_CONTAINER_TAG: z
-    .string()
-    .regex(
-      /^[A-Za-z0-9._-]{1,100}$/,
-      "SUPERMEMORY_CONTAINER_TAG may contain only letters, numbers, dots, underscores, and hyphens",
-    )
-    .default("autter-company"),
-  SUPERMEMORY_RECALL_LIMIT: z.coerce.number().int().min(1).max(50).default(12),
-  SUPERMEMORY_RECALL_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
-  SUPERMEMORY_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .min(1_000)
-    .max(120_000)
-    .default(20_000),
   WHISPER_TRANSCRIPTION_URL: optionalString,
   WHISPER_LANGUAGE: z.string().min(1).default("auto"),
   WHISPER_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(180_000),
@@ -115,18 +94,7 @@ const schema = z.object({
   PUPPETEER_EXECUTABLE_PATH: optionalString,
 });
 
-const env = schema
-  .superRefine((value, context) => {
-    if (value.SUPERMEMORY_ENABLED && !value.SUPERMEMORY_API_KEY) {
-      context.addIssue({
-        code: "custom",
-        path: ["SUPERMEMORY_API_KEY"],
-        message:
-          "SUPERMEMORY_API_KEY is required when SUPERMEMORY_ENABLED=true",
-      });
-    }
-  })
-  .parse(process.env);
+const env = schema.parse(process.env);
 
 function parseAssigneeMap(value: string): Readonly<Record<string, string>> {
   const parsed: unknown = JSON.parse(value);
@@ -170,13 +138,6 @@ export const config = {
   azureOpenAIDeployment: env.AZURE_OPENAI_DEPLOYMENT,
   azureOpenAIMediaDeployment:
     env.AZURE_OPENAI_MEDIA_DEPLOYMENT ?? env.AZURE_OPENAI_DEPLOYMENT,
-  supermemoryEnabled: env.SUPERMEMORY_ENABLED,
-  supermemoryBaseUrl: env.SUPERMEMORY_BASE_URL,
-  supermemoryApiKey: env.SUPERMEMORY_API_KEY,
-  supermemoryContainerTag: env.SUPERMEMORY_CONTAINER_TAG,
-  supermemoryRecallLimit: env.SUPERMEMORY_RECALL_LIMIT,
-  supermemoryRecallThreshold: env.SUPERMEMORY_RECALL_THRESHOLD,
-  supermemoryTimeoutMs: env.SUPERMEMORY_TIMEOUT_MS,
   whisperTranscriptionUrl: env.WHISPER_TRANSCRIPTION_URL,
   whisperLanguage: env.WHISPER_LANGUAGE,
   whisperTimeoutMs: env.WHISPER_TIMEOUT_MS,

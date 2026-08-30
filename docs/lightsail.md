@@ -7,7 +7,7 @@ This guide runs Captain Patch continuously on a standard Amazon Lightsail Linux 
 Create a Lightsail **Linux/Unix** instance with:
 
 - Ubuntu 24.04 LTS
-- At least 2 GB RAM for Chromium and Node.js; 4 GB is the safer starting point when local Whisper and Supermemory are both enabled
+- At least 2 GB RAM for Chromium and Node.js; 4 GB is the safer starting point when local Whisper is enabled
 - An x86_64 instance unless you specifically want to maintain an ARM deployment
 - A region reasonably close to the WhatsApp users
 
@@ -103,12 +103,6 @@ WHISPER_LANGUAGE=auto
 BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
-# Enable after bootstrapping the optional memory service below.
-SUPERMEMORY_ENABLED=false
-SUPERMEMORY_BASE_URL=http://supermemory:6767
-SUPERMEMORY_API_KEY=
-SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
-SUPERMEMORY_CONTAINER_TAG=autter-company
 ```
 
 Copy the Azure resource endpoint and append `/openai/v1/` for `AZURE_OPENAI_BASE_URL`. Set `AZURE_OPENAI_DEPLOYMENT` to the deployment name shown in Azure—not the underlying catalog model name and not an `azure/...` provider identifier. The same deployment handles ordinary messages, screenshots, and PDFs unless `AZURE_OPENAI_MEDIA_DEPLOYMENT` is set to another deployment. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables quick lookup plus the delegated Patch Research agent; `RESEARCH_MAX_SEARCHES=3` caps each explicit research run. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. `NOTION_SPEND_DATA_SOURCE_ID` is optional; when set, connect the integration to the Daily Spend Log with **Read content** and **Insert content**. The separate payer map can be omitted when `NOTION_ASSIGNEE_MAP_JSON` already contains both founders.
@@ -120,35 +114,6 @@ To enable company-wide Notion reads, review the integration's Content access, co
 `TASK_DIGEST_INTERVAL_HOURS=4` sends an incomplete-task digest immediately on its first run and every four hours afterward. `TASK_DIGEST_GROUP_IDS` can be omitted when `ALLOWED_GROUP_IDS` already contains the intended destination. Reminders and the next digest time live in the existing `dia-data` volume; do not remove that volume during updates.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
-
-### Optional: bootstrap Autter's persistent memory
-
-The `memory` Compose profile runs the open-source Supermemory Local binary inside the private Compose network. It reuses `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_BASE_URL`, and `AZURE_OPENAI_DEPLOYMENT` for extraction and keeps embeddings local.
-
-The profile pins server `0.0.7-rc.2` because stable `0.0.6` has an upstream Linux standalone-binary packaging defect that leaves ingestion queued. On startup, the launcher upgrades an older cached binary in place while retaining the graph and generated API key in `supermemory-data`.
-
-Start only the memory service first:
-
-```bash
-sudo docker compose --profile memory up -d --build supermemory
-sudo docker compose logs -f supermemory
-```
-
-First boot downloads the verified Linux server binary and local embedding model, then prints a bearer key beginning with `sm_`. Copy that key, exit logs with `Ctrl+C`, and edit `.env`:
-
-```bash
-nano .env
-```
-
-```dotenv
-SUPERMEMORY_ENABLED=true
-SUPERMEMORY_BASE_URL=http://supermemory:6767
-SUPERMEMORY_API_KEY=sm_the_key_printed_at_first_boot
-SUPERMEMORY_SERVER_VERSION=0.0.7-rc.2
-SUPERMEMORY_CONTAINER_TAG=autter-company
-```
-
-The key is local Supermemory authentication, not your Azure credential. Do not post it in WhatsApp or commit it. The persistent `supermemory-data` volume retains the graph, auth state, and embedding cache across rebuilds.
 
 ## 4. Pair the WhatsApp account over SSH
 
@@ -194,20 +159,19 @@ Copy the values in that entry's `senderIds` array, then add the IDs belonging to
 AUTHORIZED_USER_IDS=919999999999@c.us,919999999999
 ```
 
-Restart with `sudo docker compose --profile memory up -d` when memory is enabled, or `sudo docker compose up -d` when it is disabled. Captain Patch will answer every configured founder account. For other senders it uses a separate no-tools AI call to produce a sarcastic rejection without exposing the normal assistant, search, or Notion tools. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
+Restart with `sudo docker compose up -d`. Captain Patch will answer every configured founder account. For other senders it uses a separate no-tools AI call to produce a sarcastic rejection without exposing the normal assistant, search, or Notion tools. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
 
 ## 5. Start Captain Patch continuously
 
 ```bash
-# Include --profile memory when SUPERMEMORY_ENABLED=true.
-sudo docker compose --profile memory up -d
+sudo docker compose up -d
 sudo docker compose ps
-sudo docker compose logs -f --tail 100 dia supermemory
+sudo docker compose logs -f --tail 100 dia
 ```
 
 Exit log streaming with `Ctrl+C`; the container continues running. The Compose policy `restart: unless-stopped` brings Captain Patch back after a process failure or instance reboot.
 
-The `dia-data` Docker volume holds the WhatsApp linked-device session and the SQLite deduplication database. `supermemory-data` holds Autter's persistent company memory when its profile is enabled. Normal container rebuilds keep both volumes, so you should not need to scan a QR or rebuild memory on every deployment. Never use `docker compose down -v` unless you deliberately intend to delete both persistent stores.
+The `dia-data` Docker volume holds the WhatsApp linked-device session and the SQLite deduplication database. Normal container rebuilds keep it, so you should not need to scan a QR on every deployment. Never use `docker compose down -v` unless you deliberately intend to delete persistent bot data.
 
 ## Optional public HTTPS for Notion webhooks
 
@@ -248,10 +212,9 @@ NOTION_WEBHOOK_VERIFICATION_TOKEN=
 Create the Notion webhook subscription using `https://patch.example.com/notion/webhook` and subscribe to page and comment events. Watch `sudo docker compose logs -f dia`; the verification request logs a `verificationToken`. Copy it into `NOTION_WEBHOOK_VERIFICATION_TOKEN`, then recreate the container:
 
 ```bash
-sudo docker compose --profile memory up -d --force-recreate
+sudo docker compose up -d --force-recreate
 ```
-
-Omit `--profile memory` when memory is disabled. Patch validates all subsequent webhook signatures. Keep the verification token private. Leaving `NOTION_NOTIFY_BOT_EVENTS=false` prevents Patch's own comments, uploads, and task edits from producing echo notifications.
+Patch validates all subsequent webhook signatures. Keep the verification token private. Leaving `NOTION_NOTIFY_BOT_EVENTS=false` prevents Patch's own comments, uploads, and task edits from producing echo notifications.
 
 ## Updating Captain Patch
 
@@ -259,11 +222,11 @@ From the repository directory:
 
 ```bash
 git pull --ff-only
-sudo docker compose --profile memory up -d --build
-sudo docker compose logs -f --tail 100 dia supermemory
+sudo docker compose up -d --build --remove-orphans
+sudo docker compose logs -f --tail 100 dia
 ```
 
-Omit `--profile memory` and `supermemory` when memory is disabled. Do not run `docker compose down --volumes`; deleting the volumes removes the saved WhatsApp session, deduplication/reminder database, Whisper model cache, and Supermemory graph.
+Do not run `docker compose down --volumes`; deleting the volumes removes the saved WhatsApp session, deduplication/reminder database, and Whisper model cache.
 
 ## Operations and troubleshooting
 
@@ -274,11 +237,10 @@ sudo docker compose ps
 sudo docker compose logs --tail 200 dia
 ```
 
-For the complete memory-enabled stack, also watch resource use and the sidecar logs:
+To watch host resource use:
 
 ```bash
 sudo docker stats
-sudo docker compose --profile memory logs --tail 200 supermemory
 ```
 
 Restart the bot:

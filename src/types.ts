@@ -16,12 +16,6 @@ export interface AssistantRequest {
   attachments?: AssistantAttachment[];
 }
 
-export interface RecalledMemory {
-  staticProfile: string[];
-  dynamicProfile: string[];
-  relevantMemories: string[];
-}
-
 export type AssistantAttachmentKind = "audio" | "image" | "pdf" | "file";
 
 export interface AssistantAttachment {

@@ -103,7 +103,7 @@ describe("formatTaskConfirmation", () => {
 });
 
 describe("DiaAssistant task creation", () => {
-  it("accepts long founder-supplied notes without leaking recalled memory", async () => {
+  it("accepts long founder-supplied notes without leaking ambient context", async () => {
     const notes = "Complete founder brief.\n".repeat(250);
     const createTask = vi.fn().mockResolvedValue({
       id: "page-id",
@@ -139,13 +139,6 @@ describe("DiaAssistant task creation", () => {
         canReadKnowledge: false,
         createTask,
       } as never,
-      memory: {
-        recall: vi.fn().mockResolvedValue({
-          staticProfile: [],
-          dynamicProfile: ["Unrelated historical context"],
-          relevantMemories: ["A very long unrelated memory"],
-        }),
-      } as never,
       logger: { warn: vi.fn() } as never,
     });
     Object.assign(assistant as unknown as { client: unknown }, {
@@ -160,7 +153,13 @@ describe("DiaAssistant task creation", () => {
       requestedById: "sagnik@c.us",
       body: "@patch add a notion task that I need to improve website agent search",
       quotedMessage: null,
-      recentContext: [],
+      recentContext: [
+        {
+          author: "Tanvi",
+          body: "Unrelated historical context",
+          timestamp: 1,
+        },
+      ],
     });
 
     expect(reply).toBe(
@@ -171,11 +170,10 @@ describe("DiaAssistant task creation", () => {
       expect.objectContaining({ messageId: "task-message" }),
     );
     expect(responsesCreate.mock.calls[0]?.[0].instructions).toContain(
-      "Never copy recalled memory",
+      "Never copy recent group context",
     );
     const modelInput = JSON.stringify(responsesCreate.mock.calls[0]?.[0].input);
     expect(modelInput).not.toContain("Unrelated historical context");
-    expect(modelInput).not.toContain("A very long unrelated memory");
   });
 });
 
@@ -510,62 +508,6 @@ describe("DiaAssistant task reads", () => {
       output: expect.stringContaining("Send proposal"),
     });
     expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
-  });
-});
-
-describe("DiaAssistant persistent Autter memory", () => {
-  it("recalls memory before answering and marks it subordinate to live data", async () => {
-    const recall = vi.fn().mockResolvedValue({
-      staticProfile: ["Sagnik and Tanvi are equal co-founders"],
-      dynamicProfile: ["Preparing the Autter launch"],
-      relevantMemories: ["Tanvi owns launch marketing"],
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [],
-      output_text: "Tanvi owns launch marketing.",
-    });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {} as never,
-      memory: { recall } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const assistantRequest = {
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "memory-question",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "who owns launch marketing?",
-      quotedMessage: null,
-      recentContext: [],
-    };
-    const reply = await assistant.respond(assistantRequest);
-
-    expect(reply).toBe("Tanvi owns launch marketing.");
-    expect(recall).toHaveBeenCalledWith(assistantRequest);
-    expect(responsesCreate.mock.calls[0]?.[0].input).toContainEqual(
-      expect.objectContaining({
-        role: "user",
-        content: expect.arrayContaining([
-          {
-            type: "input_text",
-            text: expect.stringContaining("Tanvi owns launch marketing"),
-          },
-        ]),
-      }),
-    );
-    expect(responsesCreate.mock.calls[0]?.[0].instructions).toContain(
-      "fresh tool results always override recalled memory",
-    );
   });
 });
 

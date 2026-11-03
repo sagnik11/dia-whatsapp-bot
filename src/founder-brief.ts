@@ -1,56 +1,48 @@
-import type OpenAI from "openai";
-import { createAzureOpenAIClient } from "./azure-openai.js";
 import { AUTTER_CONTEXT, CAPTAIN_PATCH_PERSONA } from "./captain-patch.js";
+import type { LanguageModel } from "./llm.js";
 import type { Logger } from "./logger.js";
-import type { ReminderRecord, TaskListResult } from "./types.js";
+import type { TaskListResult } from "./task-store.js";
+import type { ReminderRecord } from "./types.js";
 
 interface FounderBriefOptions {
-  azureApiKey: string;
-  azureBaseUrl: string;
-  deployment: string;
+  llm: LanguageModel;
   timezone: string;
   logger: Logger;
 }
 
+/** Opt-in daily brief built only from Patch's own D1 task list and reminders. */
 export class FounderBriefGenerator {
-  private readonly client: OpenAI;
-
-  public constructor(private readonly options: FounderBriefOptions) {
-    this.client = createAzureOpenAIClient({
-      apiKey: options.azureApiKey,
-      baseUrl: options.azureBaseUrl,
-    });
-  }
+  public constructor(private readonly options: FounderBriefOptions) {}
 
   public async generate(
     tasks: TaskListResult,
     reminders: readonly ReminderRecord[],
   ): Promise<string> {
-    const response = await this.client.responses.create({
-      model: this.options.deployment,
-      instructions: [
+    const response = await this.options.llm.complete({
+      system: [
         CAPTAIN_PATCH_PERSONA,
         AUTTER_CONTEXT,
-        "Create a concise daily founder brief for Sagnik and Tanvi in a WhatsApp group.",
-        "Prioritize overdue and near-due work, then blockers, unassigned work, and useful reminders.",
-        "Do not invent facts. Use only the supplied task and reminder data.",
+        "You are acting as Autter's chief of staff. Create one concise daily brief for Sagnik and Tanvi in a WhatsApp group.",
+        "Prioritize overdue and near-due work, then blocked work, unowned work, and useful reminders. Suggest at most three focus items.",
+        "Do not invent facts. Use only the supplied task and reminder data, and refer to tasks by their #id.",
         "Use a short heading, Today, Risks/blockers, and Suggested focus. Maximum 2,500 characters.",
       ].join("\n"),
-      input: [
+      messages: [
         {
           role: "user",
           content: JSON.stringify({
             currentTime: new Date().toISOString(),
             timezone: this.options.timezone,
-            tasks: tasks.tasks.slice(0, 150),
+            tasks: tasks.tasks.slice(0, 100),
+            moreTasksNotShown: tasks.hasMore,
             reminders: reminders.slice(0, 50),
           }),
         },
       ],
-      store: false,
+      metadata: { feature: "founder_brief" },
     });
-    const output = response.output_text.trim().slice(0, 3_500);
-    if (!output) throw new Error("Azure OpenAI returned an empty founder brief");
+    const output = response.text.trim().slice(0, 3_500);
+    if (!output) throw new Error("The model returned an empty founder brief");
     this.options.logger.info(
       { taskCount: tasks.tasks.length, reminderCount: reminders.length },
       "Generated founder brief",

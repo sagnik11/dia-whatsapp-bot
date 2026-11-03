@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ProactiveScheduler,
   formatReminderDelivery,
-  formatTaskDigestMessages,
   nextDailyRunAt,
 } from "../src/scheduler.js";
 import type { ReminderRecord } from "../src/types.js";
@@ -25,29 +24,6 @@ describe("scheduler formatting", () => {
     expect(formatReminderDelivery(reminder)).toContain("Due in 10 minutes");
   });
 
-  it("formats a bounded incomplete-task digest", () => {
-    expect(
-      formatTaskDigestMessages(
-        {
-          tasks: [
-            {
-              id: "task-1",
-              url: "https://notion.so/task-1",
-              title: "Send proposal",
-              status: "In progress",
-              dueAt: "2026-08-12T10:00:00.000Z",
-              assignees: ["Tanvi"],
-              priority: "High",
-              taskTypes: ["Marketing"],
-            },
-          ],
-          hasMore: false,
-        },
-        "Asia/Kolkata",
-      )[0],
-    ).toContain("Send proposal — In progress");
-  });
-
   it("calculates a daily run in the configured timezone", () => {
     expect(
       new Date(
@@ -62,24 +38,19 @@ describe("scheduler formatting", () => {
 });
 
 describe("ProactiveScheduler", () => {
-  it("delivers due reminders and an immediately due task digest", async () => {
+  it("delivers due reminders and never sends an unsolicited task digest", async () => {
     const advanceAfterDelivery = vi.fn();
-    const setNextRun = vi.fn();
     const reminders = {
       due: vi.fn().mockReturnValue([reminder]),
       advanceAfterDelivery,
       getOrCreateNextRun: vi.fn().mockReturnValue(0),
-      setNextRun,
+      setNextRun: vi.fn(),
     };
-    const notion = {
-      listIncompleteTasks: vi.fn().mockResolvedValue({ tasks: [], hasMore: false }),
-    };
+    const tasks = { listOpen: vi.fn() };
     const send = vi.fn().mockResolvedValue(undefined);
     const scheduler = new ProactiveScheduler({
       reminders: reminders as never,
-      notion: notion as never,
-      digestGroupIds: new Set(["group@g.us"]),
-      digestIntervalHours: 4,
+      tasks,
       timezone: "Asia/Kolkata",
       logger: { info: vi.fn(), error: vi.fn() } as never,
     });
@@ -87,19 +58,13 @@ describe("ProactiveScheduler", () => {
     const now = Date.parse("2026-08-11T10:20:00.000Z");
     await scheduler.runOnce(now, send);
 
+    expect(send).toHaveBeenCalledOnce();
     expect(send).toHaveBeenCalledWith(
       "group@g.us",
       expect.stringContaining("Due in 10 minutes"),
     );
-    expect(send).toHaveBeenCalledWith(
-      "group@g.us",
-      expect.stringContaining("no incomplete tasks"),
-    );
     expect(advanceAfterDelivery).toHaveBeenCalledWith(reminder, now);
-    expect(setNextRun).toHaveBeenCalledWith(
-      "task_digest:group@g.us",
-      now + 4 * 60 * 60 * 1_000,
-    );
+    expect(tasks.listOpen).not.toHaveBeenCalled();
   });
 
   it("generates a persisted daily founder brief for due groups", async () => {
@@ -113,14 +78,12 @@ describe("ProactiveScheduler", () => {
       listActive: vi.fn().mockReturnValue([reminder]),
     };
     const tasks = { tasks: [], hasMore: false };
-    const notion = { listIncompleteTasks: vi.fn().mockResolvedValue(tasks) };
+    const taskStore = { listOpen: vi.fn().mockResolvedValue(tasks) };
     const generate = vi.fn().mockResolvedValue("🧭 Founder brief");
     const send = vi.fn().mockResolvedValue(undefined);
     const scheduler = new ProactiveScheduler({
       reminders: reminders as never,
-      notion: notion as never,
-      digestGroupIds: new Set(),
-      digestIntervalHours: 0,
+      tasks: taskStore,
       timezone: "Asia/Kolkata",
       founderBrief: {
         time: "09:00",

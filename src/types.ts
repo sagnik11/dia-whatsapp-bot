@@ -25,27 +25,15 @@ export interface AssistantAttachment {
   dataBase64: string;
   sizeBytes: number;
   transcript: string | null;
+  /** Markdown extracted from a PDF or document, when conversion succeeded. */
+  extractedText?: string | null;
 }
 
-export interface TaskInput {
-  title: string;
-  dueAt: string | null;
-  assignee: string | null;
-  priority: "High" | "Med" | "Low" | null;
-  taskType: "Tech" | "Marketing" | "Content" | "Misc" | "Product" | null;
-  notes: string | null;
-}
-
-export interface TaskSource {
+/** Where a Brain Dump note came from, for attribution. */
+export interface NoteSource {
   groupName: string;
   messageId: string;
   requestedBy: string;
-}
-
-export interface TaskResult {
-  id: string;
-  url: string | null;
-  title: string;
 }
 
 export type SpendCategory =
@@ -130,77 +118,6 @@ export interface SpendListResult {
   spends: SpendSummary[];
   hasMore: boolean;
   totalAmount: number;
-}
-
-export interface TaskQuery {
-  titleContains: string | null;
-  status: string | null;
-  dueFrom: string | null;
-  dueTo: string | null;
-  limit: number;
-}
-
-export interface TaskSummary {
-  id: string;
-  url: string;
-  title: string;
-  status: string | null;
-  dueAt: string | null;
-  assignees: string[];
-  priority: string | null;
-  taskTypes: string[];
-}
-
-export interface TaskListResult {
-  tasks: TaskSummary[];
-  hasMore: boolean;
-}
-
-export interface TaskUpdateInput {
-  pageId: string;
-  title: string;
-  newTitle: string | null;
-  status: string | null;
-  dueAt: string | null;
-  assignee: string | null;
-  priority: string | null;
-  taskTypes: string[] | null;
-  clearFields: Array<"due_date" | "assignee" | "priority" | "task_type">;
-  pageContentMode: "append" | "replace" | null;
-  pageContent: string | null;
-}
-
-export interface TaskUpdateResult {
-  id: string;
-  url: string | null;
-  title: string;
-  status: string | null;
-  dueAt: string | null;
-  assignee: string | null;
-  priority: string | null;
-  taskTypes: string[] | null;
-  clearedFields: Array<"due_date" | "assignee" | "priority" | "task_type">;
-  pageContentMode: "append" | "replace" | null;
-}
-
-export interface TaskCommentSummary {
-  id: string;
-  author: string;
-  createdAt: string;
-  text: string;
-}
-
-export interface TaskAttachmentResult {
-  pageId: string;
-  fileName: string;
-  fileUploadId: string;
-}
-
-export interface TaskPageResult {
-  pageId: string;
-  title: string;
-  markdown: string;
-  truncated: boolean;
 }
 
 export interface ReminderCreateInput {

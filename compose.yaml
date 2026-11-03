@@ -18,8 +18,6 @@ services:
         condition: service_healthy
     volumes:
       - dia-data:/app/data
-    ports:
-      - "127.0.0.1:${NOTION_WEBHOOK_PORT:-3000}:${NOTION_WEBHOOK_PORT:-3000}"
 
   whisper:
     image: ghcr.io/ggml-org/whisper.cpp:main@sha256:9ef9cfbc906b5287da99c3dac70d90163c08da9aa7bb0822d0497d09ad024d26

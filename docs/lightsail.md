@@ -1,6 +1,6 @@
 # Deploy Captain Patch on Amazon Lightsail
 
-This guide runs Captain Patch continuously on a standard Amazon Lightsail Linux instance. Its normal WhatsApp/AI/Notion operation needs outbound internet access and SSH administration. The optional Notion notification feature additionally exposes one signed HTTPS webhook through a reverse proxy.
+This guide runs Captain Patch continuously on a standard Amazon Lightsail Linux instance. It needs only outbound internet access (WhatsApp, Cloudflare, and optionally Notion and Tavily) plus SSH administration. No inbound ports are exposed.
 
 ## What to provision
 
@@ -78,23 +78,25 @@ nano .env
 Set at least these values:
 
 ```dotenv
-AZURE_OPENAI_API_KEY=your_azure_resource_key
-AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
-AZURE_OPENAI_DEPLOYMENT=gpt-luna
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
+# Account > Workers AI > Read and Account > D1 > Edit
+CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
+CLOUDFLARE_AI_GATEWAY_ID=patch
+CLOUDFLARE_AI_MODEL=@cf/moonshotai/kimi-k2.6
+CLOUDFLARE_AI_FALLBACK_MODEL=@cf/google/gemma-4-26b-a4b-it
+CLOUDFLARE_D1_DATABASE_ID=your_d1_database_uuid
 NOTION_API_KEY=your_notion_key
-NOTION_DATA_SOURCE_ID=your_notion_data_source_id
-NOTION_BRAIN_DUMP_PAGE_ID=your_optional_notion_page_id
-NOTION_SPEND_DATA_SOURCE_ID=your_optional_spend_log_data_source_id
+NOTION_BRAIN_DUMP_PAGE_ID=your_brain_dump_page_id
+NOTION_SPEND_DATA_SOURCE_ID=your_spend_log_data_source_id
 NOTION_SPEND_PAYER_MAP_JSON={"sagnik":"notion-user-id-1","tanvi":"notion-user-id-2"}
 NOTION_KNOWLEDGE_ENABLED=false
 NOTION_SCRIPT_SOURCE_MAP_JSON={"06e38545-b932-83be-b4c1-87b686b45ee7":"Doc name","89c38545-b932-830f-95bc-07ed911e3893":"Post name"}
 NOTION_SCRIPT_SERIES_NAME=Dekhte Hai
-NOTION_DEFAULT_ASSIGNEE_ID=your_notion_user_id
 TAVILY_API_KEY=your_optional_tavily_key
 RESEARCH_MAX_SEARCHES=3
-TASK_DIGEST_INTERVAL_HOURS=4
-TASK_DIGEST_GROUP_IDS=your_whatsapp_group_id
-FOUNDER_BRIEF_TIME=09:00
+# Optional single daily brief from the D1 task list. Leave blank for no
+# unprompted messages other than reminders you set.
+FOUNDER_BRIEF_TIME=
 FOUNDER_BRIEF_GROUP_IDS=your_whatsapp_group_id
 # Local, open-source voice transcription. Use base for more accuracy.
 WHISPER_MODEL=tiny
@@ -105,13 +107,15 @@ BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
 ```
 
-Copy the Azure resource endpoint and append `/openai/v1/` for `AZURE_OPENAI_BASE_URL`. Set `AZURE_OPENAI_DEPLOYMENT` to the deployment name shown in Azure—not the underlying catalog model name and not an `azure/...` provider identifier. The same deployment handles ordinary messages, screenshots, and PDFs unless `AZURE_OPENAI_MEDIA_DEPLOYMENT` is set to another deployment. Voice transcription does not call a hosted model: Compose runs the open-source multilingual `whisper.cpp` `tiny` model locally and caches it in the `whisper-models` volume. `TAVILY_API_KEY` is optional and enables quick lookup plus the delegated Patch Research agent; `RESEARCH_MAX_SEARCHES=3` caps each explicit research run. `NOTION_BRAIN_DUMP_PAGE_ID` is optional; when set, share that page with the same Notion integration and enable **Read content** plus **Update content**. `NOTION_SPEND_DATA_SOURCE_ID` is optional; when set, connect the integration to the Daily Spend Log with **Read content** and **Insert content**. The separate payer map can be omitted when `NOTION_ASSIGNEE_MAP_JSON` already contains both founders.
+Create the Cloudflare pieces first (see the README's "Configure Cloudflare" section): a D1 database, an AI Gateway, and one API token with **Workers AI Read** and **D1 Edit**. Patch creates its D1 tables on startup and exits with a clear `D1 query failed` log if the database id or token is wrong. The default Kimi K2.6 model requires Workers Paid or AI Gateway credits. Voice transcription does not call a hosted model: Compose runs the open-source `whisper.cpp` model locally and caches it in the `whisper-models` volume.
 
-For an existing deployment, delete `AI_GATEWAY_API_KEY`, `AI_GATEWAY_BASE_URL`, `AI_GATEWAY_MODEL`, and `AI_GATEWAY_MEDIA_MODEL` from `.env`. The bot intentionally no longer reads those variables; a Vercel key cannot authenticate directly to Azure.
+Notion is now used only for the Daily Spend Log and the Brain Dump (plus the off-by-default knowledge and script readers). Share the spend database with **Read content** and **Insert content**, and the Brain Dump page with **Read content** and **Update content**. Tasks live in D1, so the integration no longer needs access to a task database.
+
+For an existing deployment, delete `AZURE_OPENAI_*`, `NOTION_DATA_SOURCE_ID`, `NOTION_*_PROPERTY`, `NOTION_DEFAULT_STATUS`, `NOTION_DEFAULT_ASSIGNEE_ID`, `TASK_DIGEST_INTERVAL_HOURS`, `TASK_DIGEST_GROUP_IDS`, and every `NOTION_WEBHOOK_*` / `NOTION_NOTIFICATION_GROUP_IDS` / `NOTION_NOTIFY_BOT_EVENTS` line from `.env`. The four-hour task digest no longer exists. If you previously set up Caddy for Notion webhooks, you can remove that site block and close ports 80 and 443.
 
 To enable company-wide Notion reads, review the integration's Content access, connect only the intended company pages/databases, and change `NOTION_KNOWLEDGE_ENABLED=true`. The Notion API cannot scope searches by teamspace, so do not enable this while unrelated personal pages are shared with the same integration.
 
-`TASK_DIGEST_INTERVAL_HOURS=4` sends an incomplete-task digest immediately on its first run and every four hours afterward. `TASK_DIGEST_GROUP_IDS` can be omitted when `ALLOWED_GROUP_IDS` already contains the intended destination. Reminders and the next digest time live in the existing `dia-data` volume; do not remove that volume during updates.
+Reminders live in the existing `dia-data` volume; do not remove that volume during updates.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
 
@@ -172,49 +176,6 @@ sudo docker compose logs -f --tail 100 dia
 Exit log streaming with `Ctrl+C`; the container continues running. The Compose policy `restart: unless-stopped` brings Captain Patch back after a process failure or instance reboot.
 
 The `dia-data` Docker volume holds the WhatsApp linked-device session and the SQLite deduplication database. Normal container rebuilds keep it, so you should not need to scan a QR on every deployment. Never use `docker compose down -v` unless you deliberately intend to delete persistent bot data.
-
-## Optional public HTTPS for Notion webhooks
-
-Skip this section unless you want task/comment changes made in Notion to appear proactively in WhatsApp.
-
-1. Attach a Lightsail static IP and point a domain or subdomain (for example `patch.example.com`) to it with a DNS `A` record.
-2. Open TCP ports 80 and 443 in the Lightsail networking firewall. Keep the application's port 3000 closed publicly; Compose binds it only to loopback.
-3. Install Caddy and create `/etc/caddy/Caddyfile`:
-
-```caddyfile
-patch.example.com {
-    reverse_proxy 127.0.0.1:3000
-}
-```
-
-On Ubuntu, install/start the packaged service and validate the configuration:
-
-```bash
-sudo apt update
-sudo apt install -y caddy
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl enable --now caddy
-sudo systemctl reload caddy
-curl https://patch.example.com/health
-```
-
-The health response should be `{"ok":true}` after Patch is running with:
-
-```dotenv
-NOTION_WEBHOOK_ENABLED=true
-NOTION_WEBHOOK_PORT=3000
-NOTION_WEBHOOK_PATH=/notion/webhook
-NOTION_NOTIFICATION_GROUP_IDS=your_whatsapp_group_id
-NOTION_NOTIFY_BOT_EVENTS=false
-NOTION_WEBHOOK_VERIFICATION_TOKEN=
-```
-
-Create the Notion webhook subscription using `https://patch.example.com/notion/webhook` and subscribe to page and comment events. Watch `sudo docker compose logs -f dia`; the verification request logs a `verificationToken`. Copy it into `NOTION_WEBHOOK_VERIFICATION_TOKEN`, then recreate the container:
-
-```bash
-sudo docker compose up -d --force-recreate
-```
-Patch validates all subsequent webhook signatures. Keep the verification token private. Leaving `NOTION_NOTIFY_BOT_EVENTS=false` prevents Patch's own comments, uploads, and task edits from producing echo notifications.
 
 ## Updating Captain Patch
 

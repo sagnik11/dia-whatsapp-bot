@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DocumentConverter } from "./document-converter.js";
 import type { Logger } from "./logger.js";
 import type {
   AssistantAttachment,
@@ -17,8 +18,11 @@ interface MediaIngestionOptions {
   transcriptionLanguage: string;
   transcriptionTimeoutMs: number;
   maxBytes: number;
+  documentConverter?: DocumentConverter;
   logger: Logger;
 }
+
+const MAX_EXTRACTED_TEXT_CHARACTERS = 40_000;
 
 const whisperResponseSchema = z.object({ text: z.string() });
 
@@ -94,6 +98,27 @@ export class MediaIngestionService {
       );
     }
 
+    let extractedText: string | null = null;
+    if ((kind === "pdf" || kind === "file") && this.options.documentConverter) {
+      try {
+        const markdown = await this.options.documentConverter.toMarkdown({
+          fileName,
+          mimeType,
+          data: Buffer.from(input.dataBase64, "base64"),
+        });
+        extractedText =
+          markdown.length > MAX_EXTRACTED_TEXT_CHARACTERS
+            ? `${markdown.slice(0, MAX_EXTRACTED_TEXT_CHARACTERS)}\n\n[Document truncated by Captain Patch]`
+            : markdown;
+      } catch (error) {
+        // An unreadable document should not drop the founder's whole message.
+        this.options.logger.warn(
+          { error, fileName, mimeType },
+          "Could not convert WhatsApp document to Markdown",
+        );
+      }
+    }
+
     return {
       kind,
       mimeType,
@@ -101,6 +126,7 @@ export class MediaIngestionService {
       dataBase64: input.dataBase64,
       sizeBytes,
       transcript,
+      extractedText,
     };
   }
 }

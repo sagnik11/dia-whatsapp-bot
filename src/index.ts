@@ -1,55 +1,75 @@
 import { join } from "node:path";
 import { DiaAssistant } from "./assistant.js";
 import { WhatsAppBot } from "./bot.js";
+import { D1HttpClient } from "./cloudflare-d1.js";
 import { config } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { DedupeStore } from "./dedupe-store.js";
+import { CloudflareMarkdownConverter } from "./document-converter.js";
 import { FounderBriefGenerator } from "./founder-brief.js";
+import { CloudflareGatewayModel } from "./llm.js";
 import { createLogger } from "./logger.js";
 import { MediaIngestionService } from "./media-ingestion.js";
-import { NotionWebhookServer } from "./notion-webhook.js";
 import { NotionSpendService } from "./notion-spend.js";
-import { NotionTaskService } from "./notion.js";
+import { NotionWorkspaceService } from "./notion.js";
 import { ReminderStore } from "./reminder-store.js";
 import { ResearchAgent } from "./research-agent.js";
 import { ProactiveScheduler } from "./scheduler.js";
+import { TaskStore } from "./task-store.js";
 import { TavilyWebSearchService } from "./web-search.js";
 
 const logger = createLogger(config.logLevel);
 const databasePath = join(config.dataDir, "dia.sqlite");
 const dedupe = new DedupeStore(databasePath);
 const reminders = new ReminderStore(databasePath);
-const notion = new NotionTaskService({
-  apiKey: config.notionApiKey,
-  dataSourceId: config.notionDataSourceId,
-  ...(config.notionBrainDumpPageId
-    ? { brainDumpPageId: config.notionBrainDumpPageId }
-    : {}),
-  knowledgeEnabled: config.notionKnowledgeEnabled,
-  scriptSources: config.notionScriptSources,
-  scriptSeriesName: config.notionScriptSeriesName,
-  properties: config.notionProperties,
-  defaultStatus: config.notionDefaultStatus,
-  defaultAssigneeId: config.notionDefaultAssigneeId,
-  assigneeMap: config.notionAssigneeMap,
+
+const llm = new CloudflareGatewayModel({
+  accountId: config.cloudflareAccountId,
+  gatewayId: config.aiGatewayId,
+  apiToken: config.cloudflareApiToken,
+  model: config.aiModel,
+  ...(config.aiFallbackModel ? { fallbackModel: config.aiFallbackModel } : {}),
+  ...(config.aiReasoningEffort ? { reasoningEffort: config.aiReasoningEffort } : {}),
+  timeoutMs: config.aiTimeoutMs,
   logger,
 });
-const notionSpend = config.notionSpendDataSourceId
-  ? new NotionSpendService({
+const tasks = new TaskStore({
+  db: new D1HttpClient({
+    accountId: config.cloudflareAccountId,
+    databaseId: config.d1DatabaseId,
+    apiToken: config.d1ApiToken,
+    logger,
+  }),
+  timezone: config.timezone,
+  logger,
+});
+const notion = config.notionApiKey
+  ? new NotionWorkspaceService({
       apiKey: config.notionApiKey,
-      dataSourceId: config.notionSpendDataSourceId,
-      payerMap: config.notionSpendPayerMap,
+      ...(config.notionBrainDumpPageId
+        ? { brainDumpPageId: config.notionBrainDumpPageId }
+        : {}),
+      knowledgeEnabled: config.notionKnowledgeEnabled,
+      scriptSources: config.notionScriptSources,
+      scriptSeriesName: config.notionScriptSeriesName,
       logger,
     })
   : undefined;
+const notionSpend =
+  config.notionApiKey && config.notionSpendDataSourceId
+    ? new NotionSpendService({
+        apiKey: config.notionApiKey,
+        dataSourceId: config.notionSpendDataSourceId,
+        payerMap: config.notionSpendPayerMap,
+        logger,
+      })
+    : undefined;
 const webSearch = config.tavilyApiKey
   ? new TavilyWebSearchService({ apiKey: config.tavilyApiKey, logger })
   : undefined;
 const researchAgent = webSearch
   ? new ResearchAgent({
-      azureApiKey: config.azureOpenAIApiKey,
-      azureBaseUrl: config.azureOpenAIBaseUrl,
-      deployment: config.azureOpenAIDeployment,
+      llm,
       timezone: config.timezone,
       maxSearches: config.researchMaxSearches,
       webSearch,
@@ -57,13 +77,11 @@ const researchAgent = webSearch
     })
   : undefined;
 const assistant = new DiaAssistant({
-  azureApiKey: config.azureOpenAIApiKey,
-  azureBaseUrl: config.azureOpenAIBaseUrl,
-  deployment: config.azureOpenAIDeployment,
-  mediaDeployment: config.azureOpenAIMediaDeployment,
+  llm,
   botName: config.botName,
   timezone: config.timezone,
-  notion,
+  tasks,
+  ...(notion ? { notion } : {}),
   ...(notionSpend ? { notionSpend } : {}),
   reminders,
   ...(webSearch ? { webSearch } : {}),
@@ -77,22 +95,23 @@ const mediaIngestion = new MediaIngestionService({
   transcriptionLanguage: config.whisperLanguage,
   transcriptionTimeoutMs: config.whisperTimeoutMs,
   maxBytes: config.mediaMaxBytes,
+  ...(config.documentConversionEnabled
+    ? {
+        documentConverter: new CloudflareMarkdownConverter({
+          accountId: config.cloudflareAccountId,
+          apiToken: config.cloudflareApiToken,
+          logger,
+        }),
+      }
+    : {}),
   logger,
 });
 const founderBrief = config.founderBriefTime
-  ? new FounderBriefGenerator({
-      azureApiKey: config.azureOpenAIApiKey,
-      azureBaseUrl: config.azureOpenAIBaseUrl,
-      deployment: config.azureOpenAIDeployment,
-      timezone: config.timezone,
-      logger,
-    })
+  ? new FounderBriefGenerator({ llm, timezone: config.timezone, logger })
   : undefined;
 const scheduler = new ProactiveScheduler({
   reminders,
-  notion,
-  digestGroupIds: config.taskDigestGroupIds,
-  digestIntervalHours: config.taskDigestIntervalHours,
+  tasks,
   timezone: config.timezone,
   logger,
   ...(founderBrief && config.founderBriefTime
@@ -100,8 +119,8 @@ const scheduler = new ProactiveScheduler({
         founderBrief: {
           time: config.founderBriefTime,
           groupIds: config.founderBriefGroupIds,
-          generate: (tasks, activeReminders) =>
-            founderBrief.generate(tasks, activeReminders),
+          generate: (openTasks, activeReminders) =>
+            founderBrief.generate(openTasks, activeReminders),
         },
       }
     : {}),
@@ -124,30 +143,12 @@ const bot = new WhatsAppBot({
     : {}),
   logger,
 });
-const notionWebhook = config.notionWebhookEnabled
-  ? new NotionWebhookServer({
-      port: config.notionWebhookPort,
-      path: config.notionWebhookPath,
-      ...(config.notionWebhookVerificationToken
-        ? { verificationToken: config.notionWebhookVerificationToken }
-        : {}),
-      notificationGroupIds: config.notionNotificationGroupIds,
-      notifyBotEvents: config.notionNotifyBotEvents,
-      notion,
-      dedupe,
-      send: (groupId, output) => bot.sendProactive(groupId, output),
-      logger,
-    })
-  : undefined;
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   logger.info({ signal }, "Shutting down");
-  await notionWebhook?.stop().catch((error: unknown) => {
-    logger.error({ error }, "Failed to close Notion webhook server cleanly");
-  });
   await bot.stop().catch((error: unknown) => {
     logger.error({ error }, "Failed to close WhatsApp client cleanly");
   });
@@ -160,13 +161,23 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 async function start(): Promise<void> {
-  await notionWebhook?.start();
+  // Fail fast with a clear error if D1 credentials or the database id are wrong.
+  await tasks.ensureSchema();
+  logger.info(
+    {
+      model: config.aiModel,
+      fallbackModel: config.aiFallbackModel ?? null,
+      gateway: config.aiGatewayId,
+      brainDump: Boolean(notion?.canReadBrainDump),
+      spendLog: Boolean(notionSpend),
+    },
+    "Chief-of-staff services configured",
+  );
   await bot.start();
 }
 
 start().catch(async (error: unknown) => {
   logger.fatal({ error }, `${config.botName} failed to start`);
-  await notionWebhook?.stop().catch(() => undefined);
   await bot.stop().catch(() => undefined);
   dedupe.close();
   reminders.close();

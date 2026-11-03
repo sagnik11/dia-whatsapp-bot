@@ -1,7 +1,7 @@
 {
   "name": "dia-whatsapp-bot",
   "version": "0.1.0",
-  "description": "Captain Patch: Autter's sarcastic WhatsApp assistant with web search and Notion tasks.",
+  "description": "Captain Patch: Autter's WhatsApp chief of staff on Cloudflare Workers AI, AI Gateway, and D1.",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -19,7 +19,10 @@
   },
   "keywords": [
     "whatsapp",
-    "openai",
+    "cloudflare",
+    "workers-ai",
+    "ai-gateway",
+    "d1",
     "notion",
     "tavily",
     "web-search",

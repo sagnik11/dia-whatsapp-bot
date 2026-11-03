@@ -3,6 +3,7 @@ import {
   DiaAssistant,
   formatSpendConfirmation,
   formatTaskCreateConfirmation,
+  isConversationRequest,
   isDekhteHaiRequest,
   isExplicitBrainDumpAppendRequest,
   isExplicitBrainDumpRequest,
@@ -21,6 +22,7 @@ import {
   isExplicitWebSearchRequest,
   referencedTaskIds,
 } from "../src/assistant.js";
+import { ConversationStore } from "../src/conversation-store.js";
 import type { CompletionRequest, CompletionResult, LanguageModel } from "../src/llm.js";
 import { TaskStore } from "../src/task-store.js";
 import type { AssistantRequest } from "../src/types.js";
@@ -578,5 +580,77 @@ describe("DiaAssistant media and limits", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ notifyBeforeMinutes: 10, repeatEveryMinutes: null }),
     );
+  });
+});
+
+describe("DiaAssistant group conversation", () => {
+  it("detects questions about earlier discussion", () => {
+    expect(isConversationRequest("what did we decide about pricing?")).toBe(true);
+    expect(isConversationRequest("catch me up on the last day")).toBe(true);
+    expect(isConversationRequest("turn this discussion into tasks")).toBe(true);
+    expect(isConversationRequest("draft a launch tweet")).toBe(false);
+  });
+
+  it("reads only this group's log and answers from it", async () => {
+    const conversation = new ConversationStore(":memory:");
+    const now = Date.now();
+    conversation.record({
+      groupId: "group@g.us",
+      messageId: "m1",
+      author: "Tanvi",
+      body: "Decided: per-repo pricing, starting December",
+      fromBot: false,
+      sentAtMs: now - 2 * 60 * 60 * 1_000,
+    });
+    conversation.record({
+      groupId: "other@g.us",
+      messageId: "x1",
+      author: "Someone",
+      body: "Unrelated group secret",
+      fromBot: false,
+      sentAtMs: now - 60 * 60 * 1_000,
+    });
+    const llm = scriptedModel(
+      toolTurn("c1", "read_group_conversation", { hours_back: 24, text: "pricing" }),
+      textTurn("Tanvi called it: per-repo pricing from December."),
+    );
+
+    const reply = await assistantWith(llm, taskStore(), { conversation }).respond(
+      request("@patch what did we decide about pricing?"),
+    );
+
+    expect(reply).toBe("Tanvi called it: per-repo pricing from December.");
+    expect(llm.requests[0]?.toolChoice).toBe("required");
+    expect(llm.requests[0]?.system).toContain("Ground answers in what this group actually said");
+    const toolOutput = JSON.stringify(llm.requests[1]?.messages.at(-1));
+    expect(toolOutput).toContain("per-repo pricing");
+    expect(toolOutput).not.toContain("Unrelated group secret");
+    conversation.close();
+  });
+
+  it("turns the discussion into owned tasks after reading it", async () => {
+    const conversation = new ConversationStore(":memory:");
+    conversation.record({
+      groupId: "group@g.us",
+      messageId: "m1",
+      author: "Tanvi",
+      body: "I'll send Rahul the DPA tomorrow",
+      fromBot: false,
+      sentAtMs: Date.now() - 60_000,
+    });
+    const tasks = taskStore();
+    const llm = scriptedModel(
+      toolTurn("c1", "read_group_conversation", {}),
+      toolTurn("t1", "create_tasks", {
+        tasks: [{ title: "Send Rahul the DPA", owner: "Tanvi" }],
+      }),
+    );
+
+    const reply = await assistantWith(llm, tasks, { conversation }).respond(
+      request("@patch capture what we discussed as tasks"),
+    );
+
+    expect(reply).toBe("✅ Task #1 added: Send Rahul the DPA — owner Tanvi");
+    conversation.close();
   });
 });

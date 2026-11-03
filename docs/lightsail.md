@@ -94,8 +94,8 @@ NOTION_SCRIPT_SOURCE_MAP_JSON={"06e38545-b932-83be-b4c1-87b686b45ee7":"Doc name"
 NOTION_SCRIPT_SERIES_NAME=Dekhte Hai
 TAVILY_API_KEY=your_optional_tavily_key
 RESEARCH_MAX_SEARCHES=3
-# Optional single daily brief from the D1 task list. Leave blank for no
-# unprompted messages other than reminders you set.
+# Optional daily brief written from the group conversation. Leave blank for
+# no unprompted messages other than reminders you set.
 FOUNDER_BRIEF_TIME=
 FOUNDER_BRIEF_GROUP_IDS=your_whatsapp_group_id
 # Local, open-source voice transcription. Use base for more accuracy.
@@ -115,7 +115,7 @@ For an existing deployment, delete `AZURE_OPENAI_*`, `NOTION_DATA_SOURCE_ID`, `N
 
 To enable company-wide Notion reads, review the integration's Content access, connect only the intended company pages/databases, and change `NOTION_KNOWLEDGE_ENABLED=true`. The Notion API cannot scope searches by teamspace, so do not enable this while unrelated personal pages are shared with the same integration.
 
-Reminders live in the existing `dia-data` volume; do not remove that volume during updates.
+Reminders and the group conversation log (kept for `CONVERSATION_RETENTION_DAYS`, default 14) live in the existing `dia-data` volume; do not remove that volume during updates.
 
 Save in `nano` with `Ctrl+O`, press Enter, and exit with `Ctrl+X`. Do not paste credentials directly into shell commands because they may be recorded in shell history.
 

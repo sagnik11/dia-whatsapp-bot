@@ -2,19 +2,20 @@
 
 This is the plan for turning Patch from a WhatsApp helper into the person-shaped role every early-stage company needs and cannot yet hire: someone who remembers every commitment, keeps the operating system of the company clean, does the repetitive admin, and hands the founders a short, honest picture of where things stand.
 
-It covers what Patch already does after the Cloudflare migration, what it should do next, how each capability is built, and how we keep it from becoming the nagging bot it replaced.
+Everything Patch sends, from answers to briefs, is grounded in what the founders actually said in the group. It covers what Patch already does after the Cloudflare migration, what it should do next, how each capability is built, and how we keep it from becoming the nagging bot it replaced.
 
 ## 1. Ground rules
 
 These apply to every phase. Each new capability is checked against them before it ships.
 
 1. **Pull, not push.** Patch answers when asked. The only unprompted messages are reminders a founder explicitly set, plus digests a founder explicitly opted into (`FOUNDER_BRIEF_TIME`, and later a weekly review). Default: zero. No more four-hour task digests, no mirroring Notion edits into WhatsApp.
-2. **One home per kind of data.** Tasks, follow-ups, decisions, and other operating records live in Cloudflare D1. Money stays in the Notion Daily Spend Log. Raw ideas stay in the Notion Brain Dump. Patch never keeps a second copy that can drift.
-3. **Writes are confirmed from stored data.** Every create, update, or delete reply is generated from what D1 or Notion actually returned, never from model prose.
-4. **Nothing irreversible without a trace.** Deletes are soft, and every change is recorded with actor and diff (`task_events` today, the same pattern for every new table).
-5. **Draft first for anything that leaves the group.** Emails, investor updates, and messages to customers or candidates are drafted in WhatsApp. Sending through an integration always needs an explicit "send it" from a founder.
-6. **Least privilege.** Each integration gets the narrowest token that works. Notion is limited to the spend log and Brain Dump; Cloudflare tokens are scoped to Workers AI and D1.
-7. **Open models, observable spend.** All model traffic goes through AI Gateway, so cost, latency, errors, and prompts are visible in one place, and limits can be enforced there.
+2. **Grounded in the conversation.** Briefs, reviews, summaries, and drafts come from the group's own messages (who said what, what was decided, what was promised), cross-checked against the task list. If nobody said anything since the last brief, no brief is sent.
+3. **One home per kind of data.** Tasks, follow-ups, decisions, and other operating records live in Cloudflare D1. Money stays in the Notion Daily Spend Log. Raw ideas stay in the Notion Brain Dump. The group conversation is kept on the bot's own server with a retention limit. Patch never keeps a second copy that can drift.
+4. **Writes are confirmed from stored data.** Every create, update, or delete reply is generated from what D1 or Notion actually returned, never from model prose.
+5. **Nothing irreversible without a trace.** Deletes are soft, and every change is recorded with actor and diff (`task_events` today, the same pattern for every new table).
+6. **Draft first for anything that leaves the group.** Emails, investor updates, and messages to customers or candidates are drafted in WhatsApp. Sending through an integration always needs an explicit "send it" from a founder.
+7. **Least privilege.** Each integration gets the narrowest token that works. Notion is limited to the spend log and Brain Dump; Cloudflare tokens are scoped to Workers AI and D1.
+8. **Open models, observable spend.** All model traffic goes through AI Gateway, so cost, latency, errors, and prompts are visible in one place, and limits can be enforced there.
 
 ## 2. What ships in this branch (Phase 0)
 
@@ -32,7 +33,9 @@ These apply to every phase. Each new capability is checked against them before i
 | Model | Open-source Kimi K2.6 via AI Gateway, automatic fallback to Gemma 4 on 429/5xx | `llm.ts` |
 | Media | Screenshots via vision, PDFs/Office docs via Workers AI `toMarkdown`, voice via local Whisper | `media-ingestion.ts` |
 | Research | Bounded web search and multi-search research with citations | Tavily + `research-agent.ts` |
-| Rhythm | Personal reminders; optional single daily brief built from D1 | `scheduler.ts` |
+| Conversation | Every group message and Patch reply kept locally for 14 days | `conversation-store.ts` |
+| Conversation | "What did we decide yesterday?", "turn today's discussion into tasks" | `read_group_conversation` |
+| Rhythm | Personal reminders; optional daily brief written from the conversation since the last brief, skipped when the group was quiet | `scheduler.ts` |
 | Removed | Notion task tracker, four-hour task digest, Notion webhook notifications, Azure OpenAI | — |
 
 ## 3. What a great chief of staff does, mapped to Patch
@@ -46,13 +49,14 @@ The core job: nothing a founder commits to is lost.
 | Capability | Example | Data | Phase |
 | --- | --- | --- | --- |
 | Task capture from anything (text, voice note, PDF, screenshot, quoted message) | "turn this voice note into tasks" | `tasks` | 0 ✅ |
+| Tasks from the group conversation | "capture everything we agreed today as tasks" | conversation log + `tasks` | 0 ✅ |
 | Owners, due dates, priority, areas, tags | "give #12 to Tanvi, due Friday, high" | `tasks` | 0 ✅ |
 | Recurring tasks | "every month on the 5th: pay contractor invoices" | `recurring_tasks` generates `tasks` | 1 |
 | Checklists inside a task | "add a checklist to #8: PAN, GST cert, board resolution" | `task_items` | 1 |
 | "Waiting on" tracking | "#14 is blocked on the CA — check back Thursday" | `tasks.waiting_on`, `tasks.follow_up_at` | 1 |
 | Follow-up tracker for promises made to others | "I told Rahul I'd send the pilot proposal by Friday" | `follow_ups` | 1 |
 | Undo the last change | "undo that" | replay `task_events` | 1 |
-| Weekly review (opt-in, Monday morning) | done last week, slipped, overdue, unowned, next week's due | read-only over `tasks` + `follow_ups` | 1 |
+| Weekly review (opt-in, Monday morning) | last week's conversation, done, slipped, overdue, unowned, next week's due | conversation log + `tasks` + `follow_ups` | 1 |
 | Export | "send me all open tasks as CSV" | generated file in chat | 1 |
 
 ### 3.2 Money and finance ops
@@ -92,6 +96,7 @@ A chief of staff remembers why things were decided.
 | Capability | Example | Data | Phase |
 | --- | --- | --- | --- |
 | Brain Dump capture, read, and research-and-save | "put this in the brain dump" | Notion | 0 ✅ |
+| Search what was said in the group | "what did we decide about pricing on Monday?" | conversation log | 0 ✅ |
 | Decision log | "log decision: we price per repo, not per seat — because…" | `decisions` | 1 |
 | "What did we decide about X?" | search decisions, tasks, Brain Dump | D1 + Notion | 1 |
 | Semantic memory across everything | "what have we said about SOC 2?" finds related tasks, decisions, notes | Vectorize index + Workers AI embeddings (`@cf/baai/bge-m3`) | 3 |
@@ -169,7 +174,7 @@ flowchart LR
     BOT -->|REST| D1[("D1: tasks, task_events, follow_ups, decisions, …")]
     BOT --> N["Notion: spend log, Brain Dump"]
     BOT --> T["Tavily"]
-    BOT --> SQ[("Local SQLite: reminders, dedupe")]
+    BOT --> SQ[("Local SQLite: conversation log, reminders, dedupe")]
     subgraph Phase 3
       VEC[("Vectorize memory")]
       R2[("R2 attachment archive")]
@@ -190,6 +195,7 @@ Each table follows the `tasks` pattern: soft delete, `created_by`/`updated_by`, 
 | Table | Key columns | Phase |
 | --- | --- | --- |
 | `tasks`, `task_events` | shipped | 0 ✅ |
+| `conversation_messages` (local SQLite) | group messages and Patch replies, 14-day retention | 0 ✅ |
 | `recurring_tasks` | title template, owner, rule (RRULE-lite), next_run_at | 1 |
 | `task_items` | task_id, text, done | 1 |
 | `follow_ups` | counterparty, promise, due_at, status, source_message_id | 1 |
@@ -231,7 +237,7 @@ Roles map to WhatsApp sender ids in config (later a `people` table). Tools are f
 
 ### Phase 0: this branch (done)
 
-D1 task list with CRUD and audit, AI Gateway + Workers AI with fallback, document conversion, spend log and Brain Dump retained, Notion tasks, digests, and webhooks removed.
+D1 task list with CRUD and audit, AI Gateway + Workers AI with fallback, document conversion, the local conversation log with conversation-grounded briefs and look-backs, spend log and Brain Dump retained, Notion tasks, digests, and webhooks removed.
 
 **Exit criteria:** a deploy with the new `.env`, then a smoke test in the group: add three tasks in one message, list overdue, mark one done, delete one, log two spends, append to Brain Dump, send a PDF and ask about it. Check every call in the AI Gateway logs.
 
@@ -262,6 +268,7 @@ Roles and per-role tool filtering, team members in a separate group, task assign
 | Metric | Target |
 | --- | --- |
 | Commitments captured as owned tasks | ≥90% of those spoken in the group |
+| Brief items traceable to a message or task | 100% (no invented items) |
 | Overdue open tasks | trending down week over week |
 | Time from "add this" to confirmed task | < 8 seconds p50 |
 | Tool-selection accuracy (golden set) | ≥95%, 100% on write-safety cases |
@@ -272,8 +279,9 @@ Roles and per-role tool filtering, team members in a separate group, task assign
 ## 10. Decisions the founders need to make
 
 1. Which proactive messages, if any, to opt into: the daily brief, the Monday review, or neither (default).
-2. Whether to bring open Notion tasks into D1 (paste the list and ask Patch to capture them) or start fresh.
-3. The compliance and renewal list to load, provided by the CA.
-4. Whether Patch may later create Gmail drafts and read Google Calendar (read-only, draft-only).
-5. When team members join, which groups and roles they get.
-6. AI Gateway log retention for prompts and replies.
+2. How long Patch keeps the group conversation (default 14 days; 0 keeps nothing).
+3. Whether to bring open Notion tasks into D1 (paste the list and ask Patch to capture them) or start fresh.
+4. The compliance and renewal list to load, provided by the CA.
+5. Whether Patch may later create Gmail drafts and read Google Calendar (read-only, draft-only).
+6. When team members join, which groups and roles they get.
+7. AI Gateway log retention for prompts and replies.

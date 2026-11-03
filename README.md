@@ -4,7 +4,7 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Captain Patch is an open-source, self-hosted WhatsApp chief of staff for a founding team. It keeps the company task list in **Cloudflare D1**, thinks with an **open-source model on Workers AI routed through Cloudflare AI Gateway**, logs founder spending, captures ideas in a Notion Brain Dump, understands voice notes, screenshots, and PDFs, and only speaks unprompted for reminders you explicitly set.
+Captain Patch is an open-source, self-hosted WhatsApp chief of staff for a founding team. It keeps the company task list in **Cloudflare D1**, thinks with an **open-source model on Workers AI routed through Cloudflare AI Gateway**, remembers the group's own conversation so its answers and briefs are grounded in what you actually said, logs founder spending, captures ideas in a Notion Brain Dump, understands voice notes, screenshots, and PDFs, and only speaks unprompted for reminders you explicitly set.
 
 It is Autter's sarcastic harbour-master mascot out of the box, but the personality and company context live in one small file and can be replaced for another team.
 
@@ -16,6 +16,8 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 @patch add to spend log: chai 120 upi, auto 260 cash
 @patch put this in the brain dump: onboarding should start with a repo scan
 @patch turn the quoted meeting notes into tasks
+@patch what did we decide about pricing yesterday?
+@patch capture everything we agreed today as tasks
 @patch research AI code-review pricing and add it to the brain dump
 ```
 
@@ -31,6 +33,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - [Quick start with Docker](#quick-start-with-docker)
 - [Configure Cloudflare](#configure-cloudflare)
 - [The task list](#the-task-list)
+- [The group conversation](#the-group-conversation)
 - [Configure Notion (spend log and Brain Dump)](#configure-notion-spend-log-and-brain-dump)
 - [Find group and sender IDs](#find-group-and-sender-ids)
 - [Enable web search](#enable-web-search)
@@ -46,12 +49,13 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - Listens in WhatsApp **group chats**, responds only when triggered, and accepts commands only from allowlisted senders.
 - Keeps Autter's **task list in Cloudflare D1**: create (single or batch), search and filter, edit any field, append notes, complete, and delete, with an audit trail of every change.
 - Runs on an **open-source model** (default `@cf/moonshotai/kimi-k2.6`) through **Cloudflare AI Gateway**, with automatic fallback to a second model (default `@cf/google/gemma-4-26b-a4b-it`) when the primary is rate limited or down.
+- Keeps the **group conversation** locally (14 days by default) so Patch can answer "what did we decide?", turn a discussion into tasks, and write briefs from what was actually said.
 - Logs and totals founder expenses in the Notion **Daily Spend Log**.
 - Reads and appends to the Notion **Brain Dump** page, including "research this and save it there".
 - Understands screenshots (vision), PDFs and Office documents (converted to Markdown by Workers AI), and voice notes (transcribed locally with `whisper.cpp`).
 - Drafts emails, investor updates, JDs, agendas, follow-ups, and summaries on request.
 - Stores persistent personal reminders in SQLite (advance, due-time, and optional repeats).
-- Optionally sends **one** daily brief built from the D1 task list. There is no periodic task digest and no Notion task notifications.
+- Optionally sends **one** daily brief written from the conversation since the last brief, cross-checked against D1 tasks and reminders, and skipped when the group was quiet. There is no periodic task digest and no Notion task notifications.
 - Optionally performs bounded Tavily web search and multi-search delegated research with citations.
 - Optionally reads the live Dekhte Hai script library and company Notion pages (both off by default).
 
@@ -79,8 +83,11 @@ flowchart LR
     A --> BD["Notion Brain Dump"]
     A --> S["Tavily search / Patch Research"]
     A --> RM[("SQLite reminders")]
+    W -.->|every message| CL[("SQLite conversation log")]
+    A --> CL
     SC["Scheduler"] --> RM
-    SC --> BR["Optional daily brief from D1"]
+    SC --> CL
+    SC --> BR["Optional daily brief from the conversation + D1"]
     A --> O["WhatsApp reply"]
 ```
 
@@ -186,6 +193,23 @@ Tasks live in the D1 `tasks` table with an id, title, notes, status (`todo`, `in
 - Deleting is a soft delete: the task disappears from every list but stays in D1, with its last snapshot recorded in `task_events`.
 - A message retried by WhatsApp will not create duplicate tasks.
 - Patch never posts task digests. You see the list when you ask, plus the optional daily brief.
+
+## The group conversation
+
+Patch keeps every message in its allowed groups, plus its own replies, in the local SQLite database on your server for `CONVERSATION_RETENTION_DAYS` (default 14). Nothing from this log goes to D1 or Notion. It is sent to the model only when a founder asks about earlier discussion or when the daily brief is written.
+
+```text
+@patch what did we decide about pricing on Monday?
+@patch catch me up on today
+@patch what did Tanvi promise Rahul?
+@patch capture everything we agreed today as tasks
+@patch minutes of this morning's discussion
+```
+
+- Answers are grounded in the returned messages and attribute each point to whoever said it; if the log does not cover something, Patch says so.
+- Patch only reads the log of the group it was asked in, at most a week back per request.
+- Voice notes are logged as `[ptt attachment]` unless someone asks Patch about them.
+- Set `CONVERSATION_RETENTION_DAYS=0` to turn the log off (the daily brief then cannot be enabled).
 
 ## Configure Notion (spend log and Brain Dump)
 
@@ -308,7 +332,7 @@ FOUNDER_BRIEF_TIME=09:00
 FOUNDER_BRIEF_GROUP_IDS=120363000000000000@g.us
 ```
 
-Leave `FOUNDER_BRIEF_TIME` empty (the default) and Patch never posts anything you did not ask for except your own reminders. When set, Patch sends one brief per day built only from the open tasks in D1 and active reminders. The old `TASK_DIGEST_*` and `NOTION_WEBHOOK_*` settings have been removed.
+Leave `FOUNDER_BRIEF_TIME` empty (the default) and Patch never posts anything you did not ask for except your own reminders. When set, Patch sends one brief per day written from the group conversation since the previous brief: what came up, what was decided, who committed to what (flagging commitments not yet on the task list), open questions, and the D1 tasks that are due or were discussed. If only Patch spoke since the last brief, no brief is sent and the next one covers the gap (up to three days). The old `TASK_DIGEST_*` and `NOTION_WEBHOOK_*` settings have been removed.
 
 ## Find group and sender IDs
 
@@ -423,6 +447,7 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AUTHORIZED_USER_IDS` | Yes for use | Empty | Comma-separated owner IDs; empty blocks everyone. |
 | `UNAUTHORIZED_REPLY` | No | Harbour-themed | Used if the AI rejection fails. |
 | `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages kept in memory (0–20). |
+| `CONVERSATION_RETENTION_DAYS` | No | `14` | Days of group conversation kept locally for briefs and look-backs; `0` turns the log and the brief off. |
 | `FOUNDER_BRIEF_TIME` | No | Empty | Daily brief time `HH:mm`; empty disables it. |
 | `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Daily brief destinations. |
 | `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded attachment size. |
@@ -470,8 +495,9 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 - Brain Dump writes can only append to the one configured page. Company knowledge is opt-in and read-only.
 - Group context, quoted messages, attachments, transcripts, Notion content, D1 rows, and web results are all treated as untrusted data in the system prompt.
 - Model requests go to Workers AI through your AI Gateway. Gateway logs can contain prompts and replies; set log retention to match your comfort level. Gateway metadata carries only a feature name and a hashed sender id.
-- Up to `CONTEXT_MESSAGE_LIMIT` recent group messages are held in memory and sent to the model only when a later authorized trigger occurs (never for task capture).
-- Reminders and dedupe state live in local SQLite in the `dia-data` volume, which also holds the WhatsApp session and must be treated as sensitive.
+- Every message in allowed groups (and Patch's replies) is stored in local SQLite for `CONVERSATION_RETENTION_DAYS` and pruned after that. It is sent to the model only when a founder asks about earlier discussion or for the daily brief, and only for the group it came from. Set the retention to `0` to store nothing.
+- Up to `CONTEXT_MESSAGE_LIMIT` recent group messages are also included with each trigger (never for task capture unless a founder asks to capture the discussion).
+- Reminders, dedupe state, and the conversation log live in local SQLite in the `dia-data` volume, which also holds the WhatsApp session and must be treated as sensitive.
 
 Before adding the bot to a group, tell participants what data may be processed by Cloudflare, Notion, Tavily, and your server logs. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
@@ -565,9 +591,10 @@ src/
 ├── cloudflare-d1.ts      D1 REST client
 ├── config.ts             Validated environment configuration
 ├── context-buffer.ts     Bounded in-memory group context
+├── conversation-store.ts Local group conversation log with retention
 ├── dedupe-store.ts       SQLite message deduplication
 ├── document-converter.ts Workers AI PDF/document to Markdown
-├── founder-brief.ts      Optional daily brief from the D1 task list
+├── founder-brief.ts      Optional daily brief from the conversation and D1
 ├── llm.ts                Workers AI chat client via AI Gateway, with fallback
 ├── media-ingestion.ts    Attachment validation, transcription, conversion
 ├── notion.ts             Brain Dump, optional knowledge and script readers

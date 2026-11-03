@@ -72,6 +72,8 @@ const schema = z
       .min(1)
       .default("Harbour's closed — only Autter's founders get the command deck. ⚓"),
     CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
+    // Days of group conversation kept locally for briefs and look-backs; 0 turns it off.
+    CONVERSATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(14),
     FOUNDER_BRIEF_TIME: optionalTime,
     FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
     MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
@@ -86,6 +88,14 @@ const schema = z
       env.NOTION_SPEND_DATA_SOURCE_ID ||
       env.NOTION_KNOWLEDGE_ENABLED ||
       env.NOTION_SCRIPT_SOURCE_MAP_JSON.trim() !== "{}";
+    if (env.FOUNDER_BRIEF_TIME && env.CONVERSATION_RETENTION_DAYS === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["FOUNDER_BRIEF_TIME"],
+        message:
+          "The daily brief is written from the group conversation; set CONVERSATION_RETENTION_DAYS above 0 or clear FOUNDER_BRIEF_TIME",
+      });
+    }
     if (needsNotion && !env.NOTION_API_KEY) {
       context.addIssue({
         code: "custom",
@@ -161,6 +171,7 @@ export const config = {
   authorizedUserIds: parseIdSet(env.AUTHORIZED_USER_IDS),
   unauthorizedReply: env.UNAUTHORIZED_REPLY,
   contextMessageLimit: env.CONTEXT_MESSAGE_LIMIT,
+  conversationRetentionDays: env.CONVERSATION_RETENTION_DAYS,
   founderBriefTime: env.FOUNDER_BRIEF_TIME,
   founderBriefGroupIds:
     configuredBriefGroupIds.size > 0 ? configuredBriefGroupIds : allowedGroupIds,

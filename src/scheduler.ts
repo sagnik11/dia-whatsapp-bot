@@ -1,6 +1,8 @@
+import type { ConversationStore } from "./conversation-store.js";
+import type { FounderBriefInput } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
 import type { ReminderStore } from "./reminder-store.js";
-import type { TaskListResult, TaskStore } from "./task-store.js";
+import type { TaskStore } from "./task-store.js";
 import { nextDailyRunAt } from "./time.js";
 import type { ReminderRecord } from "./types.js";
 
@@ -8,23 +10,29 @@ export { nextDailyRunAt } from "./time.js";
 
 type SendMessage = (groupId: string, message: string) => Promise<void>;
 
+const HOUR_MS = 60 * 60 * 1_000;
+const DAY_MS = 24 * HOUR_MS;
+/** A brief never reaches back further than this, even after quiet days. */
+const MAX_BRIEF_WINDOW_MS = 3 * DAY_MS;
+const MAX_BRIEF_MESSAGES = 400;
+
 /**
  * Patch only speaks unprompted for reminders a founder explicitly set, plus
- * the opt-in daily brief. There is no periodic task digest.
+ * the opt-in daily brief, which is written from the group's own conversation.
+ * There is no periodic task digest.
  */
 interface SchedulerOptions {
   reminders: ReminderStore;
   tasks: Pick<TaskStore, "listOpen">;
+  conversation?: Pick<ConversationStore, "list" | "hasHumanMessages" | "prune">;
+  conversationRetentionDays?: number;
   timezone: string;
   logger: Logger;
   pollIntervalMs?: number;
   founderBrief?: {
     time: string;
     groupIds: ReadonlySet<string>;
-    generate: (
-      tasks: TaskListResult,
-      reminders: readonly ReminderRecord[],
-    ) => Promise<string>;
+    generate: (input: FounderBriefInput) => Promise<string>;
   };
 }
 
@@ -43,6 +51,7 @@ export class ProactiveScheduler {
   private send: SendMessage | undefined;
   private running = false;
   private activeRun: Promise<void> | undefined;
+  private lastPruneMs = 0;
 
   public constructor(private readonly options: SchedulerOptions) {}
 
@@ -94,9 +103,24 @@ export class ProactiveScheduler {
         }
       }
 
+      this.pruneConversation(nowMs);
       await this.sendFounderBriefs(nowMs, send);
     } finally {
       this.running = false;
+    }
+  }
+
+  private pruneConversation(nowMs: number): void {
+    const days = this.options.conversationRetentionDays;
+    if (!this.options.conversation || !days || nowMs - this.lastPruneMs < HOUR_MS) return;
+    this.lastPruneMs = nowMs;
+    try {
+      const removed = this.options.conversation.prune(nowMs - days * DAY_MS);
+      if (removed > 0) {
+        this.options.logger.info({ removed, days }, "Pruned old conversation messages");
+      }
+    } catch (error) {
+      this.options.logger.error({ error }, "Failed to prune the conversation log");
     }
   }
 
@@ -105,7 +129,8 @@ export class ProactiveScheduler {
     send: SendMessage,
   ): Promise<void> {
     const brief = this.options.founderBrief;
-    if (!brief || brief.groupIds.size === 0) return;
+    const conversation = this.options.conversation;
+    if (!brief || !conversation || brief.groupIds.size === 0) return;
     const dueGroups = [...brief.groupIds].filter((groupId) => {
       const initialRun = nextDailyRunAt(nowMs, brief.time, this.options.timezone);
       return (
@@ -117,20 +142,39 @@ export class ProactiveScheduler {
     });
     if (dueGroups.length === 0) return;
 
+    const nextRun = nextDailyRunAt(nowMs + 60_000, brief.time, this.options.timezone);
+    const groupsWithNews = dueGroups.filter((groupId) => {
+      const sinceMs = this.briefWindowStart(groupId, nowMs);
+      if (conversation.hasHumanMessages(groupId, sinceMs, nowMs)) return true;
+      // Nothing was said, so there is nothing to brief on. Keep the window
+      // open so tomorrow's brief still covers today.
+      this.options.reminders.setNextRun(`founder_brief:${groupId}`, nextRun);
+      this.options.logger.info({ groupId }, "Skipped daily brief: the group was quiet");
+      return false;
+    });
+    if (groupsWithNews.length === 0) return;
+
     const tasks = await this.options.tasks.listOpen();
-    for (const groupId of dueGroups) {
+    for (const groupId of groupsWithNews) {
       try {
-        const output = await brief.generate(
+        const sinceMs = this.briefWindowStart(groupId, nowMs);
+        const messages = conversation.list(groupId, {
+          sinceMs,
+          untilMs: nowMs,
+          limit: MAX_BRIEF_MESSAGES,
+        });
+        const output = await brief.generate({
+          conversation: messages,
           tasks,
-          this.options.reminders.listActive(groupId, 50),
-        );
+          reminders: this.options.reminders.listActive(groupId, 50),
+          sinceMs,
+          untilMs: nowMs,
+        });
         await send(groupId, output);
-        this.options.reminders.setNextRun(
-          `founder_brief:${groupId}`,
-          nextDailyRunAt(nowMs + 60_000, brief.time, this.options.timezone),
-        );
+        this.options.reminders.setNextRun(`founder_brief:${groupId}`, nextRun);
+        this.options.reminders.setNextRun(`founder_brief_since:${groupId}`, nowMs);
         this.options.logger.info(
-          { groupId, taskCount: tasks.tasks.length, output },
+          { groupId, messageCount: messages.length, taskCount: tasks.tasks.length, output },
           "Sent daily founder brief",
         );
       } catch (error) {
@@ -140,6 +184,15 @@ export class ProactiveScheduler {
         );
       }
     }
+  }
+
+  /** Start of the conversation a brief covers: since the last brief, capped. */
+  private briefWindowStart(groupId: string, nowMs: number): number {
+    const lastBrief = this.options.reminders.getOrCreateNextRun(
+      `founder_brief_since:${groupId}`,
+      nowMs - DAY_MS,
+    );
+    return Math.max(lastBrief, nowMs - MAX_BRIEF_WINDOW_MS);
   }
 
   private triggerRun(errorMessage: string): void {

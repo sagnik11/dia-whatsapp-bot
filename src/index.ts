@@ -4,9 +4,10 @@ import { WhatsAppBot } from "./bot.js";
 import { D1HttpClient } from "./cloudflare-d1.js";
 import { config } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
+import { ConversationStore } from "./conversation-store.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { CloudflareMarkdownConverter } from "./document-converter.js";
-import { FounderBriefGenerator } from "./founder-brief.js";
+import { FounderBriefGenerator, type FounderBriefInput } from "./founder-brief.js";
 import { CloudflareGatewayModel } from "./llm.js";
 import { createLogger } from "./logger.js";
 import { MediaIngestionService } from "./media-ingestion.js";
@@ -22,6 +23,8 @@ const logger = createLogger(config.logLevel);
 const databasePath = join(config.dataDir, "dia.sqlite");
 const dedupe = new DedupeStore(databasePath);
 const reminders = new ReminderStore(databasePath);
+const conversation =
+  config.conversationRetentionDays > 0 ? new ConversationStore(databasePath) : undefined;
 
 const llm = new CloudflareGatewayModel({
   accountId: config.cloudflareAccountId,
@@ -81,6 +84,7 @@ const assistant = new DiaAssistant({
   botName: config.botName,
   timezone: config.timezone,
   tasks,
+  ...(conversation ? { conversation } : {}),
   ...(notion ? { notion } : {}),
   ...(notionSpend ? { notionSpend } : {}),
   reminders,
@@ -112,6 +116,9 @@ const founderBrief = config.founderBriefTime
 const scheduler = new ProactiveScheduler({
   reminders,
   tasks,
+  ...(conversation
+    ? { conversation, conversationRetentionDays: config.conversationRetentionDays }
+    : {}),
   timezone: config.timezone,
   logger,
   ...(founderBrief && config.founderBriefTime
@@ -119,8 +126,7 @@ const scheduler = new ProactiveScheduler({
         founderBrief: {
           time: config.founderBriefTime,
           groupIds: config.founderBriefGroupIds,
-          generate: (openTasks, activeReminders) =>
-            founderBrief.generate(openTasks, activeReminders),
+          generate: (input: FounderBriefInput) => founderBrief.generate(input),
         },
       }
     : {}),
@@ -137,6 +143,7 @@ const bot = new WhatsAppBot({
   dataDir: config.dataDir,
   listGroupsOnStart: config.listGroupsOnStart,
   mediaIngestion,
+  ...(conversation ? { conversation } : {}),
   scheduler,
   ...(config.puppeteerExecutablePath
     ? { puppeteerExecutablePath: config.puppeteerExecutablePath }
@@ -154,6 +161,7 @@ async function shutdown(signal: string): Promise<void> {
   });
   dedupe.close();
   reminders.close();
+  conversation?.close();
   process.exit(0);
 }
 
@@ -169,6 +177,7 @@ async function start(): Promise<void> {
       fallbackModel: config.aiFallbackModel ?? null,
       gateway: config.aiGatewayId,
       brainDump: Boolean(notion?.canReadBrainDump),
+      conversationRetentionDays: config.conversationRetentionDays,
       spendLog: Boolean(notionSpend),
     },
     "Chief-of-staff services configured",
@@ -181,5 +190,6 @@ start().catch(async (error: unknown) => {
   await bot.stop().catch(() => undefined);
   dedupe.close();
   reminders.close();
+  conversation?.close();
   process.exitCode = 1;
 });

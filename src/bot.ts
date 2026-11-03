@@ -6,6 +6,7 @@ import type { DiaAssistant } from "./assistant.js";
 import { isAuthorizedSender } from "./authorization.js";
 import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
+import type { ConversationStore } from "./conversation-store.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
 import type { MediaIngestionService } from "./media-ingestion.js";
@@ -53,6 +54,8 @@ interface BotOptions {
   dataDir: string;
   listGroupsOnStart: boolean;
   mediaIngestion?: MediaIngestionService;
+  /** Keeps the group's conversation so briefs and answers can cite it. */
+  conversation?: Pick<ConversationStore, "record">;
   scheduler?: ProactiveScheduler;
   puppeteerExecutablePath?: string;
   readyTimeoutMs?: number;
@@ -271,6 +274,16 @@ export class WhatsAppBot {
       body: message.body,
       timestamp: message.timestamp,
     });
+    if (this.isEligibleGroup(groupId)) {
+      this.recordConversation({
+        groupId,
+        messageId: message.id,
+        author,
+        body: message.body || (message.hasMedia ? `[${message.type} attachment]` : ""),
+        fromBot: false,
+        sentAtMs: message.timestamp * 1_000,
+      });
+    }
 
     const botId = this.client.info.wid._serialized;
     if (
@@ -335,7 +348,7 @@ export class WhatsAppBot {
           { author, groupId, messageId, output: rejection },
           `Sending ${this.options.botName} rejection`,
         );
-        await this.client.sendMessage(groupId, rejection);
+        await this.sendAndRecord(groupId, rejection);
       } catch (error) {
         this.options.logger.error(
           { error, messageId },
@@ -350,7 +363,7 @@ export class WhatsAppBot {
           },
           `Sending ${this.options.botName} fallback rejection`,
         );
-        await this.client.sendMessage(groupId, this.options.unauthorizedReply);
+        await this.sendAndRecord(groupId, this.options.unauthorizedReply);
       }
       return;
     }
@@ -392,7 +405,7 @@ export class WhatsAppBot {
           { error, messageId },
           "Could not ingest WhatsApp attachment",
         );
-        await this.client.sendMessage(
+        await this.sendAndRecord(
           groupId,
           "I couldn't process that attachment. Check the media-size limit and configure a transcription model for voice notes.",
         );
@@ -427,13 +440,58 @@ export class WhatsAppBot {
         { author, groupId, messageId, output: fallbackReply },
         `Sending ${this.options.botName} error response`,
       );
-      await this.client.sendMessage(groupId, fallbackReply);
+      await this.sendAndRecord(groupId, fallbackReply);
     }
   }
 
   private async sendCompleteMessage(groupId: string, output: string): Promise<void> {
     for (const chunk of splitWhatsAppMessage(output)) {
-      await this.client.sendMessage(groupId, chunk);
+      await this.sendAndRecord(groupId, chunk);
+    }
+  }
+
+  private async sendAndRecord(groupId: string, text: string): Promise<void> {
+    const sent: unknown = await this.client.sendMessage(groupId, text);
+    const id = sent && typeof sent === "object" && "id" in sent ? sent.id : null;
+    if (id && this.isEligibleGroup(groupId)) {
+      this.recordConversation({
+        groupId,
+        messageId: id,
+        author: this.options.botName,
+        body: text,
+        fromBot: true,
+        sentAtMs: Date.now(),
+      });
+    }
+  }
+
+  private isEligibleGroup(groupId: string): boolean {
+    return (
+      this.options.allowedGroupIds.size === 0 ||
+      this.options.allowedGroupIds.has(groupId)
+    );
+  }
+
+  private recordConversation(entry: {
+    groupId: string;
+    messageId: unknown;
+    author: string;
+    body: string;
+    fromBot: boolean;
+    sentAtMs: number;
+  }): void {
+    if (!this.options.conversation) return;
+    try {
+      this.options.conversation.record({
+        ...entry,
+        messageId: serializeMessageId(entry.messageId),
+      });
+    } catch (error) {
+      // Losing one log line must never stop Patch from replying.
+      this.options.logger.warn(
+        { error, groupId: entry.groupId },
+        "Could not record conversation message",
+      );
     }
   }
 }

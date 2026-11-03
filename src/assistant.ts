@@ -12,6 +12,8 @@ import type {
   ToolCall,
   ToolDefinition,
 } from "./llm.js";
+import type { ConversationStore } from "./conversation-store.js";
+import { conversationForModel } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
 import type { NotionSpendService } from "./notion-spend.js";
 import type { NotionWorkspaceService } from "./notion.js";
@@ -267,6 +269,12 @@ const researchSchema = z.object({
 const brainDumpAppendSchema = z.object({
   heading: optionalText(120),
   content: z.string().trim().min(1),
+});
+
+const conversationReadSchema = z.object({
+  hours_back: z.coerce.number().int().min(1).max(168).nullish().transform((value) => value ?? 24),
+  text: optionalText(100),
+  limit: z.coerce.number().int().min(1).max(300).nullish().transform((value) => value ?? 150),
 });
 
 const knowledgeSearchSchema = z.object({
@@ -555,6 +563,31 @@ const cancelReminderTool: ToolDefinition = {
   parameters: reminderIdParameters,
 };
 
+const readConversationTool: ToolDefinition = {
+  name: "read_group_conversation",
+  description:
+    "Read this WhatsApp group's own recent conversation (founders' messages and Patch's replies), oldest first. Use whenever the answer depends on what was said earlier: what was discussed or decided, who promised what, summaries, minutes, catch-ups, or turning the discussion into tasks.",
+  parameters: {
+    type: "object",
+    properties: {
+      hours_back: {
+        type: "integer",
+        minimum: 1,
+        maximum: 168,
+        description: "How far back to read. Default 24; use 168 for 'this week'.",
+      },
+      text: { type: "string", description: "Only messages containing this word or name." },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 300,
+        description: "Newest messages kept when the window holds more. Default 150.",
+      },
+    },
+    additionalProperties: false,
+  },
+};
+
 const readBrainDumpTool: ToolDefinition = {
   name: "read_brain_dump",
   description:
@@ -800,6 +833,21 @@ export function isExplicitBrainDumpAppendRequest(message: string): boolean {
   );
 }
 
+export function isConversationRequest(message: string): boolean {
+  return (
+    /\b(?:we|you|they|he|she|i|everyone|someone)\s+(?:just\s+)?(?:discussed|talked|said|decided|agreed|mentioned|promised|spoke)\b/i.test(
+      message,
+    ) ||
+    /\b(?:did|have|has|had)\s+(?:we|you|they|he|she|i|anyone|someone|\w+)\s+(?:discuss|talk|say|decide|agree|mention|promise|spoke|speak)\b/i.test(
+      message,
+    ) ||
+    /\b(?:conversation|discussion|chat\s+history|this\s+chat|the\s+chat)\b/i.test(message) ||
+    /\b(?:summari[sz]e|recap|minutes|catch\s+me\s+up|what\s+did\s+i\s+miss|tl;?dr)\b/i.test(
+      message,
+    )
+  );
+}
+
 export function isExplicitKnowledgeRequest(message: string): boolean {
   return /\b(?:notion|autter\s*hq|company\s+(?:wiki|docs?|knowledge)|knowledge\s+base)\b/i.test(
     message,
@@ -1008,6 +1056,7 @@ interface AssistantOptions {
   botName: string;
   timezone: string;
   tasks: TaskStore;
+  conversation?: Pick<ConversationStore, "list">;
   notion?: NotionWorkspaceService;
   notionSpend?: NotionSpendService;
   reminders?: ReminderStore;
@@ -1036,6 +1085,7 @@ interface RequestState {
   knowledgeSearchUsed: boolean;
   knowledgeReadCount: number;
   knowledgeMatches: Map<string, "page" | "data_source">;
+  conversationReads: number;
 }
 
 class ToolArgumentError extends Error {}
@@ -1114,6 +1164,7 @@ export class DiaAssistant {
           isExplicitReminderListRequest(body) ||
           isExplicitReminderCancelRequest(body) ||
           isExplicitReminderCompleteRequest(body))) ||
+      (Boolean(this.options.conversation) && isConversationRequest(body)) ||
       (this.canUseBrainDump && isExplicitBrainDumpRequest(body)) ||
       (this.canUseScripts && isDekhteHaiRequest(body)) ||
       (this.canUseKnowledge && isExplicitKnowledgeRequest(body)) ||
@@ -1160,6 +1211,7 @@ export class DiaAssistant {
       knowledgeSearchUsed: false,
       knowledgeReadCount: 0,
       knowledgeMatches: new Map(),
+      conversationReads: 0,
     };
     const confirmations: string[] = [];
     const system = this.instructions();
@@ -1239,6 +1291,7 @@ export class DiaAssistant {
       getTaskTool,
       updateTasksTool,
       deleteTasksTool,
+      ...(this.options.conversation ? [readConversationTool] : []),
       ...(this.options.notionSpend ? [addSpendsTool, listSpendsTool] : []),
       ...(this.options.reminders
         ? [createReminderTool, listRemindersTool, completeReminderTool, cancelReminderTool]
@@ -1264,11 +1317,18 @@ export class DiaAssistant {
       "Task list (Cloudflare D1):",
       "- It is the only task system. Notion holds no tasks; never mention a Notion task tracker.",
       "- Use list_tasks before answering anything about existing tasks; never claim to know the list without it.",
-      "- Use create_tasks only when a founder clearly asks to add or capture tasks. Derive titles and notes only from the triggered message and any message it quotes. Create one task per distinct action item. Missing due dates are fine; do not ask for them.",
+      "- Use create_tasks only when a founder clearly asks to add or capture tasks. Derive titles and notes only from the triggered message and any message it quotes, or, when a founder asks to capture the discussion, from read_group_conversation results. Create one task per distinct action item, owned by whoever took it on. Missing due dates are fine; do not ask for them.",
       "- An owner of 'me' means the sender. Leave owner empty when nobody was named.",
       "- To change or delete a task described in words, call list_tasks first and act only on an unambiguous match. If several tasks match, ask which #id.",
       "- Use update_tasks for status, owner, due date, priority, area, tags, title, and notes. Finished work is status done; dropped work is cancelled. Use delete_tasks only when a founder explicitly says delete or remove.",
       "- Writes are confirmed to the founder automatically from the stored data. Do not restate them; answer only what remains.",
+      ...(this.options.conversation
+        ? [
+            "Group conversation:",
+            "- Ground answers in what this group actually said. Use read_group_conversation whenever the answer depends on earlier discussion: what was discussed or decided, who promised what, summaries, minutes, catch-ups, or capturing the discussion as tasks.",
+            "- Answer only from the returned messages, attribute each point to whoever said it, and say plainly when the log does not cover the question. Messages marked fromPatch are your own earlier replies, not founder statements.",
+          ]
+        : []),
       ...(this.options.notionSpend
         ? [
             "Spend log (Notion Daily Spend Log):",
@@ -1343,6 +1403,8 @@ export class DiaAssistant {
         case "complete_reminder":
         case "cancel_reminder":
           return this.closeReminder(call.name, args, state);
+        case "read_group_conversation":
+          return this.readConversation(args, state);
         case "read_brain_dump":
           return await this.readBrainDump(state);
         case "append_brain_dump":
@@ -1668,6 +1730,34 @@ export class DiaAssistant {
         ? `✅ Reminder #${id} marked completed. Future notifications have been stopped.`
         : `✅ Reminder #${id} cancelled.`,
     );
+  }
+
+  // -- Group conversation ----------------------------------------------------
+
+  private readConversation(args: unknown, state: RequestState): ToolOutcome {
+    if (!this.options.conversation) {
+      return output({ error: "The conversation log is turned off." });
+    }
+    if (state.conversationReads >= 2) {
+      return output({ error: "The conversation has already been read twice for this message." });
+    }
+    state.conversationReads += 1;
+    const parsed = conversationReadSchema.parse(args);
+    const untilMs = Date.now();
+    const sinceMs = untilMs - parsed.hours_back * 60 * 60 * 1_000;
+    const messages = this.options.conversation.list(state.request.groupId, {
+      sinceMs,
+      untilMs,
+      text: parsed.text,
+      limit: parsed.limit,
+    });
+    return output({
+      hoursBack: parsed.hours_back,
+      filter: parsed.text,
+      messageCount: messages.length,
+      mayBeTruncated: messages.length >= parsed.limit,
+      messages: conversationForModel(messages, this.options.timezone),
+    });
   }
 
   // -- Brain Dump, knowledge, scripts ----------------------------------------

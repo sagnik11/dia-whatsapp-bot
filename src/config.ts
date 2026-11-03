@@ -6,10 +6,16 @@ const optionalString = z
   .optional()
   .transform((value) => value?.trim() || undefined);
 
-const optionalTime = optionalString.refine(
-  (value) => !value || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value),
-  "Time must use 24-hour HH:mm format",
-);
+const isTime = (value: string | undefined) =>
+  !value || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+
+/** A daily time that is on by default; an explicitly empty value turns it off. */
+const defaultOnTime = (fallback: string) =>
+  z
+    .string()
+    .default(fallback)
+    .transform((value) => value.trim() || undefined)
+    .refine(isTime, "Time must use 24-hour HH:mm format");
 
 const booleanFlag = (defaultValue: "true" | "false") =>
   z
@@ -73,8 +79,9 @@ const schema = z
       .default("Harbour's closed — only Autter's founders get the command deck. ⚓"),
     CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
     // Days of group conversation kept locally for briefs and look-backs; 0 turns it off.
-    CONVERSATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(14),
-    FOUNDER_BRIEF_TIME: optionalTime,
+    CONVERSATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(90),
+    // On by default (founders' decision); set it empty to turn the brief off.
+    FOUNDER_BRIEF_TIME: defaultOnTime("09:00"),
     FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
     MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
     LIST_GROUPS_ON_START: booleanFlag("true"),

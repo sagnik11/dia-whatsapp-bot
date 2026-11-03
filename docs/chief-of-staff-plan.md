@@ -1,287 +1,221 @@
-# Captain Patch as Autter's chief of staff
+# Captain Patch: Chief of Staff Plan
 
-This is the plan for turning Patch from a WhatsApp helper into the person-shaped role every early-stage company needs and cannot yet hire: someone who remembers every commitment, keeps the operating system of the company clean, does the repetitive admin, and hands the founders a short, honest picture of where things stand.
+Patch becomes Autter's chief of staff in three build phases on top of what ships now. It remembers every commitment made in the group, keeps 90 days of conversation and distills it into a lasting memory, runs the task list in Cloudflare D1, absorbs repetitive finance and admin work, and sends a daily brief and a Monday review written from what Sagnik and Tanvi actually said. Phase 0 is in review as PR #4; Phase 1 is built on top of it as its own PR.
 
-Everything Patch sends, from answers to briefs, is grounded in what the founders actually said in the group. It covers what Patch already does after the Cloudflare migration, what it should do next, how each capability is built, and how we keep it from becoming the nagging bot it replaced.
+The live, commentable version of this plan is a Claude Doc; this file is the copy that ships with the code.
 
-## 1. Ground rules
+## Ground rules
 
-These apply to every phase. Each new capability is checked against them before it ships.
+Every capability is checked against these before it ships.
 
-1. **Pull, not push.** Patch answers when asked. The only unprompted messages are reminders a founder explicitly set, plus digests a founder explicitly opted into (`FOUNDER_BRIEF_TIME`, and later a weekly review). Default: zero. No more four-hour task digests, no mirroring Notion edits into WhatsApp.
-2. **Grounded in the conversation.** Briefs, reviews, summaries, and drafts come from the group's own messages (who said what, what was decided, what was promised), cross-checked against the task list. If nobody said anything since the last brief, no brief is sent.
-3. **One home per kind of data.** Tasks, follow-ups, decisions, and other operating records live in Cloudflare D1. Money stays in the Notion Daily Spend Log. Raw ideas stay in the Notion Brain Dump. The group conversation is kept on the bot's own server with a retention limit. Patch never keeps a second copy that can drift.
-4. **Writes are confirmed from stored data.** Every create, update, or delete reply is generated from what D1 or Notion actually returned, never from model prose.
-5. **Nothing irreversible without a trace.** Deletes are soft, and every change is recorded with actor and diff (`task_events` today, the same pattern for every new table).
-6. **Draft first for anything that leaves the group.** Emails, investor updates, and messages to customers or candidates are drafted in WhatsApp. Sending through an integration always needs an explicit "send it" from a founder.
-7. **Least privilege.** Each integration gets the narrowest token that works. Notion is limited to the spend log and Brain Dump; Cloudflare tokens are scoped to Workers AI and D1.
-8. **Open models, observable spend.** All model traffic goes through AI Gateway, so cost, latency, errors, and prompts are visible in one place, and limits can be enforced there.
+1. **Grounded in the conversation.** Briefs, reviews, summaries, memory and drafts come from the group's own messages (who said what, what was decided, what was promised), cross-checked against the task list. If nobody said anything since the last brief, no brief is sent.
+2. **Only the messages you chose.** Unprompted messages are limited to reminders a founder set, the daily brief (09:00 IST) and the Monday review (09:30 IST). No task digests, no mirroring Notion edits.
+3. **Remember, don't hoard.** Raw conversation is kept 90 days on Patch's own server; what matters (decisions, commitments, people, facts) is distilled into long-term memory in D1, each item linked to the message it came from.
+4. **One home per kind of data.** Tasks, follow-ups, decisions and memory live in D1. Money stays in the Notion Daily Spend Log. Raw ideas stay in the Notion Brain Dump.
+5. **Writes are confirmed from stored data.** Every create, update or delete reply comes from what D1 or Notion returned, never from model prose. Deletes are soft and every change is audited.
+6. **Acts outside the group only on a go-ahead.** Patch drafts emails and proposes meetings freely, but sends or books only after an explicit "send it" or "book it".
+7. **Founders only, least privilege, observable spend.** Only Sagnik and Tanvi can command Patch; each integration gets the narrowest token; all model traffic goes through AI Gateway.
 
-## 2. What ships in this branch (Phase 0)
+## What ships now (Phase 0)
+
+PR #4 replaces the Notion task tracker and Azure OpenAI with D1 and Workers AI, keeps the spend log and Brain Dump, and grounds everything Patch sends in the group conversation.
 
 | Area | Capability | How |
 | --- | --- | --- |
-| Tasks | Create single or batch tasks from text, quoted messages, voice notes, and PDFs | `create_tasks` → D1 `tasks` |
+| Tasks | Create single or batch tasks from text, quoted messages, voice notes and PDFs | `create_tasks` into D1 `tasks` |
 | Tasks | Search by text, status, owner, area, tag, due range, overdue | `list_tasks` |
-| Tasks | Edit title, status, owner, priority, area, due date, tags; append or replace notes; clear fields | `update_tasks` (batch) |
-| Tasks | Delete (soft) with audit snapshot | `delete_tasks` → `deleted_at` + `task_events` |
+| Tasks | Edit any field, append or replace notes, clear fields; soft delete | `update_tasks`, `delete_tasks` |
 | Tasks | Full history of every change with actor and before/after | `task_events` |
-| Safety | Edits and deletes only for an `#id` the founder named or that was just listed | id guard in `assistant.ts` |
-| Safety | Action-shaped messages must produce a tool call on the first turn | `tool_choice: required` |
-| Money | Log many expenses in one message, query and total spend | Notion Daily Spend Log (unchanged) |
-| Ideas | Read the Brain Dump, append notes, and "research X and save it there" | Notion Brain Dump (unchanged) |
-| Model | Open-source Kimi K2.6 via AI Gateway, automatic fallback to Gemma 4 on 429/5xx | `llm.ts` |
-| Media | Screenshots via vision, PDFs/Office docs via Workers AI `toMarkdown`, voice via local Whisper | `media-ingestion.ts` |
-| Research | Bounded web search and multi-search research with citations | Tavily + `research-agent.ts` |
-| Conversation | Every group message and Patch reply kept locally for 14 days | `conversation-store.ts` |
+| Conversation | Every group message (and Patch's replies) kept locally for 90 days | local SQLite conversation log |
 | Conversation | "What did we decide yesterday?", "turn today's discussion into tasks" | `read_group_conversation` |
-| Rhythm | Personal reminders; optional daily brief written from the conversation since the last brief, skipped when the group was quiet | `scheduler.ts` |
-| Removed | Notion task tracker, four-hour task digest, Notion webhook notifications, Azure OpenAI | — |
+| Briefs | Daily brief at 09:00 IST from the conversation since the last brief, plus open tasks and reminders; skipped if the group was quiet | scheduler, on by default |
+| Safety | Edits and deletes only for an `#id` the founder named or that was just listed; action messages must call a tool | id guard, `tool_choice: required` |
+| Money | Log many expenses in one message; query and total spend | Notion Daily Spend Log |
+| Ideas | Read, append, and "research X and save it there" | Notion Brain Dump |
+| Model | Kimi K2.6 via AI Gateway, automatic fallback to Gemma 4 on 429/5xx | Workers AI chat completions |
+| Media | Screenshots via vision, PDFs and Office docs via Workers AI `toMarkdown`, voice via local Whisper | media ingestion |
+| Removed | Notion task tracker and its tasks (starting fresh), four-hour digest, Notion webhook pings, Azure OpenAI | — |
 
-## 3. What a great chief of staff does, mapped to Patch
+## Capability map
 
-Each domain lists what Patch will do, the commands founders would actually type, where the data lives, and the phase it lands in.
+Nine domains, each a capability, an example command, where the data lives, and the phase it lands in (0 = PR #4).
 
-### 3.1 Execution: tasks, follow-ups, and commitments
+| Domain | Capability | Example | Data | Phase |
+| --- | --- | --- | --- | --- |
+| Execution | Task capture from text, voice, PDF, screenshot, quoted message | "turn this voice note into tasks" | `tasks` | 0 |
+| Execution | Tasks from the group conversation | "capture everything we agreed today as tasks" | conversation log + `tasks` | 0 |
+| Execution | Recurring tasks | "every month on the 5th: pay contractors" | `recurring_tasks` | 1 |
+| Execution | Checklists inside a task | "checklist on #8: PAN, GST cert, board resolution" | `task_items` | 1 |
+| Execution | Waiting-on and follow-up tracking | "I told Rahul I'd send the proposal by Friday" | `follow_ups` | 1 |
+| Execution | Undo the last change | "undo that" | `task_events` | 1 |
+| Execution | Monday review at 09:30 IST from last week's conversation and tasks | scheduled | conversation log + `tasks` | 1 |
+| Money | Bulk spend logging and totals | "chai 120 upi, auto 260 cash" | Notion spend log | 0 |
+| Money | Receipts from bill photos | send a photo | vision + spend log | 2 |
+| Money | Monthly summary and founder reimbursements | "who owes whom for October?" | spend log | 2 |
+| Money | Subscription radar and budgets | "what renews this month?" | `subscriptions`, `budgets` | 2 |
+| Compliance | Register of filings and renewals from the CA, silent tasks ahead of each date | "what do we need for the annual filing?" | `compliance_items` | 2 |
+| Memory | Brain Dump capture and research-and-save | "put this in the brain dump" | Notion | 0 |
+| Memory | Search what was said in the group | "what did we decide about pricing on Monday?" | conversation log | 0 |
+| Memory | Long-term memory distilled from the conversation: decisions, commitments, people, preferences and facts, kept after raw messages expire | "what do we know about Acme?" | `memories` | 1 |
+| Memory | Decision log | "log decision: price per repo" | `memories` (kind decision) | 1 |
+| Memory | Semantic memory across tasks, decisions, conversation, Brain Dump | "what have we said about SOC 2?" | Vectorize | 3 |
+| Meetings | Minutes, tasks and decisions from a voice note | reply "minutes + tasks" | transcript | 1 |
+| Meetings | Agenda from open, blocked tasks and recent discussion | "agenda for Thursday" | read-only | 1 |
+| Meetings | Meeting prep and booking with calendar access | "prep me for the 4pm with Acme" | Google Calendar (read, book on request) | 3 |
+| Comms | Drafts: emails, JDs, follow-ups, Dekhte Hai scripts | "draft a nudge to the designer" | none | 0 |
+| Comms | Monthly investor update draft | "draft October's update" | tasks, metrics, spends, conversation | 2 |
+| Comms | Gmail drafts, sent when a founder says "send it" | "put that in Gmail as a draft" | Gmail | 3 |
+| Pipelines | Pilots, leads and hiring stages with next steps | "add Acme to pilots, next step DPA" | `pipeline`, `candidates` | 2 |
+| Product ops | GitHub and Sentry digests on request, release-note drafts | "what merged this week?" | GitHub, Sentry | 3 |
+| Metrics | Log KPIs from chat and ask for trends | "MRR 1.2L, 3 pilots" | `metrics` | 2 |
 
-The core job: nothing a founder commits to is lost.
+Patch gives no investment, tax or legal advice; it organizes numbers and deadlines the founders and their CA provide.
 
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Task capture from anything (text, voice note, PDF, screenshot, quoted message) | "turn this voice note into tasks" | `tasks` | 0 ✅ |
-| Tasks from the group conversation | "capture everything we agreed today as tasks" | conversation log + `tasks` | 0 ✅ |
-| Owners, due dates, priority, areas, tags | "give #12 to Tanvi, due Friday, high" | `tasks` | 0 ✅ |
-| Recurring tasks | "every month on the 5th: pay contractor invoices" | `recurring_tasks` generates `tasks` | 1 |
-| Checklists inside a task | "add a checklist to #8: PAN, GST cert, board resolution" | `task_items` | 1 |
-| "Waiting on" tracking | "#14 is blocked on the CA — check back Thursday" | `tasks.waiting_on`, `tasks.follow_up_at` | 1 |
-| Follow-up tracker for promises made to others | "I told Rahul I'd send the pilot proposal by Friday" | `follow_ups` | 1 |
-| Undo the last change | "undo that" | replay `task_events` | 1 |
-| Weekly review (opt-in, Monday morning) | last week's conversation, done, slipped, overdue, unowned, next week's due | conversation log + `tasks` + `follow_ups` | 1 |
-| Export | "send me all open tasks as CSV" | generated file in chat | 1 |
+## Monotonous work Patch takes over
 
-### 3.2 Money and finance ops
-
-The spend log already captures entries. The repetitive work around it is what Patch should absorb.
-
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Log spends in bulk | "add to spend log: chai 120 upi, auto 260 cash" | Notion spend log | 0 ✅ |
-| Spend questions and totals | "how much on SaaS this quarter?" | Notion spend log | 0 ✅ |
-| Receipts from photos | send a bill photo → extracted amount, vendor, date → confirm → logged | vision + spend log | 2 |
-| Monthly summary on request | by category, founder, vendor, month-over-month | spend log | 2 |
-| Founder reimbursement settlement | "who owes whom for October?" based on reimbursable + personal card | spend log | 2 |
-| Subscription radar | detect recurring vendors, track renewal dates and annual cost, list what renews this month | `subscriptions` (seeded from spend history) | 2 |
-| Budget vs actual | monthly category budgets, "are we over on marketing?" | `budgets` | 2 |
-| Runway snapshot | founders enter cash in bank; Patch combines it with burn from the spend log | `metrics` | 2 |
-
-Patch gives no investment, tax, or legal advice. It organizes numbers and deadlines the founders and their CA provide.
-
-### 3.3 Admin and compliance calendar
-
-Small companies get hurt by missed admin, not hard problems.
-
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Compliance and renewal register | statutory filings agreed with the CA, domain/SSL renewals, contract expiries, trademark deadlines | `compliance_items` | 2 |
-| Auto-create tasks ahead of each deadline | a task with an owner 14 days before each item, no WhatsApp ping unless a reminder is requested | `compliance_items` → `tasks` | 2 |
-| Document checklist per filing | "what do we need for the annual filing?" | `compliance_items.checklist` | 2 |
-| Vendor and contract register | who we pay, terms, notice periods | `vendors` | 3 |
-
-The list of statutory items and their dates comes from the founders' CA. Patch does not invent compliance obligations.
-
-### 3.4 Memory: decisions, ideas, and context
-
-A chief of staff remembers why things were decided.
-
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Brain Dump capture, read, and research-and-save | "put this in the brain dump" | Notion | 0 ✅ |
-| Search what was said in the group | "what did we decide about pricing on Monday?" | conversation log | 0 ✅ |
-| Decision log | "log decision: we price per repo, not per seat — because…" | `decisions` | 1 |
-| "What did we decide about X?" | search decisions, tasks, Brain Dump | D1 + Notion | 1 |
-| Semantic memory across everything | "what have we said about SOC 2?" finds related tasks, decisions, notes | Vectorize index + Workers AI embeddings (`@cf/baai/bge-m3`) | 3 |
-| Brain Dump grooming (on request) | cluster raw ideas into themes, suggest which become tasks | read-only Brain Dump → proposed tasks | 2 |
-
-### 3.5 Meetings
-
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Meeting notes to tasks and decisions | reply to a voice note: "minutes, tasks, decisions" | transcript → `tasks` + `decisions` | 1 |
-| Agenda builder | "agenda for Thursday's sync" from open/blocked tasks and pending decisions | read-only | 1 |
-| Meeting prep (with calendar access) | "prep me for the 4pm with Acme": last notes, open follow-ups, web research | Google Calendar (read-only) + D1 | 3 |
-
-### 3.6 Communications (drafts only until a founder says send)
-
-| Capability | Example | Phase |
-| --- | --- | --- |
-| Emails and WhatsApp replies | "draft a polite nudge to the designer about the logo" | 0 ✅ (model can draft today) |
-| Monthly investor update | shipped work (done tasks), metrics, spend summary, asks; founders edit, Patch never sends | 2 |
-| Hiring collateral | JDs, interview loops, rejection notes | 1 |
-| Customer follow-ups | after-call recap email from notes | 1 |
-| Content | Dekhte Hai scripts (live library), LinkedIn posts, launch copy | 0 ✅ / 1 |
-| Gmail drafts integration | Patch creates a Gmail **draft**; a founder sends it | 3 |
-
-### 3.7 Pipelines: sales, pilots, and hiring
-
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Pilot and lead tracker | "add Acme to pilots, stage: security review, next step: send DPA, owner Tanvi" | `pipeline` | 2 |
-| Weekly pipeline view on request | stuck deals, missing next steps | `pipeline` | 2 |
-| Hiring pipeline | candidates, stage, interviewers, next action | `candidates` | 2 |
-| Interview feedback consolidation | collect scorecards from voice notes, summarize | `candidates` + transcripts | 2 |
-
-### 3.8 Product and engineering ops (Autter-specific)
-
-| Capability | Example | Phase |
-| --- | --- | --- |
-| GitHub digest on request | "what merged this week?", "which PRs are waiting on review?" | 3 |
-| Incident to task | Sentry alert summary → task with owner | 3 |
-| Release notes draft | from merged PRs since the last tag | 3 |
-
-### 3.9 Metrics
-
-| Capability | Example | Data | Phase |
-| --- | --- | --- | --- |
-| Log a KPI from chat | "MRR 1.2L, 3 active pilots, 41 repos onboarded" | `metrics` | 2 |
-| Trend questions | "how have active pilots moved since August?" | `metrics` | 2 |
-| Feeds the investor update | automatic section | `metrics` | 2 |
-
-## 4. The monotonous work Patch takes over
+The target is 4+ founder hours a week back, mostly from capture, chasing and roll-ups.
 
 | Chore today | What Patch does instead | Trigger | Phase |
 | --- | --- | --- | --- |
-| Copying action items out of calls and chats | Extracts and files them as owned tasks | Founder asks | 0 ✅ |
-| Remembering who owns what and what's late | Answers instantly from D1 | Founder asks | 0 ✅ |
-| Typing expenses into Notion | Bulk logging from one message or a bill photo | Founder asks | 0 ✅ / 2 |
-| Researching a vendor, competitor, or question | Cited research, optionally saved to Brain Dump | Founder asks | 0 ✅ |
-| Monthly expense roll-up and reimbursements | Summary and settlement | Founder asks | 2 |
-| Tracking SaaS renewals | Subscription radar | Founder asks / opt-in monthly | 2 |
-| Chasing statutory and renewal deadlines | Tasks auto-created ahead of each date | Automatic, silent | 2 |
-| Writing the investor update | Draft assembled from tasks, metrics, spends | Founder asks | 2 |
-| Writing meeting agendas and recaps | Generated from D1 and voice notes | Founder asks | 1 |
+| Copying action items out of chats and calls | Extracts them from the conversation and files owned tasks | Founder asks | 0 |
+| Remembering who owns what and what's late | Answers instantly from D1 | Founder asks | 0 |
+| Scrolling back to find what was agreed | Searches the group conversation | Founder asks | 0 |
+| Writing a daily "where are we" and remembering what was said weeks ago | Brief from the day's conversation and open tasks; long-term memory for the rest | Daily at 09:00 IST | 0 / 1 |
+| Typing expenses into Notion | Bulk logging from one message or a bill photo | Founder asks | 0 / 2 |
+| Researching a vendor, competitor or question | Cited research, optionally saved to the Brain Dump | Founder asks | 0 |
 | Tracking promises to customers and candidates | Follow-up tracker | Founder asks | 1 |
-| Weekly "where are we" | Opt-in Monday review | Opt-in schedule | 1 |
+| Meeting agendas and recaps | From recent discussion, tasks and voice notes | Founder asks | 1 |
+| Weekly review | Last week's conversation, done, slipped, next | Mondays at 09:30 IST | 1 |
+| Monthly expense roll-up and reimbursements | Summary and settlement | Founder asks | 2 |
+| Tracking SaaS renewals | Subscription radar | Founder asks | 2 |
+| Chasing statutory and renewal deadlines | Tasks created ahead of each date, no pings | Automatic, silent | 2 |
+| Writing the investor update | Draft from conversation, tasks, metrics, spends | Founder asks | 2 |
 
-## 5. Architecture
+## Architecture
+
+The group conversation stays on Patch's own server; tasks, follow-ups, decisions and memory go to D1, model calls go through AI Gateway, and Notion holds only spends and the Brain Dump.
 
 ```mermaid
-flowchart LR
-    WA["WhatsApp group"] <--> BOT["Patch (Node, Docker, Lightsail)"]
-    BOT -->|chat + tools| GW["Cloudflare AI Gateway"]
-    GW --> K["Workers AI: Kimi K2.6 (primary)"]
-    GW --> G["Workers AI: Gemma 4 (fallback, cheap jobs)"]
-    BOT -->|toMarkdown| WAI["Workers AI document conversion"]
-    BOT -->|REST| D1[("D1: tasks, task_events, follow_ups, decisions, …")]
-    BOT --> N["Notion: spend log, Brain Dump"]
-    BOT --> T["Tavily"]
-    BOT --> SQ[("Local SQLite: conversation log, reminders, dedupe")]
-    subgraph Phase 3
-      VEC[("Vectorize memory")]
-      R2[("R2 attachment archive")]
-      W["Patch API Worker (D1 binding)"]
+flowchart TB
+    WA["WhatsApp group"] <--> BOT
+    subgraph BOT["Patch server: Node in Docker on Lightsail"]
+      LOOP["Tool loop"]
+      LOG[("Conversation log, 90 days")]
+      SCHED["Reminders + scheduler: daily brief, Monday review, nightly memory"]
     end
-    BOT -.-> W
-    W -.-> D1
-    W -.-> VEC
-    W -.-> R2
+    subgraph CF["Cloudflare"]
+      GW["AI Gateway"] --> WAI["Workers AI: Kimi K2.6, Gemma 4, toMarkdown"]
+      D1[("D1: tasks, follow-ups, memories, audit trail")]
+    end
+    subgraph NOTION["Notion"]
+      SPEND["Daily Spend Log"]
+      BD["Brain Dump"]
+    end
+    BOT --> GW
+    BOT --> D1
+    BOT --> NOTION
+    BOT --> TAV["Tavily web research"]
+    subgraph P3["Phase 3, planned"]
+      W["Patch API Worker"]
+      VEC[("Vectorize")]
+      R2[("R2")]
+    end
+    D1 -.-> W
 ```
 
-Today the bot runs as one Node process next to Chromium, so it reaches D1 and Workers AI through Cloudflare's REST APIs. That is simple and fine for two founders. The D1 REST API is a control-plane API with a global limit of about 1,200 requests per five minutes. When usage grows (more people, scheduled jobs, semantic memory), Phase 3 moves the data tools into a small **Patch API Worker** with a direct D1 binding, Vectorize, and R2. The WhatsApp process then calls one authenticated endpoint per tool. Tool contracts stay the same, so the assistant code barely changes.
+Briefs and "what did we discuss" answers read the conversation log first. The Phase 3 Worker moves data tools behind a D1 binding once usage outgrows D1's REST API (about 1,200 requests per 5 minutes).
 
 ### D1 schema roadmap
 
-Each table follows the `tasks` pattern: soft delete, `created_by`/`updated_by`, timestamps, and an events table or shared `audit_events`.
+Every new table follows the `tasks` pattern: soft delete, actor columns, timestamps, audited changes.
 
-| Table | Key columns | Phase |
+| Table | Holds | Phase |
 | --- | --- | --- |
-| `tasks`, `task_events` | shipped | 0 ✅ |
-| `conversation_messages` (local SQLite) | group messages and Patch replies, 14-day retention | 0 ✅ |
-| `recurring_tasks` | title template, owner, rule (RRULE-lite), next_run_at | 1 |
-| `task_items` | task_id, text, done | 1 |
-| `follow_ups` | counterparty, promise, due_at, status, source_message_id | 1 |
-| `decisions` | title, decision, rationale, decided_by, decided_at, supersedes_id | 1 |
-| `subscriptions` | vendor, amount, cycle, renews_on, owner, cancel_by | 2 |
-| `compliance_items` | name, authority, due_on, recurrence, owner, checklist, lead_days | 2 |
-| `budgets` | month, category, amount | 2 |
-| `metrics` | name, value, unit, as_of, entered_by | 2 |
-| `pipeline` | company, stage, value, next_step, next_step_at, owner | 2 |
-| `candidates` | name, role, stage, next_action, owner, notes | 2 |
-| `audit_events` | table, row_id, action, actor, diff | 1 (generalize `task_events`) |
+| `tasks`, `task_events` | Tasks and their audit trail | 0 |
+| `conversation_messages` (local SQLite) | Group messages and Patch replies, 90-day retention | 0 |
+| `recurring_tasks` | Template, owner, rule, next run | 1 |
+| `task_items` | Checklist items inside a task | 1 |
+| `follow_ups` | Counterparty, promise, due date, status | 1 |
+| `memories` | Decisions (the decision log), commitments, facts, people and preferences, distilled nightly from the conversation or logged on request, each linked to its source message; kept after the 90-day log expires | 1 |
+| `audit_events` | Shared audit trail for every new table | 1 |
+| `subscriptions` | Vendor, amount, cycle, renewal date | 2 |
+| `compliance_items` | Filing, authority, due date, lead days, checklist | 2 |
+| `budgets` | Month, category, amount | 2 |
+| `metrics` | Name, value, unit, as-of | 2 |
+| `pipeline`, `candidates` | Stage, next step, owner | 2 |
 
-Migrations live in `migrations/NNNN_*.sql` and are mirrored in code so startup stays self-healing.
+## Model strategy and cost
 
-## 6. Model strategy
+Kimi K2.6 handles conversation and tool use; Gemma 4 covers fallback; everything is observed in AI Gateway.
 
-- **Primary:** `@cf/moonshotai/kimi-k2.6`. Strong tool calling, vision, 262k context. Paid-only, with a lower per-account rate limit.
-- **Fallback and cheap jobs:** `@cf/google/gemma-4-26b-a4b-it`. Tool calling and vision, much cheaper, 300 requests/min. Phase 1 routes non-interactive jobs (daily brief, summaries, grooming) here by default.
-- **Reasoning:** `none` for chat latency; `high` for research synthesis, investor updates, and weekly reviews (per-feature override in Phase 1).
-- **Embeddings (Phase 3):** `@cf/baai/bge-m3` into Vectorize.
-- **AI Gateway settings to turn on:** logging with sensible retention, a rate limit per gateway, a monthly spend alert, and caching only for deterministic jobs (never for chat).
-- **Evaluation:** a 60-message golden set of real founder commands (anonymized), each with the expected tool calls. It runs in CI against a recorded transcript and, before any model swap, live through the gateway. Model changes ship only at ≥95% exact tool-selection accuracy and 100% on the write-safety cases (no write to an unseen id, no unconfirmed external action).
+| Role | Model | Why |
+| --- | --- | --- |
+| Primary chat and tools | `@cf/moonshotai/kimi-k2.6` | Strong tool calling, vision, 262k context; paid-only, lower per-account rate limit |
+| Fallback | `@cf/google/gemma-4-26b-a4b-it` | Tools and vision, much cheaper, 300 requests/min |
+| Embeddings (Phase 3) | `@cf/baai/bge-m3` | Semantic memory in Vectorize |
+| Documents | Workers AI `toMarkdown` | PDFs and Office files become text open models can read |
 
-### Rough cost (verify in AI Gateway analytics)
+- **Reasoning:** `none` for chat latency; `high` for background jobs (daily brief, Monday review, nightly memory) and research.
+- **AI Gateway:** logging with a retention you choose, a gateway rate limit, a monthly spend alert, caching only for deterministic jobs.
+- **Evaluation (Phase 2):** a 60-message golden set of real (anonymized) founder commands with expected tool calls, run before any model swap. Ship a model change only at 95%+ tool-selection accuracy and 100% on write-safety cases.
 
-A typical command is two model rounds of about 6k input tokens (instructions + tools + context) and about 300 output tokens each, roughly 12k in and 0.6k out. At Kimi K2.6's listed price of about $0.95 per million input and $4.00 per million output tokens, that is about $0.014 per command. Fifty commands a day comes to about $20 a month, plus research runs and Workers Paid. D1 usage at this scale fits comfortably within the included limits.
+**Rough cost (approximate, verify in Gateway analytics):** a typical command is about 12k input and 0.6k output tokens across two rounds. At Kimi K2.6's listed $0.95 and $4.00 per million tokens that is about $0.014 per command, or about $20 a month at 50 commands a day, plus research runs, briefs, the nightly memory job and Workers Paid. D1 at this volume fits the included limits.
 
-## 7. Permissions as the team grows
+## Permissions
 
-| Role | Tasks | Spends | Brain Dump | Decisions | Admin/compliance |
+Patch stays founders-only: Sagnik and Tanvi have full access, everyone else gets a no-tools rejection, and there are no team-member roles.
+
+| Who | Tasks, follow-ups, decisions, memory | Spends | Brain Dump | Conversation search | Email and calendar (Phase 3) |
 | --- | --- | --- | --- | --- | --- |
-| Founder | full | full | read + append | full | full |
-| Team member (Phase 4) | own + assigned; create | none | append only | read | none |
-| Unauthorized | none (sarcastic rejection) | none | none | none | none |
+| Founders | Full | Full | Read and append | The group they ask in | Drafts freely; sends and books on "send it" / "book it" |
+| Anyone else | None (rejection) | None | None | None | None |
 
-Roles map to WhatsApp sender ids in config (later a `people` table). Tools are filtered per role before the model sees them, the same way unauthorized senders get no tools today.
+Conversation search and memory never cross groups: Patch only reads the log and memories of the group it was asked in.
 
-## 8. Phased roadmap
+## Roadmap
 
-### Phase 0: this branch (done)
+Phase 0 is in review as PR #4 and Phase 1 is built on top of it as its own PR; Phases 2 and 3 follow in about 7 weeks, each gated on a measurable result.
 
-D1 task list with CRUD and audit, AI Gateway + Workers AI with fallback, document conversion, the local conversation log with conversation-grounded briefs and look-backs, spend log and Brain Dump retained, Notion tasks, digests, and webhooks removed.
+```mermaid
+flowchart TB
+    P0["Phase 0 · Foundation (PR #4)<br/>D1 tasks, Kimi K2.6 via AI Gateway, toMarkdown<br/>90-day conversation log, daily brief at 09:00, spend log, Brain Dump"]
+    G0{"Smoke test in the group passes;<br/>every call shows in AI Gateway"}
+    P1["Phase 1 · Execution core and memory<br/>Nightly long-term memory, decision log, follow-ups<br/>Recurring tasks, checklists, undo, Monday review at 09:30, minutes and agendas"]
+    G1{"Every commitment owned in D1 for 2 weeks;<br/>memory recalls past decisions correctly"}
+    P2["Phase 2 · Finance and admin autopilot (about 3 weeks)<br/>Receipts, roll-ups, reimbursements, subscriptions, budgets, CSV export<br/>Compliance register, metrics, investor update, pipelines, golden-set eval"]
+    G2{"October roll-up matches Notion;<br/>every CA item has a task before its date"}
+    P3["Phase 3 · Email, calendar and semantic memory (about 4 weeks)<br/>Gmail drafts and sends on a go-ahead, Calendar prep and booking, GitHub/Sentry digests<br/>Patch API Worker, Vectorize, R2"]
+    P0 --> G0 --> P1 --> G1 --> P2 --> G2 --> P3
+```
 
-**Exit criteria:** a deploy with the new `.env`, then a smoke test in the group: add three tasks in one message, list overdue, mark one done, delete one, log two spends, append to Brain Dump, send a PDF and ask about it. Check every call in the AI Gateway logs.
+Phase 3 is done when nothing is ever sent or booked without a founder's go-ahead. Durations are estimates for one engineer working alongside the founders, not commitments.
 
-### Phase 1: execution core (≈2 weeks)
-
-Recurring tasks, checklists, waiting-on/follow-ups, decision log, undo, meeting-notes→tasks+decisions, agenda builder, CSV export, opt-in Monday review, per-feature model/reasoning routing, `audit_events`, golden-set eval in CI.
-
-**Exit criteria:** for two weeks every founder commitment made in the group or a call is in D1 with an owner; zero unsolicited messages beyond opted-in ones; eval ≥95%.
-
-### Phase 2: finance and admin autopilot (≈3 weeks)
-
-Receipt photos to spends, monthly summaries, reimbursement settlement, subscription radar, budgets, compliance register with silent lead-time tasks, metrics logging, investor-update draft, pilot and hiring pipelines.
-
-**Exit criteria:** October's spend roll-up and reimbursements produced in one command and matching Notion; every statutory item from the CA list has a task created ahead of its date; the investor update draft needs under 15 minutes of founder editing.
-
-### Phase 3: memory and integrations (≈4 weeks)
-
-Patch API Worker with a D1 binding, Vectorize semantic memory across tasks/decisions/Brain Dump, R2 archive of attachments, Gmail draft creation, Google Calendar read-only meeting prep, GitHub and Sentry digests on request.
-
-**Exit criteria:** "what have we said about X" returns relevant items from all three stores; a Gmail draft is created only after an explicit request and is never sent by Patch.
-
-### Phase 4: team mode
-
-Roles and per-role tool filtering, team members in a separate group, task assignment notifications only to the assignee and only when opted in.
-
-## 9. How we measure "best chief of staff"
+## Success metrics
 
 | Metric | Target |
 | --- | --- |
-| Commitments captured as owned tasks | ≥90% of those spoken in the group |
+| Commitments said in the group that end up as owned tasks | 90% or more |
 | Brief items traceable to a message or task | 100% (no invented items) |
-| Overdue open tasks | trending down week over week |
-| Time from "add this" to confirmed task | < 8 seconds p50 |
-| Tool-selection accuracy (golden set) | ≥95%, 100% on write-safety cases |
-| Unsolicited messages | only reminders and opted-in digests; zero otherwise |
-| Founder hours saved on admin | self-reported weekly, aim for 4+ hours |
-| Model + platform cost | visible in AI Gateway, under a set monthly budget |
+| Overdue open tasks | Falling week over week |
+| Time from "add this" to confirmed task | Under 8 seconds at p50 |
+| Tool-selection accuracy on the golden set | 95%+, 100% on write-safety cases |
+| Unsolicited messages | Only reminders, the daily brief and the Monday review |
+| Founder hours saved on admin | 4+ a week, self-reported |
+| Model and platform cost | Under a set monthly budget, visible in AI Gateway |
 
-## 10. Decisions the founders need to make
+## Decisions
 
-1. Which proactive messages, if any, to opt into: the daily brief, the Monday review, or neither (default).
-2. How long Patch keeps the group conversation (default 14 days; 0 keeps nothing).
-3. Whether to bring open Notion tasks into D1 (paste the list and ask Patch to capture them) or start fresh.
-4. The compliance and renewal list to load, provided by the CA.
-5. Whether Patch may later create Gmail drafts and read Google Calendar (read-only, draft-only).
-6. When team members join, which groups and roles they get.
-7. AI Gateway log retention for prompts and replies.
+Five decisions are made and built into the plan above; two are still open.
+
+| Decision | Outcome | Where it lands |
+| --- | --- | --- |
+| Proactive messages | Both on: daily brief at 09:00 IST, Monday review at 09:30 IST (times configurable) | Brief in Phase 0, review in Phase 1 |
+| Conversation retention | 90 days of raw messages, distilled into long-term memory that outlives them | Retention in Phase 0, memory in Phase 1 |
+| Existing Notion tasks | Start fresh; nothing is migrated | Phase 0 |
+| Gmail and Google Calendar | Yes: drafts and sends email, reads and books meetings, only after an explicit "send it" or "book it" | Phase 3 |
+| Team-member roles | Not needed; Patch stays founders-only | Team mode removed from the roadmap |
+
+Still open:
+
+- [ ] The compliance and renewal list to load, from the CA (needed for Phase 2)
+- [ ] AI Gateway log retention for prompts and replies

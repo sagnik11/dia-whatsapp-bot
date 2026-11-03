@@ -49,13 +49,13 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - Listens in WhatsApp **group chats**, responds only when triggered, and accepts commands only from allowlisted senders.
 - Keeps Autter's **task list in Cloudflare D1**: create (single or batch), search and filter, edit any field, append notes, complete, and delete, with an audit trail of every change.
 - Runs on an **open-source model** (default `@cf/moonshotai/kimi-k2.6`) through **Cloudflare AI Gateway**, with automatic fallback to a second model (default `@cf/google/gemma-4-26b-a4b-it`) when the primary is rate limited or down.
-- Keeps the **group conversation** locally (14 days by default) so Patch can answer "what did we decide?", turn a discussion into tasks, and write briefs from what was actually said.
+- Keeps the **group conversation** locally (90 days by default) so Patch can answer "what did we decide?", turn a discussion into tasks, and write briefs from what was actually said.
 - Logs and totals founder expenses in the Notion **Daily Spend Log**.
 - Reads and appends to the Notion **Brain Dump** page, including "research this and save it there".
 - Understands screenshots (vision), PDFs and Office documents (converted to Markdown by Workers AI), and voice notes (transcribed locally with `whisper.cpp`).
 - Drafts emails, investor updates, JDs, agendas, follow-ups, and summaries on request.
 - Stores persistent personal reminders in SQLite (advance, due-time, and optional repeats).
-- Optionally sends **one** daily brief written from the conversation since the last brief, cross-checked against D1 tasks and reminders, and skipped when the group was quiet. There is no periodic task digest and no Notion task notifications.
+- Sends **one** daily brief at 09:00 (on by default) written from the conversation since the last brief, cross-checked against D1 tasks and reminders, and skipped when the group was quiet. There is no periodic task digest and no Notion task notifications.
 - Optionally performs bounded Tavily web search and multi-search delegated research with citations.
 - Optionally reads the live Dekhte Hai script library and company Notion pages (both off by default).
 
@@ -196,7 +196,7 @@ Tasks live in the D1 `tasks` table with an id, title, notes, status (`todo`, `in
 
 ## The group conversation
 
-Patch keeps every message in its allowed groups, plus its own replies, in the local SQLite database on your server for `CONVERSATION_RETENTION_DAYS` (default 14). Nothing from this log goes to D1 or Notion. It is sent to the model only when a founder asks about earlier discussion or when the daily brief is written.
+Patch keeps every message in its allowed groups, plus its own replies, in the local SQLite database on your server for `CONVERSATION_RETENTION_DAYS` (default 90). Nothing from this log goes to D1 or Notion. It is sent to the model only when a founder asks about earlier discussion or when the daily brief is written.
 
 ```text
 @patch what did we decide about pricing on Monday?
@@ -209,7 +209,7 @@ Patch keeps every message in its allowed groups, plus its own replies, in the lo
 - Answers are grounded in the returned messages and attribute each point to whoever said it; if the log does not cover something, Patch says so.
 - Patch only reads the log of the group it was asked in, at most a week back per request.
 - Voice notes are logged as `[ptt attachment]` unless someone asks Patch about them.
-- Set `CONVERSATION_RETENTION_DAYS=0` to turn the log off (the daily brief then cannot be enabled).
+- Set `CONVERSATION_RETENTION_DAYS=0` to turn the log off (then also set `FOUNDER_BRIEF_TIME=` empty).
 
 ## Configure Notion (spend log and Brain Dump)
 
@@ -325,14 +325,14 @@ Reminders are stored in the same persistent SQLite file as message deduplication
 
 The reminder confirmation includes its numeric ID. Marking a reminder completed stops all future notifications, including repeats. A reminder belongs to the WhatsApp group where it was created, and completion or cancellation is limited to that group.
 
-### Daily brief (optional)
+### Daily brief
 
 ```dotenv
 FOUNDER_BRIEF_TIME=09:00
 FOUNDER_BRIEF_GROUP_IDS=120363000000000000@g.us
 ```
 
-Leave `FOUNDER_BRIEF_TIME` empty (the default) and Patch never posts anything you did not ask for except your own reminders. When set, Patch sends one brief per day written from the group conversation since the previous brief: what came up, what was decided, who committed to what (flagging commitments not yet on the task list), open questions, and the D1 tasks that are due or were discussed. If only Patch spoke since the last brief, no brief is sent and the next one covers the gap (up to three days). The old `TASK_DIGEST_*` and `NOTION_WEBHOOK_*` settings have been removed.
+The brief is on by default at 09:00 in `TIMEZONE`; set `FOUNDER_BRIEF_TIME=` empty to turn it off, and Patch then never posts anything you did not ask for except your own reminders. Patch sends one brief per day written from the group conversation since the previous brief: what came up, what was decided, who committed to what (flagging commitments not yet on the task list), open questions, and the D1 tasks that are due or were discussed. If only Patch spoke since the last brief, no brief is sent and the next one covers the gap (up to three days). The old `TASK_DIGEST_*` and `NOTION_WEBHOOK_*` settings have been removed.
 
 ## Find group and sender IDs
 
@@ -447,8 +447,8 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `AUTHORIZED_USER_IDS` | Yes for use | Empty | Comma-separated owner IDs; empty blocks everyone. |
 | `UNAUTHORIZED_REPLY` | No | Harbour-themed | Used if the AI rejection fails. |
 | `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages kept in memory (0–20). |
-| `CONVERSATION_RETENTION_DAYS` | No | `14` | Days of group conversation kept locally for briefs and look-backs; `0` turns the log and the brief off. |
-| `FOUNDER_BRIEF_TIME` | No | Empty | Daily brief time `HH:mm`; empty disables it. |
+| `CONVERSATION_RETENTION_DAYS` | No | `90` | Days of group conversation kept locally for briefs and look-backs; `0` turns the log and the brief off. |
+| `FOUNDER_BRIEF_TIME` | No | `09:00` | Daily brief time `HH:mm`; set it empty to turn the brief off. |
 | `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Daily brief destinations. |
 | `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded attachment size. |
 | `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. |

@@ -29,6 +29,18 @@ export interface ConversationQuery {
   limit: number;
 }
 
+/**
+ * Where the group conversation lives. The local SQLite store and the D1 store
+ * both implement it; callers never know which one they have.
+ */
+export interface ConversationLog {
+  record(input: ConversationMessageInput): Promise<void>;
+  list(groupId: string, query: ConversationQuery): Promise<ConversationMessage[]>;
+  hasHumanMessages(groupId: string, sinceMs: number, untilMs: number): Promise<boolean>;
+  activeGroups(sinceMs: number): Promise<string[]>;
+  prune(olderThanMs: number): Promise<number>;
+}
+
 interface ConversationRow {
   message_id: string;
   author: string;
@@ -57,7 +69,7 @@ function escapeLike(value: string): string {
  * (not in D1) to keep raw chat off third-party storage and to avoid one
  * D1 REST call per WhatsApp message.
  */
-export class ConversationStore {
+export class ConversationStore implements ConversationLog {
   private readonly database: DatabaseSync;
 
   public constructor(path: string) {
@@ -84,7 +96,7 @@ export class ConversationStore {
    * that Patch's own record of a reply it sent replaces the echo WhatsApp
    * delivers for it, so replies are always attributed to Patch.
    */
-  public record(input: ConversationMessageInput): void {
+  public async record(input: ConversationMessageInput): Promise<void> {
     const body = input.body.trim().slice(0, MAX_BODY_CHARACTERS);
     if (!body) return;
     this.database
@@ -108,7 +120,7 @@ export class ConversationStore {
   }
 
   /** Messages in one group, oldest first, newest kept when over the limit. */
-  public list(groupId: string, query: ConversationQuery): ConversationMessage[] {
+  public async list(groupId: string, query: ConversationQuery): Promise<ConversationMessage[]> {
     const where = ["group_id = ?", "sent_at_ms >= ?", "sent_at_ms <= ?"];
     const params: Array<string | number> = [
       groupId,
@@ -134,7 +146,7 @@ export class ConversationStore {
   }
 
   /** Whether any founder (not Patch) said something in the window. */
-  public hasHumanMessages(groupId: string, sinceMs: number, untilMs: number): boolean {
+  public async hasHumanMessages(groupId: string, sinceMs: number, untilMs: number): Promise<boolean> {
     const row = this.database
       .prepare(
         `SELECT 1 AS found FROM conversation_messages
@@ -146,7 +158,7 @@ export class ConversationStore {
   }
 
   /** Groups where a founder said something since the cutoff. */
-  public activeGroups(sinceMs: number): string[] {
+  public async activeGroups(sinceMs: number): Promise<string[]> {
     const rows = this.database
       .prepare(
         `SELECT DISTINCT group_id FROM conversation_messages
@@ -157,11 +169,33 @@ export class ConversationStore {
   }
 
   /** Delete messages older than the cutoff; returns how many were removed. */
-  public prune(olderThanMs: number): number {
+  public async prune(olderThanMs: number): Promise<number> {
     const result = this.database
       .prepare("DELETE FROM conversation_messages WHERE sent_at_ms < ?")
       .run(olderThanMs);
     return Number(result.changes);
+  }
+
+  /** Everything kept since a moment, oldest first, for a one-time move to D1. */
+  public exportSince(sinceMs: number): ConversationMessageInput[] {
+    const rows = this.database
+      .prepare(
+        `SELECT group_id, message_id, author, body, from_bot, sent_at_ms
+         FROM conversation_messages WHERE sent_at_ms >= ? ORDER BY sent_at_ms, id`,
+      )
+      .all(sinceMs) as unknown as Array<ConversationRow & { group_id: string }>;
+    return rows.map((row) => ({
+      groupId: row.group_id,
+      messageId: row.message_id,
+      author: row.author,
+      body: row.body,
+      fromBot: row.from_bot === 1,
+      sentAtMs: Number(row.sent_at_ms),
+    }));
+  }
+
+  public clear(): number {
+    return Number(this.database.prepare("DELETE FROM conversation_messages").run().changes);
   }
 
   public close(): void {

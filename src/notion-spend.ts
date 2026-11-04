@@ -80,6 +80,22 @@ function spendSummaryFromPage(page: PageObjectResponse): SpendSummary {
   };
 }
 
+export interface SpendRange {
+  /** Inclusive YYYY-MM-DD, or null for no lower bound. */
+  dateFrom: string | null;
+  /** Inclusive YYYY-MM-DD, or null for no upper bound. */
+  dateTo: string | null;
+}
+
+export interface AllSpendsResult {
+  spends: SpendSummary[];
+  /** True when the row cap stopped the read before the last page. */
+  truncated: boolean;
+}
+
+const ROLLUP_PAGE_SIZE = 100;
+const ROLLUP_MAX_ROWS = 5_000;
+
 function idempotencyReference(messageId: string, index: number): string {
   const hash = createHash("sha256")
     .update(`${messageId}:${index}`)
@@ -302,5 +318,55 @@ export class NotionSpendService {
       "Read Notion founder spend log",
     );
     return result;
+  }
+
+  /**
+   * Every entry in a date range, oldest first, following Notion's cursor
+   * pages. Roll-ups need this because listSpends stops at one page of 50.
+   */
+  public async listAllSpends(
+    range: SpendRange,
+    maxRows = ROLLUP_MAX_ROWS,
+  ): Promise<AllSpendsResult> {
+    const filters: SpendFilter[] = [];
+    if (range.dateFrom) {
+      filters.push({ property: PROPERTIES.date, date: { on_or_after: range.dateFrom } });
+    }
+    if (range.dateTo) {
+      filters.push({ property: PROPERTIES.date, date: { on_or_before: range.dateTo } });
+    }
+    const spends: SpendSummary[] = [];
+    let cursor: string | null = null;
+    let truncated = false;
+    let pages = 0;
+    do {
+      const response = await this.client.dataSources.query({
+        data_source_id: this.options.dataSourceId,
+        ...(filters.length === 1
+          ? { filter: filters[0]! }
+          : filters.length > 1
+            ? { filter: { and: filters } }
+            : {}),
+        sorts: [{ property: PROPERTIES.date, direction: "ascending" }],
+        page_size: ROLLUP_PAGE_SIZE,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
+      pages += 1;
+      for (const result of response.results) {
+        if (result.object === "page" && "properties" in result) {
+          spends.push(spendSummaryFromPage(result));
+        }
+      }
+      cursor = response.has_more ? response.next_cursor : null;
+      if (cursor && spends.length >= maxRows) {
+        truncated = true;
+        break;
+      }
+    } while (cursor);
+    this.options.logger.info(
+      { count: spends.length, pages, truncated, dateFrom: range.dateFrom, dateTo: range.dateTo },
+      "Read Notion founder spend log for a roll-up",
+    );
+    return { spends: spends.slice(0, maxRows), truncated: truncated || spends.length > maxRows };
   }
 }

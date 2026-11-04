@@ -1,4 +1,4 @@
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationLog } from "./conversation-store.js";
 import type { FollowUpStore } from "./follow-up-store.js";
 import type { FounderBriefInput } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
@@ -32,7 +32,7 @@ const RETRY_MS = 15 * 60 * 1_000;
 interface SchedulerOptions {
   reminders: ReminderStore;
   tasks: Pick<TaskStore, "listOpen">;
-  conversation?: Pick<ConversationStore, "list" | "hasHumanMessages" | "prune">;
+  conversation?: Pick<ConversationLog, "list" | "hasHumanMessages" | "prune">;
   conversationRetentionDays?: number;
   timezone: string;
   logger: Logger;
@@ -56,7 +56,7 @@ interface SchedulerOptions {
   memoryJob?: {
     time: string;
     /** Groups worth distilling: those where founders talked recently. */
-    groups: (sinceMs: number) => readonly string[];
+    groups: (sinceMs: number) => Promise<readonly string[]>;
     run: (groupId: string, sinceMs: number, untilMs: number) => Promise<number>;
   };
   /** Silent job that adds tasks from recurring templates. */
@@ -136,7 +136,7 @@ export class ProactiveScheduler {
         }
       }
 
-      this.pruneConversation(nowMs);
+      await this.pruneConversation(nowMs);
       // Each job is isolated so one failing service cannot block the others.
       await this.guard("founder brief", () => this.sendFounderBriefs(nowMs, send));
       await this.guard("Monday review", () => this.sendWeeklyReviews(nowMs, send));
@@ -152,12 +152,12 @@ export class ProactiveScheduler {
     }
   }
 
-  private pruneConversation(nowMs: number): void {
+  private async pruneConversation(nowMs: number): Promise<void> {
     const days = this.options.conversationRetentionDays;
     if (!this.options.conversation || !days || nowMs - this.lastPruneMs < HOUR_MS) return;
     this.lastPruneMs = nowMs;
     try {
-      const removed = this.options.conversation.prune(nowMs - days * DAY_MS);
+      const removed = await this.options.conversation.prune(nowMs - days * DAY_MS);
       if (removed > 0) {
         this.options.logger.info({ removed, days }, "Pruned old conversation messages");
       }
@@ -185,22 +185,25 @@ export class ProactiveScheduler {
     if (dueGroups.length === 0) return;
 
     const nextRun = nextDailyRunAt(nowMs + 60_000, brief.time, this.options.timezone);
-    const groupsWithNews = dueGroups.filter((groupId) => {
+    const groupsWithNews: string[] = [];
+    for (const groupId of dueGroups) {
       const sinceMs = this.briefWindowStart(groupId, nowMs);
-      if (conversation.hasHumanMessages(groupId, sinceMs, nowMs)) return true;
+      if (await conversation.hasHumanMessages(groupId, sinceMs, nowMs)) {
+        groupsWithNews.push(groupId);
+        continue;
+      }
       // Nothing was said, so there is nothing to brief on. Keep the window
       // open so tomorrow's brief still covers today.
       this.options.reminders.setNextRun(`founder_brief:${groupId}`, nextRun);
       this.options.logger.info({ groupId }, "Skipped daily brief: the group was quiet");
-      return false;
-    });
+    }
     if (groupsWithNews.length === 0) return;
 
     const tasks = await this.options.tasks.listOpen();
     for (const groupId of groupsWithNews) {
       try {
         const sinceMs = this.briefWindowStart(groupId, nowMs);
-        const messages = conversation.list(groupId, {
+        const messages = await conversation.list(groupId, {
           sinceMs,
           untilMs: nowMs,
           limit: MAX_BRIEF_MESSAGES,
@@ -268,7 +271,7 @@ export class ProactiveScheduler {
       review.followUps.list({ statuses: ["open"], owner: null, counterparty: null, dueTo: null, limit: 50 }),
     ]);
     for (const groupId of dueGroups) {
-      const talked = conversation.hasHumanMessages(groupId, sinceMs, nowMs);
+      const talked = await conversation.hasHumanMessages(groupId, sinceMs, nowMs);
       if (!talked && closedTasks.length === 0) {
         this.options.reminders.setNextRun(key(groupId), nextRun);
         this.options.logger.info({ groupId }, "Skipped Monday review: nothing happened last week");
@@ -276,7 +279,7 @@ export class ProactiveScheduler {
       }
       try {
         const output = await review.generate({
-          conversation: conversation.list(groupId, { sinceMs, untilMs: nowMs, limit: 600 }),
+          conversation: await conversation.list(groupId, { sinceMs, untilMs: nowMs, limit: 600 }),
           closedTasks,
           openTasks,
           followUps,
@@ -310,7 +313,7 @@ export class ProactiveScheduler {
   private async runMemoryJob(nowMs: number): Promise<void> {
     const job = this.options.memoryJob;
     if (!job) return;
-    for (const groupId of job.groups(nowMs - MAX_BRIEF_WINDOW_MS)) {
+    for (const groupId of await job.groups(nowMs - MAX_BRIEF_WINDOW_MS)) {
       const runKey = `memory_distill:${groupId}`;
       if (
         this.options.reminders.getOrCreateNextRun(

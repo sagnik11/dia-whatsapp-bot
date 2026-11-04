@@ -2,12 +2,18 @@ import { join } from "node:path";
 import { FinanceTools } from "./assistant-finance.js";
 import { Phase1Tools } from "./assistant-phase1.js";
 import { DiaAssistant } from "./assistant.js";
+import { SemanticTools } from "./assistant-semantic.js";
 import { WhatsAppBot } from "./bot.js";
 import { ChecklistStore } from "./checklist-store.js";
-import { D1HttpClient } from "./cloudflare-d1.js";
-import { config, financeConfig } from "./config.js";
+import { D1HttpClient, type SqlExecutor } from "./cloudflare-d1.js";
+import { config, financeConfig, platformConfig } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
-import { ConversationStore } from "./conversation-store.js";
+import { ConversationStore, type ConversationLog } from "./conversation-store.js";
+import {
+  CONVERSATION_SCHEMA_STATEMENTS,
+  D1ConversationStore,
+  moveLocalConversationToD1,
+} from "./conversation-store-d1.js";
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { CloudflareMarkdownConverter } from "./document-converter.js";
@@ -21,11 +27,18 @@ import { MemoryDistiller, distillGroupMemory } from "./memory-distiller.js";
 import { MemoryStore } from "./memory-store.js";
 import { NotionSpendService } from "./notion-spend.js";
 import { NotionWorkspaceService } from "./notion.js";
+import {
+  FileArchive,
+  PatchApiSqlExecutor,
+  SemanticIndex,
+  createAttachmentArchiver,
+} from "./patch-api-client.js";
 import { ReminderStore } from "./reminder-store.js";
 import { ResearchAgent } from "./research-agent.js";
 import { RecurringTaskStore, materializeRecurringTasks } from "./recurring-store.js";
 import { ProactiveScheduler } from "./scheduler.js";
 import { TaskStore } from "./task-store.js";
+import { VectorSyncJob } from "./vector-sync.js";
 import { TavilyWebSearchService } from "./web-search.js";
 import { WeeklyReviewGenerator, type WeeklyReviewInput } from "./weekly-review.js";
 
@@ -33,7 +46,7 @@ const logger = createLogger(config.logLevel);
 const databasePath = join(config.dataDir, "dia.sqlite");
 const dedupe = new DedupeStore(databasePath);
 const reminders = new ReminderStore(databasePath);
-const conversation =
+const localConversation =
   config.conversationRetentionDays > 0 ? new ConversationStore(databasePath) : undefined;
 
 const llm = new CloudflareGatewayModel({
@@ -46,13 +59,25 @@ const llm = new CloudflareGatewayModel({
   timeoutMs: config.aiTimeoutMs,
   logger,
 });
-const d1 = new D1HttpClient({
-  accountId: config.cloudflareAccountId,
-  databaseId: config.d1DatabaseId,
-  apiToken: config.d1ApiToken,
-  logger,
-});
+// Phase 3: with PATCH_API_URL set, every store reaches D1 through the Worker's binding.
+const patchApi = platformConfig.patchApi;
+const d1: SqlExecutor = patchApi
+  ? new PatchApiSqlExecutor({ ...patchApi, logger })
+  : new D1HttpClient({
+      accountId: config.cloudflareAccountId,
+      databaseId: config.d1DatabaseId,
+      apiToken: config.d1ApiToken,
+      logger,
+    });
 const tasks = new TaskStore({ db: d1, timezone: config.timezone, logger });
+// The group conversation: D1 once the Worker is configured (founders' decision),
+// otherwise local SQLite on this server.
+const conversationSchema = new SchemaGate(d1, CONVERSATION_SCHEMA_STATEMENTS, logger, "Conversation");
+const d1Conversation =
+  localConversation && platformConfig.conversationInD1
+    ? new D1ConversationStore({ db: d1, schema: conversationSchema, logger })
+    : undefined;
+const conversation: ConversationLog | undefined = d1Conversation ?? localConversation;
 // Phase 1: long-term memory, follow-ups, recurring tasks, checklists.
 const phase1Schema = new SchemaGate(d1, PHASE1_SCHEMA_STATEMENTS, logger, "Phase 1");
 const memory = new MemoryStore({ db: d1, schema: phase1Schema, logger });
@@ -60,6 +85,15 @@ const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: co
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
 const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Phase 3: semantic memory (Vectorize) and the R2 attachment archive, each opt-in.
+const semanticIndex =
+  patchApi && platformConfig.semanticMemory ? new SemanticIndex({ ...patchApi, logger }) : undefined;
+const semantic = semanticIndex ? new SemanticTools({ index: semanticIndex, db: d1, logger }) : undefined;
+const vectorSync = semanticIndex ? new VectorSyncJob({ db: d1, index: semanticIndex, logger }) : undefined;
+const archiveAttachment =
+  patchApi && platformConfig.archiveAttachments
+    ? createAttachmentArchiver(new FileArchive({ ...patchApi, logger }), config.timezone)
+    : undefined;
 const backgroundReasoning = config.aiBackgroundReasoningEffort
   ? { reasoningEffort: config.aiBackgroundReasoningEffort }
   : {};
@@ -118,7 +152,7 @@ const assistant = new DiaAssistant({
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
   // Capability modules, in priority order. New phases register theirs here.
-  modules: [phase1, finance],
+  modules: [phase1, finance, ...(semantic ? [semantic] : [])],
   checklists,
   logger,
 });
@@ -191,6 +225,7 @@ const scheduler = new ProactiveScheduler({
     run: (nowMs: number) =>
       materializeRecurringTasks({ recurring, tasks, timezone: config.timezone, nowMs, logger }),
   },
+  jobs: [...(vectorSync ? [vectorSync] : [])],
 });
 const bot = new WhatsAppBot({
   assistant,
@@ -206,6 +241,7 @@ const bot = new WhatsAppBot({
   mediaIngestion,
   ...(conversation ? { conversation } : {}),
   scheduler,
+  ...(archiveAttachment ? { archiveAttachment } : {}),
   ...(config.puppeteerExecutablePath
     ? { puppeteerExecutablePath: config.puppeteerExecutablePath }
     : {}),
@@ -222,7 +258,7 @@ async function shutdown(signal: string): Promise<void> {
   });
   dedupe.close();
   reminders.close();
-  conversation?.close();
+  localConversation?.close();
   process.exit(0);
 }
 
@@ -232,6 +268,15 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 async function start(): Promise<void> {
   // Fail fast with a clear error if D1 credentials or the database id are wrong.
   await Promise.all([tasks.ensureSchema(), phase1Schema.ensure()]);
+  if (d1Conversation && localConversation) {
+    // One-time move of the history kept locally before the switch to D1.
+    await moveLocalConversationToD1({
+      local: localConversation,
+      d1: d1Conversation,
+      sinceMs: Date.now() - config.conversationRetentionDays * 86_400_000,
+      logger,
+    });
+  }
   logger.info(
     {
       model: config.aiModel,
@@ -243,6 +288,10 @@ async function start(): Promise<void> {
       weeklyReview: config.weeklyReviewTime ? `${config.weeklyReviewWeekday}@${config.weeklyReviewTime}` : "off",
       memoryDistill: config.memoryDistillTime ?? "off",
       spendLog: Boolean(notionSpend),
+      d1Route: patchApi ? "patch-api-worker" : "rest-api",
+      conversationStore: d1Conversation ? "d1" : localConversation ? "local" : "off",
+      semanticMemory: Boolean(semantic),
+      archiveAttachments: Boolean(archiveAttachment),
     },
     "Chief-of-staff services configured",
   );
@@ -254,6 +303,6 @@ start().catch(async (error: unknown) => {
   await bot.stop().catch(() => undefined);
   dedupe.close();
   reminders.close();
-  conversation?.close();
+  localConversation?.close();
   process.exitCode = 1;
 });

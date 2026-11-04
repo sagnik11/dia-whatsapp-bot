@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createAdminOps } from "./assistant-admin.js";
 import { FinanceTools } from "./assistant-finance.js";
 import { Phase1Tools } from "./assistant-phase1.js";
 import { DiaAssistant } from "./assistant.js";
@@ -6,7 +7,7 @@ import { SemanticTools } from "./assistant-semantic.js";
 import { WhatsAppBot } from "./bot.js";
 import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient, type SqlExecutor } from "./cloudflare-d1.js";
-import { config, financeConfig, platformConfig } from "./config.js";
+import { adminConfig, config, financeConfig, platformConfig } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { ConversationStore, type ConversationLog } from "./conversation-store.js";
 import {
@@ -85,6 +86,19 @@ const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: co
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
 const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Phase 2 admin and ops: compliance register, metrics, pipelines, investor update.
+const adminOps = adminConfig.enabled
+  ? createAdminOps({
+      db: d1,
+      tasks,
+      memory,
+      llm,
+      timezone: config.timezone,
+      complianceLeadDays: adminConfig.complianceLeadDays,
+      pipelineStaleDays: adminConfig.pipelineStaleDays,
+      logger,
+    })
+  : undefined;
 // Phase 3: semantic memory (Vectorize) and the R2 attachment archive, each opt-in.
 const semanticIndex =
   patchApi && platformConfig.semanticMemory ? new SemanticIndex({ ...patchApi, logger }) : undefined;
@@ -152,7 +166,12 @@ const assistant = new DiaAssistant({
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
   // Capability modules, in priority order. New phases register theirs here.
-  modules: [phase1, finance, ...(semantic ? [semantic] : [])],
+  modules: [
+    phase1,
+    finance,
+    ...(adminOps ? [adminOps.module] : []),
+    ...(semantic ? [semantic] : []),
+  ],
   checklists,
   logger,
 });
@@ -225,7 +244,7 @@ const scheduler = new ProactiveScheduler({
     run: (nowMs: number) =>
       materializeRecurringTasks({ recurring, tasks, timezone: config.timezone, nowMs, logger }),
   },
-  jobs: [...(vectorSync ? [vectorSync] : [])],
+  jobs: [...(adminOps ? [adminOps.job] : []), ...(vectorSync ? [vectorSync] : [])],
 });
 const bot = new WhatsAppBot({
   assistant,
@@ -267,7 +286,7 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 async function start(): Promise<void> {
   // Fail fast with a clear error if D1 credentials or the database id are wrong.
-  await Promise.all([tasks.ensureSchema(), phase1Schema.ensure()]);
+  await Promise.all([tasks.ensureSchema(), phase1Schema.ensure(), adminOps?.schema.ensure()]);
   if (d1Conversation && localConversation) {
     // One-time move of the history kept locally before the switch to D1.
     await moveLocalConversationToD1({

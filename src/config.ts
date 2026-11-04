@@ -216,6 +216,23 @@ export const config = {
   puppeteerExecutablePath: env.PUPPETEER_EXECUTABLE_PATH,
 } as const;
 
+// --- Admin and ops (Phase 2) ---
+const adminEnv = z
+  .object({
+    ADMIN_OPS_ENABLED: booleanFlag("true"),
+    // Default days before a compliance due date that Patch silently adds its task.
+    COMPLIANCE_LEAD_DAYS: z.coerce.number().int().min(0).max(365).default(14),
+    // Open deals and candidates in one stage this many days are flagged stuck.
+    PIPELINE_STALE_DAYS: z.coerce.number().int().min(1).max(365).default(14),
+  })
+  .parse(process.env);
+
+export const adminConfig = {
+  enabled: adminEnv.ADMIN_OPS_ENABLED,
+  complianceLeadDays: adminEnv.COMPLIANCE_LEAD_DAYS,
+  pipelineStaleDays: adminEnv.PIPELINE_STALE_DAYS,
+} as const;
+
 // --- Finance (Phase 2) ---
 // Spend-log payment methods that spend company money; reimbursable entries
 // paid this way are never counted as owed to a founder.

@@ -651,8 +651,9 @@ describe("attachment archive", () => {
     const record = vi.fn();
     const archiveAttachment = vi.fn(async () => "g1@g.us/2026/11/msg-1-Q3_invoice_final_.pdf");
     const respond = vi.fn(async () => "Filed it.");
+    const respondWithFiles = vi.fn(async () => ({ text: await respond(), files: [] }));
     const bot = new WhatsAppBot({
-      assistant: { respond } as never,
+      assistant: { respond, respondWithFiles } as never,
       context: { add: vi.fn(), get: vi.fn().mockReturnValue([]) } as never,
       dedupe: { claim: vi.fn().mockReturnValue(true) } as never,
       allowedGroupIds: new Set(["g1@g.us"]),

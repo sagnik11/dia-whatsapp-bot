@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { ExportTools } from "./assistant-export.js";
 import { createAdminOps } from "./assistant-admin.js";
 import { FinanceTools } from "./assistant-finance.js";
 import { Phase1Tools } from "./assistant-phase1.js";
@@ -18,6 +19,7 @@ import {
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { CloudflareMarkdownConverter } from "./document-converter.js";
+import { coreExportSources } from "./export-sources.js";
 import { BudgetStore, FINANCE_SCHEMA_STATEMENTS, SubscriptionStore } from "./finance-store.js";
 import { FollowUpStore } from "./follow-up-store.js";
 import { FounderBriefGenerator, type FounderBriefInput } from "./founder-brief.js";
@@ -86,6 +88,13 @@ const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: co
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
 const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Phase 2 reporting: CSV exports sent as WhatsApp documents. Other modules can
+// add datasets with exportTools.registry.register(...).
+const exportTools = new ExportTools(
+  coreExportSources({ db: d1, tasks, phase1Schema, checklists }),
+  config.timezone,
+  logger,
+);
 // Phase 2 admin and ops: compliance register, metrics, pipelines, investor update.
 const adminOps = adminConfig.enabled
   ? createAdminOps({
@@ -171,6 +180,7 @@ const assistant = new DiaAssistant({
     finance,
     ...(adminOps ? [adminOps.module] : []),
     ...(semantic ? [semantic] : []),
+    exportTools,
   ],
   checklists,
   logger,

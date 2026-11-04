@@ -12,10 +12,11 @@ import type { Logger } from "./logger.js";
 import type { MediaIngestionService } from "./media-ingestion.js";
 import { serializeMessageId } from "./message-id.js";
 import type { ProactiveScheduler } from "./scheduler.js";
+import type { OutgoingFile } from "./tool-outcome.js";
 import type { AssistantAttachment, AssistantRequest } from "./types.js";
 import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
-const { Client, LocalAuth } = whatsapp;
+const { Client, LocalAuth, MessageMedia } = whatsapp;
 const GROUP_LIST_ATTEMPTS = 4;
 const WHATSAPP_MESSAGE_CHUNK_SIZE = 3_500;
 const WHATSAPP_READY_TIMEOUT_MS = 120_000;
@@ -435,12 +436,19 @@ export class WhatsAppBot {
     } satisfies AssistantRequest;
 
     try {
-      const reply = await this.options.assistant.respond(assistantRequest);
+      const reply = await this.options.assistant.respondWithFiles(assistantRequest);
       this.options.logger.info(
-        { author, groupId, messageId, output: reply },
+        {
+          author,
+          groupId,
+          messageId,
+          output: reply.text,
+          files: reply.files.map((file) => file.fileName),
+        },
         `Sending ${this.options.botName} response`,
       );
-      await this.sendCompleteMessage(groupId, reply);
+      await this.sendCompleteMessage(groupId, reply.text);
+      for (const file of reply.files) await this.sendDocument(groupId, file, messageId);
     } catch (error) {
       this.options.logger.error({ error, messageId }, "Assistant request failed");
       const fallbackReply =
@@ -461,13 +469,39 @@ export class WhatsAppBot {
 
   private async sendAndRecord(groupId: string, text: string): Promise<void> {
     const sent: unknown = await this.client.sendMessage(groupId, text);
+    this.recordSent(groupId, sent, text);
+  }
+
+  /** Sends one file as a WhatsApp document; a failed attachment never hides the reply. */
+  private async sendDocument(groupId: string, file: OutgoingFile, messageId: string): Promise<void> {
+    try {
+      const media = new MessageMedia(
+        file.mimeType,
+        file.data.toString("base64"),
+        file.fileName,
+        file.data.length,
+      );
+      const sent: unknown = await this.client.sendMessage(groupId, media, {
+        sendMediaAsDocument: true,
+      });
+      this.recordSent(groupId, sent, `[document] ${file.fileName}`);
+    } catch (error) {
+      this.options.logger.error(
+        { error, messageId, fileName: file.fileName },
+        "Could not send WhatsApp document",
+      );
+      await this.sendAndRecord(groupId, `⚠️ I couldn't attach ${file.fileName}. Please ask again.`);
+    }
+  }
+
+  private recordSent(groupId: string, sent: unknown, body: string): void {
     const id = sent && typeof sent === "object" && "id" in sent ? sent.id : null;
     if (id && this.isEligibleGroup(groupId)) {
       this.recordConversation({
         groupId,
         messageId: id,
         author: this.options.botName,
-        body: text,
+        body,
         fromBot: true,
         sentAtMs: Date.now(),
       });

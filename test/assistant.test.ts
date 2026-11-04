@@ -1,276 +1,196 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DiaAssistant,
   formatSpendConfirmation,
-  formatTaskConfirmation,
+  formatTaskCreateConfirmation,
+  isConversationRequest,
+  isDekhteHaiRequest,
+  isExplicitBrainDumpAppendRequest,
+  isExplicitBrainDumpRequest,
+  isExplicitKnowledgeRequest,
   isExplicitReminderCancelRequest,
   isExplicitReminderCompleteRequest,
   isExplicitReminderCreateRequest,
   isExplicitReminderListRequest,
-  isExplicitBrainDumpAppendRequest,
-  isExplicitBrainDumpRequest,
-  isExplicitKnowledgeRequest,
   isExplicitResearchRequest,
   isExplicitSpendCreateRequest,
   isExplicitSpendReadRequest,
+  isExplicitTaskDeleteRequest,
   isExplicitTaskReadRequest,
   isExplicitTaskRequest,
   isExplicitTaskUpdateRequest,
   isExplicitWebSearchRequest,
-  isDekhteHaiRequest,
+  referencedTaskIds,
 } from "../src/assistant.js";
+import { ConversationStore } from "../src/conversation-store.js";
+import type { CompletionRequest, CompletionResult, LanguageModel } from "../src/llm.js";
+import { TaskStore } from "../src/task-store.js";
+import type { AssistantRequest } from "../src/types.js";
+import { textTurn, toolTurn } from "./support/fake-llm.js";
+import { createSqliteExecutor } from "./support/sqlite-executor.js";
 
-describe("isExplicitTaskRequest", () => {
+const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never;
+
+let executor: ReturnType<typeof createSqliteExecutor> | undefined;
+
+afterEach(() => {
+  executor?.close();
+  executor = undefined;
+});
+
+function taskStore(): TaskStore {
+  executor = createSqliteExecutor();
+  return new TaskStore({ db: executor, timezone: "Asia/Kolkata", logger });
+}
+
+function scriptedModel(...turns: CompletionResult[]): LanguageModel & {
+  complete: ReturnType<typeof vi.fn<(request: CompletionRequest) => Promise<CompletionResult>>>;
+  requests: CompletionRequest[];
+} {
+  const requests: CompletionRequest[] = [];
+  const complete = vi.fn(async (request: CompletionRequest) => {
+    // Snapshot messages: the assistant keeps appending to the same array.
+    requests.push({ ...request, messages: [...request.messages] });
+    const next = turns.shift();
+    if (!next) throw new Error("The scripted model ran out of turns");
+    return next;
+  });
+  return { complete, requests };
+}
+
+function request(body: string, overrides: Partial<AssistantRequest> = {}): AssistantRequest {
+  return {
+    groupId: "group@g.us",
+    groupName: "Autter HQ",
+    messageId: "msg-1",
+    requestedBy: "Sagnik",
+    requestedById: "sagnik@c.us",
+    body,
+    quotedMessage: null,
+    recentContext: [],
+    ...overrides,
+  };
+}
+
+function assistantWith(llm: LanguageModel, tasks: TaskStore, extra: object = {}) {
+  return new DiaAssistant({
+    llm,
+    botName: "Captain Patch",
+    timezone: "Asia/Kolkata",
+    tasks,
+    logger,
+    ...extra,
+  });
+}
+
+describe("task intent detection", () => {
   it.each([
     "add a task to send the proposal",
     "create a high priority task for tomorrow",
-    "turn the quoted message into a task",
-  ])("detects an explicit task command: %s", (message) => {
+    "turn the quoted message into tasks",
+    "capture these as tasks: call Rahul, renew the domain",
+  ])("detects task capture: %s", (message) => {
     expect(isExplicitTaskRequest(message)).toBe(true);
   });
 
-  it("does not mistake a question about tasks for a creation command", () => {
+  it("does not mistake a planning question for task capture", () => {
     expect(isExplicitTaskRequest("what tasks should I add next?")).toBe(false);
-  });
-});
-
-describe("founder spend command detection", () => {
-  it("detects bulk spend writes without confusing them with reads", () => {
-    const message = "add to daily spend log: Expenses by Tanvi: 12th aug chai 100rs upi";
-    expect(isExplicitSpendCreateRequest(message)).toBe(true);
-    expect(isExplicitSpendReadRequest(message)).toBe(false);
+    expect(isExplicitTaskReadRequest("what tasks should I add next?")).toBe(false);
   });
 
-  it("detects spend-log questions", () => {
-    expect(isExplicitSpendReadRequest("how much did Tanvi spend this month?"))
-      .toBe(true);
-  });
-});
-
-describe("isExplicitTaskReadRequest", () => {
   it.each([
     "show me my tasks",
     "what tasks are pending?",
     "which tasks are due this week?",
-    "what's due tomorrow?",
-  ])("detects a task tracker query: %s", (message) => {
+    "what's overdue?",
+  ])("detects a task-list question: %s", (message) => {
     expect(isExplicitTaskReadRequest(message)).toBe(true);
   });
 
-  it("does not read Notion for a planning question", () => {
-    expect(isExplicitTaskReadRequest("what tasks should I add next?")).toBe(false);
+  it.each([
+    "mark task 12 as done",
+    "shift the intern feedback task to in progress and assign it to Tanvi",
+    "change the due date of the GST task to Friday",
+  ])("detects a task edit: %s", (message) => {
+    expect(isExplicitTaskUpdateRequest(message)).toBe(true);
+  });
+
+  it.each(["delete task 5", "remove the GST filing task", "delete tasks 4 and 5"])(
+    "detects a task delete: %s",
+    (message) => {
+      expect(isExplicitTaskDeleteRequest(message)).toBe(true);
+    },
+  );
+
+  it("treats clearing a field as an edit, not a delete", () => {
+    expect(isExplicitTaskDeleteRequest("remove the due date from task 4")).toBe(false);
+  });
+
+  it("collects task ids the founder named directly", () => {
+    expect([...referencedTaskIds("mark #3 done and tasks 7, 8 and 9 as blocked")]).toEqual([
+      3, 7, 8, 9,
+    ]);
+    expect([...referencedTaskIds("a task for 5 people")]).toEqual([]);
   });
 });
 
-describe("task and reminder command detection", () => {
-  it("detects an existing-task update", () => {
-    expect(
-      isExplicitTaskUpdateRequest(
-        "shift the intern feedback task from completed to in progress and assign it to Tanvi",
-      ),
-    ).toBe(true);
-    expect(
-      isExplicitTaskUpdateRequest(
-        "edit the launch task page and append the customer feedback as a note",
-      ),
-    ).toBe(true);
+describe("spend and reminder intent detection", () => {
+  it("detects bulk spend writes without confusing them with reads", () => {
+    const message = "add to daily spend log: Expenses by Tanvi: 12th aug chai 100rs upi";
+    expect(isExplicitSpendCreateRequest(message)).toBe(true);
+    expect(isExplicitSpendReadRequest(message)).toBe(false);
+    expect(isExplicitSpendReadRequest("how much did Tanvi spend this month?")).toBe(true);
   });
 
   it("detects reminder creation, listing, completion, and cancellation", () => {
-    expect(isExplicitReminderCreateRequest("remind me to send the proposal at 4"))
-      .toBe(true);
+    expect(isExplicitReminderCreateRequest("remind me to send the proposal at 4")).toBe(true);
     expect(isExplicitReminderListRequest("show my reminders")).toBe(true);
-    expect(
-      isExplicitReminderCompleteRequest(
-        "mark reminder number 7 as completed",
-      ),
-    ).toBe(true);
-    expect(isExplicitReminderCompleteRequest("which reminders are completed?")).toBe(
-      false,
-    );
+    expect(isExplicitReminderCompleteRequest("mark reminder number 7 as completed")).toBe(true);
+    expect(isExplicitReminderCompleteRequest("which reminders are completed?")).toBe(false);
     expect(isExplicitReminderCancelRequest("cancel reminder 4")).toBe(true);
   });
 });
 
-describe("formatTaskConfirmation", () => {
-  it("confirms the created task with its Notion URL", () => {
+describe("confirmation formatting", () => {
+  it("confirms a created task with its id and key details", () => {
     expect(
-      formatTaskConfirmation([
-        { id: "page-id", title: "Send proposal", url: "https://notion.so/page" },
-      ]),
-    ).toBe("✅ Task added: Send proposal\nhttps://notion.so/page");
+      formatTaskCreateConfirmation(
+        [
+          {
+            duplicate: false,
+            task: {
+              id: 4,
+              title: "Send proposal",
+              notes: null,
+              status: "todo",
+              priority: "high",
+              owner: "Tanvi",
+              area: null,
+              dueAt: "2026-11-06",
+              tags: [],
+              createdBy: "Sagnik",
+              createdAt: "",
+              updatedAt: "",
+              completedAt: null,
+            },
+          },
+        ],
+        "Asia/Kolkata",
+      ),
+    ).toBe("✅ Task #4 added: Send proposal — owner Tanvi · due 6 Nov 2026 · high priority");
   });
-});
 
-describe("DiaAssistant task creation", () => {
-  it("accepts long founder-supplied notes without leaking ambient context", async () => {
-    const notes = "Complete founder brief.\n".repeat(250);
-    const createTask = vi.fn().mockResolvedValue({
-      id: "page-id",
-      title: "Improve website agent search",
-      url: "https://notion.so/page-id",
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [
-        {
-          type: "function_call",
-          name: "create_notion_task",
-          call_id: "task-create",
-          arguments: JSON.stringify({
-            title: "Improve website agent search",
-            due_at: null,
-            assignee: null,
-            priority: null,
-            task_type: "Tech",
-            notes,
-          }),
-        },
-      ],
-      output_text: "",
-    });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Patch",
-      timezone: "Asia/Kolkata",
-      notion: {
-        canReadBrainDump: false,
-        canReadKnowledge: false,
-        createTask,
-      } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "task-message",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "@patch add a notion task that I need to improve website agent search",
-      quotedMessage: null,
-      recentContext: [
-        {
-          author: "Tanvi",
-          body: "Unrelated historical context",
-          timestamp: 1,
-        },
-      ],
-    });
-
-    expect(reply).toBe(
-      "✅ Task added: Improve website agent search\nhttps://notion.so/page-id",
-    );
-    expect(createTask).toHaveBeenCalledWith(
-      expect.objectContaining({ notes }),
-      expect.objectContaining({ messageId: "task-message" }),
-    );
-    expect(responsesCreate.mock.calls[0]?.[0].instructions).toContain(
-      "Never copy recent group context",
-    );
-    const modelInput = JSON.stringify(responsesCreate.mock.calls[0]?.[0].input);
-    expect(modelInput).not.toContain("Unrelated historical context");
-  });
-});
-
-describe("formatSpendConfirmation", () => {
-  it("confirms the batch count, INR total, and payer", () => {
+  it("confirms the spend batch count, INR total, and payer", () => {
     expect(
       formatSpendConfirmation({
         paidBy: "Tanvi",
         results: [],
-        createdCount: 9,
+        createdCount: 2,
         duplicateCount: 0,
         failedCount: 0,
-        createdAmount: 6471,
+        createdAmount: 1500,
       }),
-    ).toBe("✅ Spend log updated: 9 entries · ₹6,471 · paid by Tanvi.");
-  });
-});
-
-describe("DiaAssistant founder spend log", () => {
-  it("forces a nine-row spend write and returns a deterministic confirmation", async () => {
-    const expenses = [100, 253, 4783, 148, 185, 219, 215, 333, 235].map(
-      (amount, index) => ({
-        spend: `Expense ${index + 1}`,
-        amount,
-        date: index < 2 ? "2026-08-12" : "2026-08-13",
-        category: index === 0 ? "Meals" : "Other",
-        payment_method: "UPI",
-        vendor: null,
-        notes: null,
-        reimbursable: false,
-      }),
-    );
-    const addSpends = vi.fn().mockResolvedValue({
-      paidBy: "Tanvi",
-      results: expenses.map((expense, index) => ({
-        index,
-        spend: expense.spend,
-        amount: expense.amount,
-        date: expense.date,
-        status: "created",
-        id: `page-${index}`,
-        url: null,
-        error: null,
-      })),
-      createdCount: 9,
-      duplicateCount: 0,
-      failedCount: 0,
-      createdAmount: 6471,
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [
-        {
-          type: "function_call",
-          name: "add_notion_spends",
-          call_id: "spend-create",
-          arguments: JSON.stringify({ paid_by: "Tanvi", expenses }),
-        },
-      ],
-      output_text: "",
-    });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {} as never,
-      notionSpend: { addSpends } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "spend-message",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "@patch add to daily spend log: Expenses by Tanvi: 9 entries",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toBe("✅ Spend log updated: 9 entries · ₹6,471 · paid by Tanvi.");
-    expect(addSpends).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ paidBy: "Tanvi" })]),
-      {
-        messageId: "spend-message",
-        groupName: "Autter",
-        requestedBy: "Sagnik",
-      },
-    );
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "add_notion_spends" },
-    });
+    ).toBe("✅ Spend log updated: 2 entries · ₹1,500 · paid by Tanvi.");
   });
 });
 
@@ -355,1045 +275,382 @@ describe("Dekhte Hai live-script routing", () => {
   ])("recognizes a series request: %s", (message) => {
     expect(isDekhteHaiRequest(message)).toBe(true);
   });
-
-  it("loads the complete live library before answering", async () => {
-    const readScriptLibrary = vi.fn().mockResolvedValue({
-      seriesName: "Dekhte Hai",
-      scripts: [
-        {
-          episode: 1,
-          id: "episode-1",
-          title: "Dekhte Hai Ep 1",
-          url: "https://notion.so/episode-1",
-          lastEditedTime: "2026-08-26T10:00:00.000Z",
-          markdown: "Sagnik: Two founders.\nTanvi: One otter.",
-          truncated: false,
-        },
-      ],
-    });
-    const responsesCreate = vi.fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "read_dekhte_hai_scripts",
-            call_id: "script-library",
-            arguments: "{}",
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: "Episode 1 establishes the two-founders, one-otter rhythm.",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Patch",
-      timezone: "Asia/Kolkata",
-      notion: {
-        canReadBrainDump: false,
-        canReadKnowledge: false,
-        canReadScriptLibrary: true,
-        readScriptLibrary,
-      } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "script-message",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "@patch summarize all Dekhte Hai scripts",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toBe(
-      "Episode 1 establishes the two-founders, one-otter rhythm.",
-    );
-    expect(readScriptLibrary).toHaveBeenCalledOnce();
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "read_dekhte_hai_scripts" },
-    });
-    expect(JSON.stringify(responsesCreate.mock.calls[1]?.[0].input)).toContain(
-      "Two founders",
-    );
-  });
 });
 
-describe("DiaAssistant task reads", () => {
-  it("returns Notion task results to the model for a final answer", async () => {
-    const listTasks = vi.fn().mockResolvedValue({
-      tasks: [
-        {
-          id: "page-1",
-          url: "https://notion.so/page-1",
-          title: "Send proposal",
-          status: "Not started",
-          dueAt: "2026-08-12",
-          assignees: ["Sagnik"],
-          priority: "High",
-          taskTypes: ["Marketing"],
-        },
-      ],
-      hasMore: false,
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "list_notion_tasks",
-            call_id: "call-1",
-            arguments: JSON.stringify({
-              title_contains: null,
-              status: null,
-              due_from: "2026-08-10",
-              due_to: "2026-08-17",
-              limit: 10,
-            }),
-          },
+describe("DiaAssistant task list", () => {
+  it("captures several tasks, forces a tool turn, and keeps ambient chatter out", async () => {
+    const tasks = taskStore();
+    const llm = scriptedModel(
+      toolTurn("c1", "create_tasks", {
+        tasks: [
+          { title: "Renew autter.dev domain", owner: "me", due_at: "2026-11-10", priority: "High" },
+          { title: "Call Rahul about the pilot", owner: "Tanvi", area: "sales" },
         ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: "Send proposal is due Wednesday.",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Dia",
-      timezone: "Asia/Kolkata",
-      notion: { listTasks } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Test group",
-      messageId: "message-1",
-      requestedBy: "Sagnik",
-      requestedById: "919999999999@c.us",
-      body: "which tasks are due this week?",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toBe("Send proposal is due Wednesday.");
-    expect(listTasks).toHaveBeenCalledWith({
-      titleContains: null,
-      status: null,
-      dueFrom: "2026-08-10",
-      dueTo: "2026-08-17",
-      limit: 10,
-    });
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "list_notion_tasks" },
-    });
-    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "call-1",
-      output: expect.stringContaining("Send proposal"),
-    });
-    expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
-  });
-});
-
-describe("DiaAssistant web search", () => {
-  it("uses one search and gives its sources back to the model", async () => {
-    const search = vi.fn().mockResolvedValue({
-      query: "latest Autter news",
-      results: [
-        {
-          title: "Autter",
-          url: "https://autter.dev/",
-          content: "Autter is the assurance layer for the AI coding era.",
-        },
-      ],
-    });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "search_web",
-            call_id: "search-1",
-            arguments: JSON.stringify({
-              query: "latest Autter news",
-              topic: "news",
-            }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: "The harbour is busy. https://autter.dev/",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {} as never,
-      webSearch: { search } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-2",
-      requestedBy: "Tanvi",
-      requestedById: "919999999998@c.us",
-      body: "what is the latest Autter news?",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("https://autter.dev/");
-    expect(search).toHaveBeenCalledOnce();
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "search_web" },
-      instructions: expect.stringContaining(
-        "Sagnik Ghosh and Tanvi are equal co-founders",
-      ),
-    });
-    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "search-1",
-      output: expect.stringContaining("https://autter.dev/"),
-    });
-    expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
-  });
-});
-
-describe("DiaAssistant delegated research", () => {
-  it("forces one bounded research run and returns its evidence to Patch", async () => {
-    const run = vi.fn().mockResolvedValue({
-      report: "## Summary\nPublish on Hacker News. https://news.ycombinator.com/",
-      searchesUsed: 3,
-      sources: [
-        { title: "Hacker News", url: "https://news.ycombinator.com/" },
-      ],
-    });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "run_research",
-            call_id: "research-1",
-            arguments: JSON.stringify({
-              question: "Where should Autter publish its launch?",
-              context: "Developer audience",
-            }),
-          },
-        ],
-        output_text: "",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {} as never,
-      researchAgent: { run } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-research",
-      requestedBy: "Tanvi",
-      requestedById: "tanvi@c.us",
-      body: "research the best places to publish our launch",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("https://news.ycombinator.com/");
-    expect(run).toHaveBeenCalledWith({
-      question: "Where should Autter publish its launch?",
-      context: "Developer audience",
-      requestedBy: "Tanvi",
-    });
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "run_research" },
-    });
-    expect(responsesCreate).toHaveBeenCalledOnce();
-  });
-
-  it("researches a long founder note and appends the complete note and report separately", async () => {
-    const longQuestion = `Research this fully: ${"founder context ".repeat(80)}`;
-    const longContext = "background ".repeat(300);
-    const report = `## Findings\n\n${"evidence and recommendation ".repeat(300)}`;
-    const run = vi.fn().mockResolvedValue({
-      report,
-      searchesUsed: 3,
-      sources: [{ title: "Source", url: "https://example.com/source" }],
-    });
-    const appendBrainDump = vi.fn().mockResolvedValue({
-      pageId: "brain-page",
-      heading: "Founder notes and Patch research",
-      charactersAdded: 15_000,
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [
-        {
-          type: "function_call",
-          name: "run_research",
-          call_id: "research-brain-dump",
-          arguments: JSON.stringify({
-            question: longQuestion,
-            context: longContext,
-          }),
-        },
-      ],
-      output_text: "",
-    });
-    const founderMessage = [
-      "These are my detailed launch ideas.",
-      "founder note ".repeat(500),
-      "Research them and add my notes and your research separately to the Brain Dump.",
-    ].join("\n");
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: { canReadBrainDump: true, appendBrainDump } as never,
-      researchAgent: { run } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "large-brain-dump-research",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: founderMessage,
-      quotedMessage: "Additional quoted founder detail.",
-      recentContext: [],
-    });
-
-    expect(reply).toBe(
-      "✅ Added your complete notes and Patch's research to Brain Dump as separate sections.",
-    );
-    expect(run).toHaveBeenCalledWith({
-      question: longQuestion,
-      context: longContext,
-      requestedBy: "Sagnik",
-    });
-    expect(appendBrainDump).toHaveBeenCalledWith(
-      {
-        heading: "Founder notes and Patch research",
-        content: expect.stringMatching(
-          /### Founder notes[\s\S]*Additional quoted founder detail\.[\s\S]*### Patch research/,
-        ),
-      },
-      {
-        groupName: "Autter",
-        messageId: "large-brain-dump-research",
-        requestedBy: "Sagnik",
-      },
-    );
-    expect(appendBrainDump.mock.calls[0]?.[0].content).toContain(founderMessage);
-    expect(appendBrainDump.mock.calls[0]?.[0].content).toContain(report.trim());
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "run_research" },
-    });
-    expect(responsesCreate).toHaveBeenCalledOnce();
-  });
-
-  it("can append delegated findings to one exactly matched Notion task", async () => {
-    const matchedTask = {
-      id: "publishing-page",
-      url: "https://notion.so/publishing-page",
-      title: "Publishing",
-      status: "In progress",
-      dueAt: null,
-      assignees: ["Sagnik"],
-      priority: null,
-      taskTypes: ["Marketing"],
-    };
-    const listTasks = vi.fn().mockResolvedValue({
-      tasks: [matchedTask],
-      hasMore: false,
-    });
-    const run = vi.fn().mockResolvedValue({
-      report: "## Findings\nTry Show HN. https://news.ycombinator.com/",
-      searchesUsed: 2,
-      sources: [
-        { title: "Hacker News", url: "https://news.ycombinator.com/" },
-      ],
-    });
-    const updateTask = vi.fn().mockResolvedValue({
-      id: matchedTask.id,
-      url: matchedTask.url,
-      title: matchedTask.title,
-      status: null,
-      dueAt: null,
-      assignee: null,
-      priority: null,
-      taskTypes: null,
-      clearedFields: [],
-      pageContentMode: "append",
-    });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "list_notion_tasks",
-            call_id: "task-search",
-            arguments: JSON.stringify({
-              title_contains: "Publishing",
-              status: null,
-              due_from: null,
-              due_to: null,
-              limit: 10,
-            }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "run_research",
-            call_id: "task-research",
-            arguments: JSON.stringify({
-              question: "Where should Autter publish its launch?",
-              context: "Append the result to the Publishing task",
-            }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "update_notion_task",
-            call_id: "task-update",
-            arguments: JSON.stringify({
-              page_id: matchedTask.id,
-              matched_title: matchedTask.title,
-              new_title: null,
-              status: null,
-              due_at: null,
-              assignee: null,
-              priority: null,
-              task_types: null,
-              clear_fields: [],
-              page_content_mode: "append",
-              page_content:
-                "## Research\nTry Show HN. https://news.ycombinator.com/",
-            }),
-          },
-        ],
-        output_text: "",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: { listTasks, updateTask } as never,
-      researchAgent: { run } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "research-task-message",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "research publishing channels and append it to the publishing task",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("✅ Updated task: Publishing");
-    expect(run).toHaveBeenCalledOnce();
-    expect(updateTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pageId: matchedTask.id,
-        pageContentMode: "append",
-        pageContent: expect.stringContaining("https://news.ycombinator.com/"),
       }),
     );
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "list_notion_tasks" },
-    });
-  });
-});
 
-describe("DiaAssistant Brain Dump reads", () => {
-  it("reads the configured page and gives its bounded content to the model", async () => {
-    const readBrainDump = vi.fn().mockResolvedValue({
-      pageId: "brain-page",
-      markdown: "# Feedback\nMake the first review memorable.",
-      truncated: false,
-    });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "read_brain_dump",
-            call_id: "brain-1",
-            arguments: JSON.stringify({ query: "summarize the Brain Dump" }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: "The main idea is to make the first review memorable.",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: { canReadBrainDump: true, readBrainDump } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-3",
-      requestedBy: "Sagnik",
-      requestedById: "919999999999@c.us",
-      body: "summarize the Brain Dump",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("first review memorable");
-    expect(readBrainDump).toHaveBeenCalledOnce();
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "read_brain_dump" },
-    });
-    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "brain-1",
-      output: expect.stringContaining("Make the first review memorable"),
-    });
-    expect(responsesCreate.mock.calls[1]?.[0]).not.toHaveProperty("tool_choice");
-  });
-});
-
-describe("DiaAssistant Brain Dump appends", () => {
-  it("accepts a large note, appends once, and returns a deterministic confirmation", async () => {
-    const completeNote = `Make the first review memorable.\n\n${"Detailed founder context. ".repeat(300)}`;
-    const appendBrainDump = vi.fn().mockResolvedValue({
-      pageId: "brain-page",
-      heading: "Onboarding",
-      charactersAdded: completeNote.length,
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [
-        {
-          type: "function_call",
-          name: "append_brain_dump",
-          call_id: "append-1",
-          arguments: JSON.stringify({
-            heading: "Onboarding",
-            content: completeNote,
-          }),
-        },
-      ],
-      output_text: "",
-    });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {
-        canReadBrainDump: true,
-        appendBrainDump,
-      } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-4",
-      requestedBy: "Tanvi",
-      requestedById: "919999999998@c.us",
-      body: "add this onboarding feedback to the Brain Dump",
-      quotedMessage: "Make the first review memorable.",
-      recentContext: [],
-    });
-
-    expect(reply).toBe("✅ Added to Brain Dump: Onboarding");
-    expect(appendBrainDump).toHaveBeenCalledWith(
-      {
-        heading: "Onboarding",
-        content: completeNote,
-      },
-      {
-        groupName: "Autter",
-        messageId: "message-4",
-        requestedBy: "Tanvi",
-      },
+    const reply = await assistantWith(llm, tasks).respond(
+      request("@patch add tasks: renew the domain by the 10th, Tanvi to call Rahul", {
+        recentContext: [{ author: "Tanvi", body: "Unrelated historical context", timestamp: 1 }],
+      }),
     );
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "append_brain_dump" },
-    });
-  });
-});
-
-describe("DiaAssistant Notion knowledge", () => {
-  it("searches, reads only a matched resource, and answers from its content", async () => {
-    const searchKnowledge = vi.fn().mockResolvedValue({
-      results: [
-        {
-          id: "goals-page",
-          type: "page",
-          title: "Company Goals - 2026",
-          url: "https://notion.so/goals-page",
-          lastEditedTime: "2026-08-10T12:00:00.000Z",
-        },
-      ],
-      hasMore: false,
-    });
-    const readKnowledgeResource = vi.fn().mockResolvedValue({
-      id: "goals-page",
-      type: "page",
-      markdown: "# Product\nShip all five enforcement pillars.",
-      truncated: false,
-    });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "search_notion_knowledge",
-            call_id: "knowledge-search-1",
-            arguments: JSON.stringify({ query: "Company Goals", limit: 5 }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "read_notion_knowledge",
-            call_id: "knowledge-read-1",
-            arguments: JSON.stringify({
-              resource_id: "goals-page",
-              resource_type: "page",
-            }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: "Our product goal is to ship all five enforcement pillars.",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {
-        canReadKnowledge: true,
-        searchKnowledge,
-        readKnowledgeResource,
-      } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-6",
-      requestedBy: "Sagnik",
-      requestedById: "919999999999@c.us",
-      body: "search Autter HQ for our company goals",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("five enforcement pillars");
-    expect(searchKnowledge).toHaveBeenCalledWith("Company Goals", 5);
-    expect(readKnowledgeResource).toHaveBeenCalledWith("goals-page", "page");
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "search_notion_knowledge" },
-    });
-    expect(responsesCreate.mock.calls[2]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "knowledge-read-1",
-      output: expect.stringContaining("Ship all five enforcement pillars"),
-    });
-  });
-
-  it("rejects a resource ID that was not returned by this request's search", async () => {
-    const readKnowledgeResource = vi.fn();
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "read_notion_knowledge",
-            call_id: "unmatched-read",
-            arguments: JSON.stringify({
-              resource_id: "untrusted-page-id",
-              resource_type: "page",
-            }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [],
-        output_text: "I couldn't access that unsearched resource.",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: { canReadKnowledge: true, readKnowledgeResource } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-7",
-      requestedBy: "Sagnik",
-      requestedById: "919999999999@c.us",
-      body: "read this Notion page",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(readKnowledgeResource).not.toHaveBeenCalled();
-    expect(responsesCreate.mock.calls[1]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "unmatched-read",
-      output: expect.stringContaining("not returned by the Notion knowledge search"),
-    });
-  });
-});
-
-describe("DiaAssistant task updates", () => {
-  it("looks up an exact task before editing it", async () => {
-    const listTasks = vi.fn().mockResolvedValue({
-      tasks: [
-        {
-          id: "task-page",
-          url: "https://notion.so/task-page",
-          title: "Feedbacks from Intern Applications",
-          status: "Completed",
-          dueAt: null,
-          assignees: ["Tanvi Bhole"],
-          priority: null,
-          taskTypes: [],
-        },
-      ],
-      hasMore: false,
-    });
-    const updateTask = vi.fn().mockResolvedValue({
-      id: "task-page",
-      url: "https://notion.so/task-page",
-      title: "Feedbacks from Intern Applications",
-      status: "In progress",
-      dueAt: null,
-      assignee: "Tanvi",
-      priority: null,
-      taskTypes: null,
-      clearedFields: [],
-      pageContentMode: null,
-    });
-    const responsesCreate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "list_notion_tasks",
-            call_id: "task-search",
-            arguments: JSON.stringify({
-              title_contains: "Feedbacks from Intern Applications",
-              status: null,
-              due_from: null,
-              due_to: null,
-              limit: 10,
-            }),
-          },
-        ],
-        output_text: "",
-      })
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "update_notion_task",
-            call_id: "truncated-task-update",
-            arguments:
-              '{"page_id":"task-page","matched_title":"Feedbacks from Intern Applications","page_content":"unfinished',
-          },
-        ],
-        output_text: "",
-        incomplete_details: { reason: "max_output_tokens" },
-      })
-      .mockResolvedValueOnce({
-        output: [
-          {
-            type: "function_call",
-            name: "update_notion_task",
-            call_id: "task-update",
-            arguments: JSON.stringify({
-              page_id: "task-page",
-              matched_title: "Feedbacks from Intern Applications",
-              new_title: null,
-              status: "In progress",
-              due_at: null,
-              assignee: "Tanvi",
-              priority: null,
-              task_types: null,
-              clear_fields: [],
-              page_content_mode: null,
-              page_content: null,
-            }),
-          },
-        ],
-        output_text: "",
-      });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: { listTasks, updateTask } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-update",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "shift the intern feedback task from completed to in progress and assign it to Tanvi",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("✅ Updated task: Feedbacks from Intern Applications");
-    expect(updateTask).toHaveBeenCalledWith({
-      pageId: "task-page",
-      title: "Feedbacks from Intern Applications",
-      newTitle: null,
-      status: "In progress",
-      dueAt: null,
-      assignee: null,
-      priority: null,
-      taskTypes: null,
-      clearFields: [],
-      pageContentMode: null,
-      pageContent: null,
-    });
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "list_notion_tasks" },
-    });
-    expect(responsesCreate.mock.calls[0]?.[0]).not.toHaveProperty(
-      "max_output_tokens",
-    );
-    expect(responsesCreate).toHaveBeenCalledTimes(3);
-    expect(responsesCreate.mock.calls[2]?.[0].input).toContainEqual({
-      type: "function_call_output",
-      call_id: "truncated-task-update",
-      output: expect.stringContaining("truncated or malformed"),
-    });
-  });
-});
-
-describe("DiaAssistant reminders", () => {
-  it("creates a persistent reminder with advance and due notifications", async () => {
-    const create = vi.fn().mockReturnValue({
-      id: 12,
-      groupId: "group@g.us",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      message: "Send the proposal",
-      dueAt: "2026-08-11T11:30:00.000Z",
-      notifyBeforeMinutes: 10,
-      repeatEveryMinutes: null,
-      nextFireAt: "2026-08-11T11:20:00.000Z",
-      phase: "pre_due",
-    });
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [
-        {
-          type: "function_call",
-          name: "create_reminder",
-          call_id: "reminder-create",
-          arguments: JSON.stringify({
-            message: "Send the proposal",
-            due_at: "2026-08-11T17:00:00+05:30",
-            notify_before_minutes: 10,
-            repeat_every_minutes: null,
-          }),
-        },
-      ],
-      output_text: "",
-    });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {} as never,
-      reminders: { create } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-reminder",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "remind me to send the proposal at 5 PM",
-      quotedMessage: null,
-      recentContext: [],
-    });
-
-    expect(reply).toContain("⏰ Reminder #12 set");
-    expect(reply).toContain("10 min before, when due");
-    expect(create).toHaveBeenCalledWith({
-      groupId: "group@g.us",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      sourceMessageId: "message-reminder",
-      message: "Send the proposal",
-      dueAt: "2026-08-11T17:00:00+05:30",
-      notifyBeforeMinutes: 10,
-      repeatEveryMinutes: null,
-    });
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "create_reminder" },
-    });
-  });
-
-  it("marks an active reminder completed and stops its future notifications", async () => {
-    const complete = vi.fn().mockReturnValue(true);
-    const responsesCreate = vi.fn().mockResolvedValueOnce({
-      output: [
-        {
-          type: "function_call",
-          name: "complete_reminder",
-          call_id: "reminder-complete",
-          arguments: JSON.stringify({ reminder_id: 7 }),
-        },
-      ],
-      output_text: "",
-    });
-    const assistant = new DiaAssistant({
-      azureApiKey: "test-key",
-      azureBaseUrl: "https://resource.openai.azure.com/openai/v1/",
-      deployment: "test-deployment",
-      botName: "Captain Patch",
-      timezone: "Asia/Kolkata",
-      notion: {} as never,
-      reminders: { complete } as never,
-      logger: { warn: vi.fn() } as never,
-    });
-    Object.assign(assistant as unknown as { client: unknown }, {
-      client: { responses: { create: responsesCreate } },
-    });
-
-    const reply = await assistant.respond({
-      groupId: "group@g.us",
-      groupName: "Autter",
-      messageId: "message-reminder-complete",
-      requestedBy: "Sagnik",
-      requestedById: "sagnik@c.us",
-      body: "mark reminder number 7 as completed",
-      quotedMessage: null,
-      recentContext: [],
-    });
 
     expect(reply).toBe(
-      "✅ Reminder #7 marked completed. Future notifications have been stopped.",
+      [
+        "✅ 2 tasks added:",
+        "• #1 Renew autter.dev domain — owner Sagnik · due 10 Nov 2026 · high priority",
+        "• #2 Call Rahul about the pilot — owner Tanvi",
+      ].join("\n"),
     );
-    expect(complete).toHaveBeenCalledWith(7, "group@g.us");
-    expect(responsesCreate.mock.calls[0]?.[0]).toMatchObject({
-      tool_choice: { type: "function", name: "complete_reminder" },
+    expect(llm.requests[0]?.toolChoice).toBe("required");
+    expect(JSON.stringify(llm.requests[0]?.messages)).not.toContain("Unrelated historical context");
+    expect(llm.requests[0]?.system).toContain("Cloudflare D1");
+    const stored = await tasks.listOpen();
+    expect(stored.tasks.map((task) => [task.title, task.area])).toEqual([
+      ["Renew autter.dev domain", null],
+      ["Call Rahul about the pilot", "Sales"],
+    ]);
+  });
+
+  it("refuses to edit a guessed id until the task has been looked up", async () => {
+    const tasks = taskStore();
+    await tasks.create(
+      [
+        {
+          title: "File GST return",
+          notes: null,
+          status: null,
+          priority: null,
+          owner: null,
+          area: null,
+          dueAt: null,
+          tags: [],
+        },
+      ],
+      { actor: "Sagnik", groupName: null, messageId: "seed" },
+    );
+    const llm = scriptedModel(
+      toolTurn("u1", "update_tasks", { updates: [{ task_id: 1, status: "done" }] }),
+      toolTurn("l1", "list_tasks", { text: "GST" }),
+      toolTurn("u2", "update_tasks", { updates: [{ task_id: 1, status: "completed" }] }),
+    );
+
+    const reply = await assistantWith(llm, tasks).respond(
+      request("@patch mark the GST filing as done"),
+    );
+
+    expect(reply).toBe("🎉 #1 File GST return — status: done");
+    const guardOutput = llm.requests[1]?.messages.find(
+      (message) => message.role === "tool" && message.tool_call_id === "u1",
+    );
+    expect(JSON.stringify(guardOutput)).toContain("Nothing was changed");
+    expect((await tasks.get(1))?.status).toBe("done");
+  });
+
+  it("edits and deletes ids the founder named without an extra lookup", async () => {
+    const tasks = taskStore();
+    await tasks.create(
+      [1, 2].map((n) => ({
+        title: `Task ${n}`,
+        notes: null,
+        status: null,
+        priority: null,
+        owner: null,
+        area: null,
+        dueAt: null,
+        tags: [],
+      })),
+      { actor: "Sagnik", groupName: null, messageId: "seed" },
+    );
+    const llm = scriptedModel(
+      toolTurn(
+        "u1",
+        "update_tasks",
+        { updates: [{ task_id: 1, owner: "Tanvi", notes: "Waiting on CA" }] },
+        ["d1", "delete_tasks", { task_ids: [2] }],
+      ),
+    );
+
+    const reply = await assistantWith(llm, tasks).respond(
+      request("@patch give task #1 to Tanvi with a note 'Waiting on CA' and delete task 2"),
+    );
+
+    expect(reply).toBe(
+      "✅ #1 Task 1 — owner: Tanvi; notes updated\n🗑️ Deleted #2 Task 2",
+    );
+    expect((await tasks.get(1))?.notes).toBe("Waiting on CA");
+    expect(await tasks.get(2)).toBeNull();
+  });
+
+  it("answers the rest of a mixed request after confirming the write", async () => {
+    const tasks = taskStore();
+    const llm = scriptedModel(
+      toolTurn(
+        "c1",
+        "create_tasks",
+        { tasks: [{ title: "Draft November investor update" }] },
+        ["l1", "list_tasks", { overdue_only: true }],
+      ),
+      textTurn("Nothing is overdue. Clean deck, Captain."),
+    );
+
+    const reply = await assistantWith(llm, tasks).respond(
+      request("@patch add a task to draft the investor update, and what's overdue?"),
+    );
+
+    expect(reply).toBe(
+      "✅ Task #1 added: Draft November investor update\n\nNothing is overdue. Clean deck, Captain.",
+    );
+  });
+
+  it("sends invalid dates back to the model instead of storing them", async () => {
+    const tasks = taskStore();
+    const llm = scriptedModel(
+      toolTurn("c1", "create_tasks", { tasks: [{ title: "Pay AWS", due_at: "next friday" }] }),
+      toolTurn("c2", "create_tasks", { tasks: [{ title: "Pay AWS", due_at: "2026-11-06" }] }),
+    );
+
+    const reply = await assistantWith(llm, tasks).respond(
+      request("@patch add a task to pay AWS next friday"),
+    );
+
+    expect(reply).toBe("✅ Task #1 added: Pay AWS — due 6 Nov 2026");
+    expect(JSON.stringify(llm.requests[1]?.messages)).toContain("not an ISO 8601 date");
+  });
+
+  it("reports a D1 outage deterministically instead of letting the model guess", async () => {
+    const failingTasks = {
+      create: vi.fn().mockRejectedValue(new Error("D1 query failed (503)")),
+    } as unknown as TaskStore;
+    const llm = scriptedModel(toolTurn("c1", "create_tasks", { tasks: [{ title: "Book venue" }] }));
+
+    const reply = await assistantWith(llm, failingTasks).respond(
+      request("@patch add a task to book the venue"),
+    );
+
+    expect(reply).toContain("Cloudflare D1 task list didn't respond");
+  });
+});
+
+describe("DiaAssistant spend log and Brain Dump", () => {
+  it("logs every expense row through the Notion spend service", async () => {
+    const addSpends = vi.fn().mockResolvedValue({
+      paidBy: "Tanvi",
+      results: [],
+      createdCount: 2,
+      duplicateCount: 0,
+      failedCount: 0,
+      createdAmount: 450,
     });
+    const llm = scriptedModel(
+      toolTurn("s1", "add_spends", {
+        paid_by: "Tanvi",
+        expenses: [
+          { spend: "Chai", amount: 100, date: "2026-11-03", category: "Meals", payment_method: "UPI" },
+          { spend: "Auto", amount: "350", date: "2026-11-03", category: "Travel" },
+        ],
+      }),
+    );
+
+    const reply = await assistantWith(llm, taskStore(), {
+      notionSpend: { addSpends },
+    }).respond(request("@patch add to spend log: chai 100 upi, auto 350", { requestedBy: "Tanvi" }));
+
+    expect(reply).toBe("✅ Spend log updated: 2 entries · ₹450 · paid by Tanvi.");
+    expect(addSpends.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ spend: "Chai", amount: 100, paymentMethod: "UPI", reimbursable: false }),
+      expect.objectContaining({ spend: "Auto", amount: 350, paymentMethod: null, category: "Travel" }),
+    ]);
+  });
+
+  it("appends to the Brain Dump and confirms deterministically", async () => {
+    const appendBrainDump = vi.fn().mockResolvedValue(undefined);
+    const llm = scriptedModel(
+      toolTurn("b1", "append_brain_dump", {
+        heading: "Onboarding idea",
+        content: "Let users connect GitHub before signup.",
+      }),
+    );
+
+    const reply = await assistantWith(llm, taskStore(), {
+      notion: { canReadBrainDump: true, appendBrainDump },
+    }).respond(request("@patch put this in the brain dump: GitHub connect before signup"));
+
+    expect(reply).toBe("✅ Added to Brain Dump: Onboarding idea");
+    expect(appendBrainDump).toHaveBeenCalledWith(
+      { heading: "Onboarding idea", content: "Let users connect GitHub before signup." },
+      { groupName: "Autter HQ", messageId: "msg-1", requestedBy: "Sagnik" },
+    );
+  });
+
+  it("researches first, then saves the founder note and report together", async () => {
+    const appendBrainDump = vi.fn().mockResolvedValue(undefined);
+    const run = vi.fn().mockResolvedValue({ report: "## Findings\nTeams want proof.", searchesUsed: 2, sources: [] });
+    const llm = scriptedModel(toolTurn("r1", "run_research", { question: "What do teams want?" }));
+
+    const reply = await assistantWith(llm, taskStore(), {
+      notion: { canReadBrainDump: true, appendBrainDump },
+      researchAgent: { run },
+    }).respond(request("@patch research what teams want and add it to the brain dump"));
+
+    expect(llm.requests[0]?.toolChoice).toEqual({ name: "run_research" });
+    expect(reply).toContain("Added your complete notes and Patch's research");
+    expect(appendBrainDump.mock.calls[0]?.[0].content).toContain("## Findings\nTeams want proof.");
+  });
+});
+
+describe("DiaAssistant media and limits", () => {
+  it("sends images as vision input and documents as converted Markdown", async () => {
+    const llm = scriptedModel(textTurn("Looks like an invoice from AWS."));
+
+    await assistantWith(llm, taskStore()).respond(
+      request("@patch what is this?", {
+        attachments: [
+          {
+            kind: "image",
+            mimeType: "image/png",
+            fileName: "shot.png",
+            dataBase64: "aGVsbG8=",
+            sizeBytes: 5,
+            transcript: null,
+          },
+          {
+            kind: "pdf",
+            mimeType: "application/pdf",
+            fileName: "invoice.pdf",
+            dataBase64: "aGVsbG8=",
+            sizeBytes: 5,
+            transcript: null,
+            extractedText: "# Invoice\nAWS ₹4,200",
+          },
+        ],
+      }),
+    );
+
+    const content = llm.requests[0]?.messages[0]?.content;
+    expect(content).toContainEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,aGVsbG8=" },
+    });
+    expect(JSON.stringify(content)).toContain("AWS ₹4,200");
+  });
+
+  it("allows only one web search per message", async () => {
+    const search = vi.fn().mockResolvedValue({ query: "q", results: [] });
+    const llm = scriptedModel(
+      toolTurn("w1", "search_web", { query: "GitHub news today" }),
+      toolTurn("w2", "search_web", { query: "more GitHub news" }),
+      textTurn("Quiet day on GitHub."),
+    );
+
+    const reply = await assistantWith(llm, taskStore(), { webSearch: { search } }).respond(
+      request("@patch what's the latest GitHub news?"),
+    );
+
+    expect(reply).toBe("Quiet day on GitHub.");
+    expect(search).toHaveBeenCalledOnce();
+    expect(JSON.stringify(llm.requests[2]?.messages)).toContain("one-search limit");
+  });
+
+  it("creates a persistent reminder with a deterministic confirmation", async () => {
+    const create = vi.fn().mockReturnValue({
+      id: 9,
+      groupId: "group@g.us",
+      requestedBy: "Sagnik",
+      requestedById: "sagnik@c.us",
+      message: "Send the deck",
+      dueAt: "2026-11-04T11:30:00.000Z",
+      notifyBeforeMinutes: 10,
+      repeatEveryMinutes: null,
+      nextFireAt: "2026-11-04T11:20:00.000Z",
+      phase: "pre_due",
+    });
+    const llm = scriptedModel(
+      toolTurn("r1", "create_reminder", {
+        message: "Send the deck",
+        due_at: "2026-11-04T17:00:00+05:30",
+      }),
+    );
+
+    const reply = await assistantWith(llm, taskStore(), { reminders: { create } }).respond(
+      request("@patch remind me to send the deck at 5pm"),
+    );
+
+    expect(reply).toContain("⏰ Reminder #9 set for");
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ notifyBeforeMinutes: 10, repeatEveryMinutes: null }),
+    );
+  });
+});
+
+describe("DiaAssistant group conversation", () => {
+  it("detects questions about earlier discussion", () => {
+    expect(isConversationRequest("what did we decide about pricing?")).toBe(true);
+    expect(isConversationRequest("catch me up on the last day")).toBe(true);
+    expect(isConversationRequest("turn this discussion into tasks")).toBe(true);
+    expect(isConversationRequest("draft a launch tweet")).toBe(false);
+  });
+
+  it("reads only this group's log and answers from it", async () => {
+    const conversation = new ConversationStore(":memory:");
+    const now = Date.now();
+    conversation.record({
+      groupId: "group@g.us",
+      messageId: "m1",
+      author: "Tanvi",
+      body: "Decided: per-repo pricing, starting December",
+      fromBot: false,
+      sentAtMs: now - 2 * 60 * 60 * 1_000,
+    });
+    conversation.record({
+      groupId: "other@g.us",
+      messageId: "x1",
+      author: "Someone",
+      body: "Unrelated group secret",
+      fromBot: false,
+      sentAtMs: now - 60 * 60 * 1_000,
+    });
+    const llm = scriptedModel(
+      toolTurn("c1", "read_group_conversation", { hours_back: 24, text: "pricing" }),
+      textTurn("Tanvi called it: per-repo pricing from December."),
+    );
+
+    const reply = await assistantWith(llm, taskStore(), { conversation }).respond(
+      request("@patch what did we decide about pricing?"),
+    );
+
+    expect(reply).toBe("Tanvi called it: per-repo pricing from December.");
+    expect(llm.requests[0]?.toolChoice).toBe("required");
+    expect(llm.requests[0]?.system).toContain("Ground answers in what this group actually said");
+    const toolOutput = JSON.stringify(llm.requests[1]?.messages.at(-1));
+    expect(toolOutput).toContain("per-repo pricing");
+    expect(toolOutput).not.toContain("Unrelated group secret");
+    conversation.close();
+  });
+
+  it("turns the discussion into owned tasks after reading it", async () => {
+    const conversation = new ConversationStore(":memory:");
+    conversation.record({
+      groupId: "group@g.us",
+      messageId: "m1",
+      author: "Tanvi",
+      body: "I'll send Rahul the DPA tomorrow",
+      fromBot: false,
+      sentAtMs: Date.now() - 60_000,
+    });
+    const tasks = taskStore();
+    const llm = scriptedModel(
+      toolTurn("c1", "read_group_conversation", {}),
+      toolTurn("t1", "create_tasks", {
+        tasks: [{ title: "Send Rahul the DPA", owner: "Tanvi" }],
+      }),
+    );
+
+    const reply = await assistantWith(llm, tasks, { conversation }).respond(
+      request("@patch capture what we discussed as tasks"),
+    );
+
+    expect(reply).toBe("✅ Task #1 added: Send Rahul the DPA — owner Tanvi");
+    conversation.close();
   });
 });

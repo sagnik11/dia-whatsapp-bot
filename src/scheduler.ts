@@ -1,114 +1,39 @@
+import type { ConversationStore } from "./conversation-store.js";
+import type { FounderBriefInput } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
-import type { NotionTaskService } from "./notion.js";
 import type { ReminderStore } from "./reminder-store.js";
-import type { ReminderRecord, TaskListResult, TaskSummary } from "./types.js";
+import type { TaskStore } from "./task-store.js";
+import { nextDailyRunAt } from "./time.js";
+import type { ReminderRecord } from "./types.js";
+
+export { nextDailyRunAt } from "./time.js";
 
 type SendMessage = (groupId: string, message: string) => Promise<void>;
 
+const HOUR_MS = 60 * 60 * 1_000;
+const DAY_MS = 24 * HOUR_MS;
+/** A brief never reaches back further than this, even after quiet days. */
+const MAX_BRIEF_WINDOW_MS = 3 * DAY_MS;
+const MAX_BRIEF_MESSAGES = 400;
+
+/**
+ * Patch only speaks unprompted for reminders a founder explicitly set, plus
+ * the opt-in daily brief, which is written from the group's own conversation.
+ * There is no periodic task digest.
+ */
 interface SchedulerOptions {
   reminders: ReminderStore;
-  notion: NotionTaskService;
-  digestGroupIds: ReadonlySet<string>;
-  digestIntervalHours: number;
+  tasks: Pick<TaskStore, "listOpen">;
+  conversation?: Pick<ConversationStore, "list" | "hasHumanMessages" | "prune">;
+  conversationRetentionDays?: number;
   timezone: string;
   logger: Logger;
   pollIntervalMs?: number;
   founderBrief?: {
     time: string;
     groupIds: ReadonlySet<string>;
-    generate: (
-      tasks: TaskListResult,
-      reminders: readonly ReminderRecord[],
-    ) => Promise<string>;
+    generate: (input: FounderBriefInput) => Promise<string>;
   };
-}
-
-function zonedParts(value: Date, timezone: string): Record<string, number> {
-  return Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(value)
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, Number(part.value)]),
-  );
-}
-
-function localTimeToUtc(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  timezone: string,
-): number {
-  const desired = Date.UTC(year, month - 1, day, hour, minute, 0);
-  let candidate = desired;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const actual = zonedParts(new Date(candidate), timezone);
-    const represented = Date.UTC(
-      actual.year ?? year,
-      (actual.month ?? month) - 1,
-      actual.day ?? day,
-      actual.hour ?? hour,
-      actual.minute ?? minute,
-      actual.second ?? 0,
-    );
-    candidate += desired - represented;
-  }
-  return candidate;
-}
-
-export function nextDailyRunAt(
-  nowMs: number,
-  time: string,
-  timezone: string,
-): number {
-  const [hourText, minuteText] = time.split(":");
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  const nowParts = zonedParts(new Date(nowMs), timezone);
-  const year = nowParts.year ?? 1970;
-  const month = nowParts.month ?? 1;
-  const day = nowParts.day ?? 1;
-  let candidate = localTimeToUtc(year, month, day, hour, minute, timezone);
-  if (candidate <= nowMs) {
-    const nextDate = new Date(Date.UTC(year, month - 1, day + 1));
-    candidate = localTimeToUtc(
-      nextDate.getUTCFullYear(),
-      nextDate.getUTCMonth() + 1,
-      nextDate.getUTCDate(),
-      hour,
-      minute,
-      timezone,
-    );
-  }
-  return candidate;
-}
-
-function formatDateTime(value: string, timezone: string): string {
-  return new Intl.DateTimeFormat("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: timezone,
-  }).format(new Date(value));
-}
-
-function formatDueAt(value: string, timezone: string): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Intl.DateTimeFormat("en-IN", {
-      dateStyle: "medium",
-      timeZone: "UTC",
-    }).format(new Date(`${value}T00:00:00Z`));
-  }
-  return formatDateTime(value, timezone);
 }
 
 export function formatReminderDelivery(reminder: ReminderRecord): string {
@@ -121,44 +46,12 @@ export function formatReminderDelivery(reminder: ReminderRecord): string {
   return `⏰ Due now for ${reminder.requestedBy}: ${reminder.message}`;
 }
 
-function taskDigestLine(task: TaskSummary, timezone: string): string {
-  const details = [
-    task.status ?? "No status",
-    task.dueAt ? `due ${formatDueAt(task.dueAt, timezone)}` : "no due date",
-    task.assignees.length > 0 ? task.assignees.join(", ") : "unassigned",
-  ];
-  return `• ${task.title} — ${details.join(" · ")}`;
-}
-
-export function formatTaskDigestMessages(
-  result: TaskListResult,
-  timezone: string,
-): string[] {
-  if (result.tasks.length === 0) {
-    return ["📋 Scheduled task watch: no incomplete tasks. Suspiciously competent."];
-  }
-
-  const header = `📋 Scheduled task watch — ${result.tasks.length} incomplete task${result.tasks.length === 1 ? "" : "s"}`;
-  const messages: string[] = [];
-  let current = header;
-  for (const task of result.tasks) {
-    const line = taskDigestLine(task, timezone).slice(0, 3_200);
-    if (`${current}\n${line}`.length > 3_500 && current !== header) {
-      messages.push(current);
-      current = `📋 Task watch (continued)\n${line}`;
-    } else {
-      current = `${current}\n${line}`;
-    }
-  }
-  messages.push(current);
-  return messages;
-}
-
 export class ProactiveScheduler {
   private timer: NodeJS.Timeout | undefined;
   private send: SendMessage | undefined;
   private running = false;
   private activeRun: Promise<void> | undefined;
+  private lastPruneMs = 0;
 
   public constructor(private readonly options: SchedulerOptions) {}
 
@@ -210,10 +103,24 @@ export class ProactiveScheduler {
         }
       }
 
-      await this.sendTaskDigests(nowMs, send);
+      this.pruneConversation(nowMs);
       await this.sendFounderBriefs(nowMs, send);
     } finally {
       this.running = false;
+    }
+  }
+
+  private pruneConversation(nowMs: number): void {
+    const days = this.options.conversationRetentionDays;
+    if (!this.options.conversation || !days || nowMs - this.lastPruneMs < HOUR_MS) return;
+    this.lastPruneMs = nowMs;
+    try {
+      const removed = this.options.conversation.prune(nowMs - days * DAY_MS);
+      if (removed > 0) {
+        this.options.logger.info({ removed, days }, "Pruned old conversation messages");
+      }
+    } catch (error) {
+      this.options.logger.error({ error }, "Failed to prune the conversation log");
     }
   }
 
@@ -222,7 +129,8 @@ export class ProactiveScheduler {
     send: SendMessage,
   ): Promise<void> {
     const brief = this.options.founderBrief;
-    if (!brief || brief.groupIds.size === 0) return;
+    const conversation = this.options.conversation;
+    if (!brief || !conversation || brief.groupIds.size === 0) return;
     const dueGroups = [...brief.groupIds].filter((groupId) => {
       const initialRun = nextDailyRunAt(nowMs, brief.time, this.options.timezone);
       return (
@@ -234,20 +142,39 @@ export class ProactiveScheduler {
     });
     if (dueGroups.length === 0) return;
 
-    const tasks = await this.options.notion.listIncompleteTasks();
-    for (const groupId of dueGroups) {
+    const nextRun = nextDailyRunAt(nowMs + 60_000, brief.time, this.options.timezone);
+    const groupsWithNews = dueGroups.filter((groupId) => {
+      const sinceMs = this.briefWindowStart(groupId, nowMs);
+      if (conversation.hasHumanMessages(groupId, sinceMs, nowMs)) return true;
+      // Nothing was said, so there is nothing to brief on. Keep the window
+      // open so tomorrow's brief still covers today.
+      this.options.reminders.setNextRun(`founder_brief:${groupId}`, nextRun);
+      this.options.logger.info({ groupId }, "Skipped daily brief: the group was quiet");
+      return false;
+    });
+    if (groupsWithNews.length === 0) return;
+
+    const tasks = await this.options.tasks.listOpen();
+    for (const groupId of groupsWithNews) {
       try {
-        const output = await brief.generate(
+        const sinceMs = this.briefWindowStart(groupId, nowMs);
+        const messages = conversation.list(groupId, {
+          sinceMs,
+          untilMs: nowMs,
+          limit: MAX_BRIEF_MESSAGES,
+        });
+        const output = await brief.generate({
+          conversation: messages,
           tasks,
-          this.options.reminders.listActive(groupId, 50),
-        );
+          reminders: this.options.reminders.listActive(groupId, 50),
+          sinceMs,
+          untilMs: nowMs,
+        });
         await send(groupId, output);
-        this.options.reminders.setNextRun(
-          `founder_brief:${groupId}`,
-          nextDailyRunAt(nowMs + 60_000, brief.time, this.options.timezone),
-        );
+        this.options.reminders.setNextRun(`founder_brief:${groupId}`, nextRun);
+        this.options.reminders.setNextRun(`founder_brief_since:${groupId}`, nowMs);
         this.options.logger.info(
-          { groupId, taskCount: tasks.tasks.length, output },
+          { groupId, messageCount: messages.length, taskCount: tasks.tasks.length, output },
           "Sent daily founder brief",
         );
       } catch (error) {
@@ -259,41 +186,13 @@ export class ProactiveScheduler {
     }
   }
 
-  private async sendTaskDigests(nowMs: number, send: SendMessage): Promise<void> {
-    if (
-      this.options.digestIntervalHours <= 0 ||
-      this.options.digestGroupIds.size === 0
-    ) {
-      return;
-    }
-
-    const dueGroups = [...this.options.digestGroupIds].filter((groupId) => {
-      const key = `task_digest:${groupId}`;
-      return this.options.reminders.getOrCreateNextRun(key, nowMs) <= nowMs;
-    });
-    if (dueGroups.length === 0) return;
-
-    const tasks = await this.options.notion.listIncompleteTasks();
-    const outputs = formatTaskDigestMessages(tasks, this.options.timezone);
-    const intervalMs = this.options.digestIntervalHours * 60 * 60 * 1_000;
-    for (const groupId of dueGroups) {
-      try {
-        for (const output of outputs) await send(groupId, output);
-        this.options.reminders.setNextRun(
-          `task_digest:${groupId}`,
-          nowMs + intervalMs,
-        );
-        this.options.logger.info(
-          { groupId, taskCount: tasks.tasks.length, outputs },
-          "Sent incomplete task digest",
-        );
-      } catch (error) {
-        this.options.logger.error(
-          { error, groupId },
-          "Failed to send incomplete task digest; it will be retried",
-        );
-      }
-    }
+  /** Start of the conversation a brief covers: since the last brief, capped. */
+  private briefWindowStart(groupId: string, nowMs: number): number {
+    const lastBrief = this.options.reminders.getOrCreateNextRun(
+      `founder_brief_since:${groupId}`,
+      nowMs - DAY_MS,
+    );
+    return Math.max(lastBrief, nowMs - MAX_BRIEF_WINDOW_MS);
   }
 
   private triggerRun(errorMessage: string): void {

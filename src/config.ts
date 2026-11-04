@@ -6,97 +6,116 @@ const optionalString = z
   .optional()
   .transform((value) => value?.trim() || undefined);
 
-const optionalTime = optionalString.refine(
-  (value) => !value || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value),
-  "Time must use 24-hour HH:mm format",
-);
+const isTime = (value: string | undefined) =>
+  !value || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 
-const azureOpenAIBaseUrl = z
-  .url("AZURE_OPENAI_BASE_URL must be a valid URL")
-  .refine(
-    (value) => new URL(value).pathname.replace(/\/+$/, "") === "/openai/v1",
-    "AZURE_OPENAI_BASE_URL must end with /openai/v1/",
-  )
-  .transform((value) => `${value.replace(/\/+$/, "")}/`);
-
-const schema = z.object({
-  AZURE_OPENAI_API_KEY: z.string().min(1, "AZURE_OPENAI_API_KEY is required"),
-  AZURE_OPENAI_BASE_URL: azureOpenAIBaseUrl,
-  AZURE_OPENAI_DEPLOYMENT: z
+/** A daily time that is on by default; an explicitly empty value turns it off. */
+const defaultOnTime = (fallback: string) =>
+  z
     .string()
-    .min(1, "AZURE_OPENAI_DEPLOYMENT is required")
+    .default(fallback)
+    .transform((value) => value.trim() || undefined)
+    .refine(isTime, "Time must use 24-hour HH:mm format");
+
+const booleanFlag = (defaultValue: "true" | "false") =>
+  z
+    .enum(["true", "false"])
+    .default(defaultValue)
+    .transform((value) => value === "true");
+
+const workersAiModel = (name: string) =>
+  z
+    .string()
+    .trim()
     .refine(
-      (value) => !value.startsWith("azure/"),
-      "AZURE_OPENAI_DEPLOYMENT must be the Azure deployment name without an azure/ prefix",
+      (value) => value === "" || value.startsWith("@cf/") || value.startsWith("@hf/"),
+      `${name} must be a Workers AI model id such as @cf/moonshotai/kimi-k2.6`,
+    );
+
+const schema = z
+  .object({
+    CLOUDFLARE_ACCOUNT_ID: z.string().trim().min(1, "CLOUDFLARE_ACCOUNT_ID is required"),
+    CLOUDFLARE_API_TOKEN: z
+      .string()
+      .trim()
+      .min(1, "CLOUDFLARE_API_TOKEN (Workers AI Read + D1 Edit) is required"),
+    CLOUDFLARE_AI_GATEWAY_ID: z.string().trim().min(1).default("default"),
+    CLOUDFLARE_AI_MODEL: workersAiModel("CLOUDFLARE_AI_MODEL")
+      .refine((value) => value !== "", "CLOUDFLARE_AI_MODEL cannot be empty")
+      .default("@cf/moonshotai/kimi-k2.6"),
+    CLOUDFLARE_AI_FALLBACK_MODEL: workersAiModel("CLOUDFLARE_AI_FALLBACK_MODEL").default(
+      "@cf/google/gemma-4-26b-a4b-it",
     ),
-  AZURE_OPENAI_MEDIA_DEPLOYMENT: optionalString.refine(
-    (value) => !value?.startsWith("azure/"),
-    "AZURE_OPENAI_MEDIA_DEPLOYMENT must be the Azure deployment name without an azure/ prefix",
-  ),
-  WHISPER_TRANSCRIPTION_URL: optionalString,
-  WHISPER_LANGUAGE: z.string().min(1).default("auto"),
-  WHISPER_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(180_000),
-  NOTION_API_KEY: z.string().min(1, "NOTION_API_KEY is required"),
-  NOTION_DATA_SOURCE_ID: z.string().min(1, "NOTION_DATA_SOURCE_ID is required"),
-  NOTION_BRAIN_DUMP_PAGE_ID: optionalString,
-  NOTION_KNOWLEDGE_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
-  NOTION_SCRIPT_SOURCE_MAP_JSON: z.string().default("{}"),
-  NOTION_SCRIPT_SERIES_NAME: z.string().min(1).default("Dekhte Hai"),
-  NOTION_TITLE_PROPERTY: z.string().default("Task name"),
-  NOTION_STATUS_PROPERTY: z.string().default("Status"),
-  NOTION_DEFAULT_STATUS: z.string().default("Not started"),
-  NOTION_DUE_DATE_PROPERTY: z.string().default("Due date"),
-  NOTION_ASSIGNEE_PROPERTY: z.string().default("Assignee"),
-  NOTION_DEFAULT_ASSIGNEE_ID: optionalString,
-  NOTION_ASSIGNEE_MAP_JSON: z.string().default("{}"),
-  NOTION_SPEND_DATA_SOURCE_ID: optionalString,
-  NOTION_SPEND_PAYER_MAP_JSON: optionalString,
-  NOTION_PRIORITY_PROPERTY: z.string().default("Priority"),
-  NOTION_TASK_TYPE_PROPERTY: z.string().default("Task type"),
-  TAVILY_API_KEY: optionalString,
-  RESEARCH_MAX_SEARCHES: z.coerce.number().int().min(1).max(5).default(3),
-  BOT_NAME: z.string().default("Captain Patch"),
-  BOT_TRIGGER: z.string().default("@patch"),
-  TIMEZONE: z.string().default("Asia/Kolkata"),
-  ALLOWED_GROUP_IDS: z.string().default(""),
-  AUTHORIZED_USER_IDS: z.string().default(""),
-  UNAUTHORIZED_REPLY: z
-    .string()
-    .min(1)
-    .default("Harbour's closed — only Autter's founders get the command deck. ⚓"),
-  CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
-  TASK_DIGEST_INTERVAL_HOURS: z.coerce.number().min(0).max(168).default(0),
-  TASK_DIGEST_GROUP_IDS: z.string().default(""),
-  FOUNDER_BRIEF_TIME: optionalTime,
-  FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
-  MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
-  NOTION_WEBHOOK_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
-  NOTION_WEBHOOK_PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-  NOTION_WEBHOOK_PATH: z.string().regex(/^\//).default("/notion/webhook"),
-  NOTION_WEBHOOK_VERIFICATION_TOKEN: optionalString,
-  NOTION_NOTIFICATION_GROUP_IDS: z.string().default(""),
-  NOTION_NOTIFY_BOT_EVENTS: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
-  LIST_GROUPS_ON_START: z
-    .enum(["true", "false"])
-    .default("true")
-    .transform((value) => value === "true"),
-  DATA_DIR: z.string().default(".data"),
-  LOG_LEVEL: z.string().default("info"),
-  PUPPETEER_EXECUTABLE_PATH: optionalString,
-});
+    CLOUDFLARE_AI_REASONING_EFFORT: z.enum(["", "none", "high"]).default("none"),
+    CLOUDFLARE_AI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
+    CLOUDFLARE_D1_DATABASE_ID: z
+      .string()
+      .trim()
+      .min(1, "CLOUDFLARE_D1_DATABASE_ID is required for the task list"),
+    CLOUDFLARE_D1_API_TOKEN: optionalString,
+    CLOUDFLARE_DOCUMENT_CONVERSION: booleanFlag("true"),
+    WHISPER_TRANSCRIPTION_URL: optionalString,
+    WHISPER_LANGUAGE: z.string().min(1).default("auto"),
+    WHISPER_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(180_000),
+    NOTION_API_KEY: optionalString,
+    NOTION_BRAIN_DUMP_PAGE_ID: optionalString,
+    NOTION_KNOWLEDGE_ENABLED: booleanFlag("false"),
+    NOTION_SCRIPT_SOURCE_MAP_JSON: z.string().default("{}"),
+    NOTION_SCRIPT_SERIES_NAME: z.string().min(1).default("Dekhte Hai"),
+    NOTION_SPEND_DATA_SOURCE_ID: optionalString,
+    NOTION_SPEND_PAYER_MAP_JSON: optionalString,
+    // Legacy name kept so existing deployments' payer maps keep working.
+    NOTION_ASSIGNEE_MAP_JSON: z.string().default("{}"),
+    TAVILY_API_KEY: optionalString,
+    RESEARCH_MAX_SEARCHES: z.coerce.number().int().min(1).max(5).default(3),
+    BOT_NAME: z.string().default("Captain Patch"),
+    BOT_TRIGGER: z.string().default("@patch"),
+    TIMEZONE: z.string().default("Asia/Kolkata"),
+    ALLOWED_GROUP_IDS: z.string().default(""),
+    AUTHORIZED_USER_IDS: z.string().default(""),
+    UNAUTHORIZED_REPLY: z
+      .string()
+      .min(1)
+      .default("Harbour's closed — only Autter's founders get the command deck. ⚓"),
+    CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().min(0).max(20).default(6),
+    // Days of group conversation kept locally for briefs and look-backs; 0 turns it off.
+    CONVERSATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(90),
+    // On by default (founders' decision); set it empty to turn the brief off.
+    FOUNDER_BRIEF_TIME: defaultOnTime("09:00"),
+    FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
+    MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
+    LIST_GROUPS_ON_START: booleanFlag("true"),
+    DATA_DIR: z.string().default(".data"),
+    LOG_LEVEL: z.string().default("info"),
+    PUPPETEER_EXECUTABLE_PATH: optionalString,
+  })
+  .superRefine((env, context) => {
+    const needsNotion =
+      env.NOTION_BRAIN_DUMP_PAGE_ID ||
+      env.NOTION_SPEND_DATA_SOURCE_ID ||
+      env.NOTION_KNOWLEDGE_ENABLED ||
+      env.NOTION_SCRIPT_SOURCE_MAP_JSON.trim() !== "{}";
+    if (env.FOUNDER_BRIEF_TIME && env.CONVERSATION_RETENTION_DAYS === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["FOUNDER_BRIEF_TIME"],
+        message:
+          "The daily brief is written from the group conversation; set CONVERSATION_RETENTION_DAYS above 0 or clear FOUNDER_BRIEF_TIME",
+      });
+    }
+    if (needsNotion && !env.NOTION_API_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["NOTION_API_KEY"],
+        message:
+          "NOTION_API_KEY is required when the Brain Dump, spend log, knowledge, or script library is configured",
+      });
+    }
+  });
 
 const env = schema.parse(process.env);
 
-function parseAssigneeMap(value: string): Readonly<Record<string, string>> {
+function parsePersonMap(value: string): Readonly<Record<string, string>> {
   const parsed: unknown = JSON.parse(value);
   const validated = z.record(z.string(), z.string().min(1)).parse(parsed);
   return Object.fromEntries(
@@ -124,44 +143,32 @@ function parseIdSet(value: string): ReadonlySet<string> {
   );
 }
 
-const notionAssigneeMap = parseAssigneeMap(env.NOTION_ASSIGNEE_MAP_JSON);
 const allowedGroupIds = parseIdSet(env.ALLOWED_GROUP_IDS);
-const configuredDigestGroupIds = parseIdSet(env.TASK_DIGEST_GROUP_IDS);
 const configuredBriefGroupIds = parseIdSet(env.FOUNDER_BRIEF_GROUP_IDS);
-const configuredNotionNotificationGroupIds = parseIdSet(
-  env.NOTION_NOTIFICATION_GROUP_IDS,
-);
 
 export const config = {
-  azureOpenAIApiKey: env.AZURE_OPENAI_API_KEY,
-  azureOpenAIBaseUrl: env.AZURE_OPENAI_BASE_URL,
-  azureOpenAIDeployment: env.AZURE_OPENAI_DEPLOYMENT,
-  azureOpenAIMediaDeployment:
-    env.AZURE_OPENAI_MEDIA_DEPLOYMENT ?? env.AZURE_OPENAI_DEPLOYMENT,
+  cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+  cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
+  aiGatewayId: env.CLOUDFLARE_AI_GATEWAY_ID,
+  aiModel: env.CLOUDFLARE_AI_MODEL,
+  aiFallbackModel: env.CLOUDFLARE_AI_FALLBACK_MODEL || undefined,
+  aiReasoningEffort: env.CLOUDFLARE_AI_REASONING_EFFORT || undefined,
+  aiTimeoutMs: env.CLOUDFLARE_AI_TIMEOUT_MS,
+  d1DatabaseId: env.CLOUDFLARE_D1_DATABASE_ID,
+  d1ApiToken: env.CLOUDFLARE_D1_API_TOKEN ?? env.CLOUDFLARE_API_TOKEN,
+  documentConversionEnabled: env.CLOUDFLARE_DOCUMENT_CONVERSION,
   whisperTranscriptionUrl: env.WHISPER_TRANSCRIPTION_URL,
   whisperLanguage: env.WHISPER_LANGUAGE,
   whisperTimeoutMs: env.WHISPER_TIMEOUT_MS,
   notionApiKey: env.NOTION_API_KEY,
-  notionDataSourceId: env.NOTION_DATA_SOURCE_ID,
   notionBrainDumpPageId: env.NOTION_BRAIN_DUMP_PAGE_ID,
   notionKnowledgeEnabled: env.NOTION_KNOWLEDGE_ENABLED,
   notionScriptSources: parseScriptSourceMap(env.NOTION_SCRIPT_SOURCE_MAP_JSON),
   notionScriptSeriesName: env.NOTION_SCRIPT_SERIES_NAME,
-  notionProperties: {
-    title: env.NOTION_TITLE_PROPERTY,
-    status: env.NOTION_STATUS_PROPERTY,
-    dueDate: env.NOTION_DUE_DATE_PROPERTY,
-    assignee: env.NOTION_ASSIGNEE_PROPERTY,
-    priority: env.NOTION_PRIORITY_PROPERTY,
-    taskType: env.NOTION_TASK_TYPE_PROPERTY,
-  },
-  notionDefaultStatus: env.NOTION_DEFAULT_STATUS,
-  notionDefaultAssigneeId: env.NOTION_DEFAULT_ASSIGNEE_ID,
-  notionAssigneeMap,
   notionSpendDataSourceId: env.NOTION_SPEND_DATA_SOURCE_ID,
-  notionSpendPayerMap: env.NOTION_SPEND_PAYER_MAP_JSON
-    ? parseAssigneeMap(env.NOTION_SPEND_PAYER_MAP_JSON)
-    : notionAssigneeMap,
+  notionSpendPayerMap: parsePersonMap(
+    env.NOTION_SPEND_PAYER_MAP_JSON ?? env.NOTION_ASSIGNEE_MAP_JSON,
+  ),
   tavilyApiKey: env.TAVILY_API_KEY,
   researchMaxSearches: env.RESEARCH_MAX_SEARCHES,
   botName: env.BOT_NAME,
@@ -171,26 +178,11 @@ export const config = {
   authorizedUserIds: parseIdSet(env.AUTHORIZED_USER_IDS),
   unauthorizedReply: env.UNAUTHORIZED_REPLY,
   contextMessageLimit: env.CONTEXT_MESSAGE_LIMIT,
-  taskDigestIntervalHours: env.TASK_DIGEST_INTERVAL_HOURS,
-  taskDigestGroupIds:
-    configuredDigestGroupIds.size > 0
-      ? configuredDigestGroupIds
-      : allowedGroupIds,
+  conversationRetentionDays: env.CONVERSATION_RETENTION_DAYS,
   founderBriefTime: env.FOUNDER_BRIEF_TIME,
   founderBriefGroupIds:
-    configuredBriefGroupIds.size > 0
-      ? configuredBriefGroupIds
-      : allowedGroupIds,
+    configuredBriefGroupIds.size > 0 ? configuredBriefGroupIds : allowedGroupIds,
   mediaMaxBytes: env.MEDIA_MAX_BYTES,
-  notionWebhookEnabled: env.NOTION_WEBHOOK_ENABLED,
-  notionWebhookPort: env.NOTION_WEBHOOK_PORT,
-  notionWebhookPath: env.NOTION_WEBHOOK_PATH,
-  notionWebhookVerificationToken: env.NOTION_WEBHOOK_VERIFICATION_TOKEN,
-  notionNotificationGroupIds:
-    configuredNotionNotificationGroupIds.size > 0
-      ? configuredNotionNotificationGroupIds
-      : allowedGroupIds,
-  notionNotifyBotEvents: env.NOTION_NOTIFY_BOT_EVENTS,
   listGroupsOnStart: env.LIST_GROUPS_ON_START,
   dataDir: env.DATA_DIR,
   logLevel: env.LOG_LEVEL,

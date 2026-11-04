@@ -4,18 +4,24 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Captain Patch is an open-source, self-hosted WhatsApp group assistant with an AI personality, founder-only commands, Notion task management, voice and file understanding, proactive briefs, and optional live web search.
+Captain Patch is an open-source, self-hosted WhatsApp chief of staff for a founding team. It keeps the company task list in **Cloudflare D1**, thinks with an **open-source model on Workers AI routed through Cloudflare AI Gateway**, remembers the group's own conversation so its answers and briefs are grounded in what you actually said, logs founder spending, captures ideas in a Notion Brain Dump, understands voice notes, screenshots, and PDFs, and only speaks unprompted for reminders you explicitly set.
 
-It is Autter's sarcastic harbour-master mascot out of the box, but the personality and company context live in one small file and can be replaced for another team, community, family, or product.
+It is Autter's sarcastic harbour-master mascot out of the box, but the personality and company context live in one small file and can be replaced for another team.
 
 ```text
-@patch summarize what we decided
-@patch add a high-priority task to ship the onboarding fix tomorrow
-@patch which tasks are due this week?
-@patch search the web for today's AI code-review news
-@patch comment "Research added" on the publishing task
-@patch attach this screenshot to the launch task
+@patch add tasks: renew the domain by Friday, Tanvi to call Rahul about the pilot
+@patch what's overdue?
+@patch mark #12 done and move #14 to blocked — waiting on the CA
+@patch delete task 9
+@patch add to spend log: chai 120 upi, auto 260 cash
+@patch put this in the brain dump: onboarding should start with a repo scan
+@patch turn the quoted meeting notes into tasks
+@patch what did we decide about pricing yesterday?
+@patch capture everything we agreed today as tasks
+@patch research AI code-review pricing and add it to the brain dump
 ```
+
+The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-of-staff-plan.md`](docs/chief-of-staff-plan.md).
 
 > [!WARNING]
 > This project uses [`whatsapp-web.js`](https://github.com/pedroslopez/whatsapp-web.js), an unofficial automation layer for WhatsApp Web. It is not endorsed or supported by Meta. WhatsApp can change its protocol, log out the linked session, or restrict the account. Use a dedicated, non-critical number and review WhatsApp's terms before deploying it.
@@ -25,45 +31,33 @@ It is Autter's sarcastic harbour-master mascot out of the box, but the personali
 - [What it does](#what-it-does)
 - [How it works](#how-it-works)
 - [Quick start with Docker](#quick-start-with-docker)
-- [Configure Notion](#configure-notion)
+- [Configure Cloudflare](#configure-cloudflare)
+- [The task list](#the-task-list)
+- [The group conversation](#the-group-conversation)
+- [Configure Notion (spend log and Brain Dump)](#configure-notion-spend-log-and-brain-dump)
 - [Find group and sender IDs](#find-group-and-sender-ids)
 - [Enable web search](#enable-web-search)
 - [Environment variables](#environment-variables)
 - [Deployment](#deployment)
-- [Customizing the bot](#customizing-the-bot)
 - [Privacy and security model](#privacy-and-security-model)
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
-- [Contributing](#contributing)
 
 ## What it does
 
-- Listens in WhatsApp **group chats** and responds only when triggered.
-- Accepts commands only from explicitly allowlisted WhatsApp accounts.
-- Gives unauthorized users a short AI-generated rejection without exposing normal tools.
-- Answers ordinary questions by calling the Azure OpenAI v1 endpoint directly.
-- Fetches the complete current Dekhte Hai script library from multiple Notion databases whenever the series is mentioned.
-- Creates Notion tasks with title, status, due date, assignee, priority, task type, notes, and WhatsApp provenance.
-- Reads and filters Notion tasks by title, exact status, and due-date range.
-- Optionally batch-adds and reads founder expenses in a separate Notion Daily Spend Log.
-- Fully edits an exactly matched task's properties and page-body content.
-- Reads and adds comments on exactly matched task pages.
-- Understands attached images and PDFs, and can upload attachments to a matched task.
-- Transcribes quoted WhatsApp voice notes locally with open-source `whisper.cpp`.
-- Optionally reads and appends large notes to one configured Notion Brain Dump page, chunking oversized writes without dropping content.
-- Optionally searches and reads company knowledge shared with the Notion integration.
-- Stores persistent reminders in SQLite, including advance, due-time, and repeating notifications.
-- Optionally posts an incomplete-task digest from Notion on a persistent interval.
-- Optionally generates a daily AI founder brief from open tasks and reminders.
-- Optionally forwards human Notion task edits and comments into WhatsApp through signed webhooks.
-- Optionally performs one bounded Tavily search and returns source URLs.
-- Delegates explicit research requests to a separate, multi-search Azure/Luna research agent with cited findings.
-- Keeps a short in-memory group context window for follow-up questions.
-- Deduplicates messages with SQLite, including current WhatsApp LID message IDs.
-- Persists the linked WhatsApp session across Docker rebuilds.
-- Runs headlessly on a laptop or Linux VPS, including Amazon Lightsail.
-- Ships with TypeScript, ESLint, Vitest, Docker, and GitHub Actions CI.
+- Listens in WhatsApp **group chats**, responds only when triggered, and accepts commands only from allowlisted senders.
+- Keeps Autter's **task list in Cloudflare D1**: create (single or batch), search and filter, edit any field, append notes, complete, and delete, with an audit trail of every change.
+- Runs on an **open-source model** (default `@cf/moonshotai/kimi-k2.6`) through **Cloudflare AI Gateway**, with automatic fallback to a second model (default `@cf/google/gemma-4-26b-a4b-it`) when the primary is rate limited or down.
+- Keeps the **group conversation** locally (90 days by default) so Patch can answer "what did we decide?", turn a discussion into tasks, and write briefs from what was actually said.
+- Logs and totals founder expenses in the Notion **Daily Spend Log**.
+- Reads and appends to the Notion **Brain Dump** page, including "research this and save it there".
+- Understands screenshots (vision), PDFs and Office documents (converted to Markdown by Workers AI), and voice notes (transcribed locally with `whisper.cpp`).
+- Drafts emails, investor updates, JDs, agendas, follow-ups, and summaries on request.
+- Stores persistent personal reminders in SQLite (advance, due-time, and optional repeats).
+- Sends **one** daily brief at 09:00 (on by default) written from the conversation since the last brief, cross-checked against D1 tasks and reminders, and skipped when the group was quiet. There is no periodic task digest and no Notion task notifications.
+- Optionally performs bounded Tavily web search and multi-search delegated research with citations.
+- Optionally reads the live Dekhte Hai script library and company Notion pages (both off by default).
 
 ## Captain Patch and Autter
 
@@ -77,63 +71,37 @@ To adapt the project for your own organization, see [Customizing the bot](#custo
 
 ```mermaid
 flowchart LR
-    W["WhatsApp group message"] --> T{"@patch or real mention?"}
+    W["WhatsApp group message"] --> T{"@patch or mention?"}
     T -- No --> C["Short in-memory context buffer"]
-    T -- Yes --> G{"Allowed group?"}
-    G -- No --> X["Ignore"]
-    G -- Yes --> D["SQLite deduplication"]
-    D --> U{"Authorized sender?"}
-    U -- No --> R["Sarcastic no-tools rejection"]
-    U -- Yes --> A["Direct Azure OpenAI v1 call"]
-    C -.->|included only on a later trigger| A
-    A --> Q["Normal WhatsApp answer"]
-    A --> MR["Recall Autter memory"]
-    Q --> MW["Remember exact founder/Patch exchange"]
-    A --> N1["Create Notion task"]
-    A --> N2["Read Notion tasks"]
-    A --> N5["Update matched Notion task"]
-    A --> N3["Read or append Brain Dump"]
-    A --> N4["Search/read company Notion"]
-    A --> N6["Task comments and attachments"]
-    A --> N7["Read/write founder spend log"]
-    A --> S["One Tavily web search"]
-    A --> RA["Patch Research agent"]
-    RA --> MS["Up to 3 focused Tavily searches"]
-    NW["Signed Notion webhook"] --> PN["Proactive WhatsApp notification"]
-    SC["SQLite scheduler"] --> FB["Reminders, digests, founder brief"]
-    N1 --> O["WhatsApp response"]
-    N2 --> O
-    N5 --> O
-    N3 --> O
-    N4 --> O
-    N6 --> O
-    N7 --> O
-    S --> O
+    T -- Yes --> G{"Allowed group + authorized sender?"}
+    G -- No --> R["Sarcastic no-tools rejection"]
+    G -- Yes --> A["Patch tool loop"]
+    C -.->|only on a later trigger| A
+    A <--> M["Workers AI model via AI Gateway"]
+    A --> D1[("Cloudflare D1 task list + audit log")]
+    A --> SL["Notion Daily Spend Log"]
+    A --> BD["Notion Brain Dump"]
+    A --> S["Tavily search / Patch Research"]
+    A --> RM[("SQLite reminders")]
+    W -.->|every message| CL[("SQLite conversation log")]
+    A --> CL
+    SC["Scheduler"] --> RM
+    SC --> CL
+    SC --> BR["Optional daily brief from the conversation + D1"]
+    A --> O["WhatsApp reply"]
 ```
 
-Authorization happens before the assistant receives access to Notion or web search. An empty sender allowlist fails closed.
-
-The linked WhatsApp client also runs a small scheduler. It reads due reminders, digest state, and daily-brief state from SQLite, then sends proactive messages into configured groups. Only the founder brief calls the AI model; reminders and task digests are deterministic.
-
-Patch uses the current triggered message, bounded recent group context, and live Notion, SQLite, and web-search tools. It does not persist arbitrary WhatsApp conversations as long-term AI memory.
+Every write (tasks, spends, Brain Dump, reminders) is confirmed to the group from the stored result, not from model prose, so Patch cannot claim it did something it did not do. When a message clearly asks for an action, the first model turn is required to call a tool. Task edits and deletes are only accepted for an `#id` the founder named or that `list_tasks` returned in the same request, so the model cannot act on a guessed id.
 
 ## Requirements
 
-Required:
-
 - Node.js 24+ or Docker with Compose
 - A dedicated or non-critical WhatsApp account
-- An [Azure OpenAI resource](https://learn.microsoft.com/azure/ai-services/openai/overview), API key, and deployed model that supports the Responses API
-- A [Notion internal integration](https://www.notion.so/profile/integrations) connected to a task database, with read/insert/update/comment capabilities used by the features you enable
-
-Optional:
-
-- A [Tavily API key](https://app.tavily.com/) for live web search
-- A VPS such as Amazon Lightsail for continuous operation
+- A Cloudflare account with **Workers AI** (the default Kimi K2.6 model needs Workers Paid or AI Gateway credits) and a **D1** database
+- A Notion internal integration only if you use the spend log, Brain Dump, knowledge, or script features
+- Optional: a [Tavily API key](https://app.tavily.com/) for web search and research
 
 ## Quick start with Docker
-
-Docker is the simplest path because the image already includes Chromium.
 
 ```bash
 git clone https://github.com/sagnik11/dia-whatsapp-bot.git
@@ -141,36 +109,23 @@ cd dia-whatsapp-bot
 cp .env.example .env
 ```
 
-Fill in the required values in `.env`:
+Fill in the required values in `.env` (see [Configure Cloudflare](#configure-cloudflare)):
 
 ```dotenv
-AZURE_OPENAI_API_KEY=your_azure_resource_key
-AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
-AZURE_OPENAI_DEPLOYMENT=gpt-luna
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_API_TOKEN=token_with_workers_ai_read_and_d1_edit
+CLOUDFLARE_AI_GATEWAY_ID=patch
+CLOUDFLARE_D1_DATABASE_ID=your_d1_database_uuid
 
+# Optional Notion features
 NOTION_API_KEY=your_notion_integration_token
-NOTION_DATA_SOURCE_ID=your_notion_data_source_id
-# Optional bounded page context and append-only notes
-NOTION_BRAIN_DUMP_PAGE_ID=your_notion_page_id
-# Autter's live Dekhte Hai scripts span Document Hub and Content Planner.
-NOTION_SCRIPT_SOURCE_MAP_JSON={"06e38545-b932-83be-b4c1-87b686b45ee7":"Doc name","89c38545-b932-830f-95bc-07ed911e3893":"Post name"}
-NOTION_SCRIPT_SERIES_NAME=Dekhte Hai
-# Optional founder expense log
 NOTION_SPEND_DATA_SOURCE_ID=your_spend_log_data_source_id
+NOTION_SPEND_PAYER_MAP_JSON={"sagnik":"notion-user-id-1","tanvi":"notion-user-id-2"}
+NOTION_BRAIN_DUMP_PAGE_ID=your_brain_dump_page_id
 
 BOT_NAME=Captain Patch
 BOT_TRIGGER=@patch
 TIMEZONE=Asia/Kolkata
-```
-
-`AZURE_OPENAI_BASE_URL` is the endpoint shown on the Azure resource with `/openai/v1/` appended. `AZURE_OPENAI_DEPLOYMENT` is the deployment name from Azure, which can differ from the underlying model name. Existing installations must remove the four `AI_GATEWAY_*` variables and add the corresponding `AZURE_OPENAI_*` values; Vercel credentials and `azure/model-name` identifiers are no longer accepted.
-
-The optional script source map gives Patch a dedicated live series reader. It queries every configured data source for active pages named like `Dekhte Hai Ep 7`, fetches their current page bodies, deduplicates by episode number, and sends the ordered library to Luna. Notion edits are visible on the next request, and future episode pages are discovered without another deployment as long as they are created in one of those databases. Both databases must be connected to the bot's Notion integration with **Read content** access.
-
-```text
-@patch compare the tone across all Dekhte Hai scripts
-@patch draft Dekhte Hai Ep 7 using the format and callbacks from earlier episodes
-@patch which topics have we already covered in Dekhte Hai?
 ```
 
 Build and run in the foreground for the first pairing:
@@ -210,37 +165,57 @@ npm run dev
 
 If Puppeteer cannot locate a browser, set `PUPPETEER_EXECUTABLE_PATH` to the Chrome or Chromium executable.
 
-## Configure Notion
+## Configure Cloudflare
 
-Create a Notion internal integration with **Read content**, **Insert content**, and **Update content** capabilities, then add that integration as a connection to the task database. Update content is needed only for optional Brain Dump appends.
+1. **D1 database.** Use your existing database or create one with `npx wrangler d1 create patch`. Copy its UUID into `CLOUDFLARE_D1_DATABASE_ID`. Patch creates its `tasks` and `task_events` tables on startup; to create them ahead of time run `npx wrangler d1 execute <database-name> --remote --file=migrations/0001_tasks.sql`.
+2. **AI Gateway.** In the dashboard, open **AI > AI Gateway** and create a gateway (for example `patch`). Set `CLOUDFLARE_AI_GATEWAY_ID` to its name. `default` also works and is created automatically. Turn on logging, and consider rate limiting and a spend alert there.
+3. **API token.** Create a token under **My Profile > API Tokens** with **Account > Workers AI > Read** and **Account > D1 > Edit** for this account. Put it in `CLOUDFLARE_API_TOKEN`. To keep D1 and AI permissions separate, set `CLOUDFLARE_D1_API_TOKEN` to a second, D1-only token.
+4. **Models.** Defaults are `CLOUDFLARE_AI_MODEL=@cf/moonshotai/kimi-k2.6` (262k context, tool calling, vision) and `CLOUDFLARE_AI_FALLBACK_MODEL=@cf/google/gemma-4-26b-a4b-it` (cheaper, higher rate limit, tools and vision). Any Workers AI model with function calling can be swapped in. `CLOUDFLARE_AI_REASONING_EFFORT=none` keeps WhatsApp replies fast; set `high` for slower, more deliberate answers.
 
-The default schema is:
+Patch calls `https://api.cloudflare.com/client/v4/accounts/<account>/ai/v1/chat/completions` with a `cf-aig-gateway-id` header, so every request shows up in AI Gateway logs and analytics, tagged with a feature name and a hashed sender id (never a phone number).
 
-| Property | Notion type | Expected values |
-| --- | --- | --- |
-| `Task name` | Title | Any task title |
-| `Status` | Status | Must contain `Not started` unless overridden |
-| `Due date` | Date | Optional |
-| `Assignee` | People | Optional |
-| `Priority` | Select | `High`, `Med`, `Low` |
-| `Task type` | Multi-select | `Tech`, `Marketing`, `Content`, `Misc`, `Product` |
+## The task list
 
-Property names are configurable. Property **types and option names** must still match the tool schemas in the current implementation.
+Tasks live in the D1 `tasks` table with an id, title, notes, status (`todo`, `in_progress`, `blocked`, `done`, `cancelled`), priority, owner, area, due date, and tags. Every create, update, and delete is also written to `task_events` with the actor and a before/after diff.
 
-Notion API versions from 2025-09-03 onward distinguish a database container from its data sources. `NOTION_DATA_SOURCE_ID` must be the data source ID, not merely the parent database ID.
-
-### Assignee mapping
-
-Notion people properties require user IDs rather than display names. Configure a default and optional case-insensitive aliases:
-
-```dotenv
-NOTION_DEFAULT_ASSIGNEE_ID=notion-user-id-for-you
-NOTION_ASSIGNEE_MAP_JSON={"sagnik":"user-id-1","tanvi":"user-id-2"}
+```text
+@patch add a high-priority task for me to send the investor update by Friday
+@patch capture these as tasks: 1. renew domain 2. GST filing for Sagnik 3. Tanvi to brief the designer
+@patch which tasks does Tanvi own that are due this week?
+@patch what's blocked?
+@patch move #7 to in progress and add a note: CA replied, need PAN copy
+@patch rename task 4 to "Ship onboarding v2" and clear its due date
+@patch delete tasks 11 and 12
 ```
 
-Unknown names remain unassigned, but the requested name is preserved in the task page body.
+- "me" as an owner means the sender. Relative dates resolve in `TIMEZONE`.
+- Notes are appended by default and replaced only when you explicitly ask.
+- Deleting is a soft delete: the task disappears from every list but stays in D1, with its last snapshot recorded in `task_events`.
+- A message retried by WhatsApp will not create duplicate tasks.
+- Patch never posts task digests. You see the list when you ask, plus the optional daily brief.
 
-### Optional founder spend log
+## The group conversation
+
+Patch keeps every message in its allowed groups, plus its own replies, in the local SQLite database on your server for `CONVERSATION_RETENTION_DAYS` (default 90). Nothing from this log goes to D1 or Notion. It is sent to the model only when a founder asks about earlier discussion or when the daily brief is written.
+
+```text
+@patch what did we decide about pricing on Monday?
+@patch catch me up on today
+@patch what did Tanvi promise Rahul?
+@patch capture everything we agreed today as tasks
+@patch minutes of this morning's discussion
+```
+
+- Answers are grounded in the returned messages and attribute each point to whoever said it; if the log does not cover something, Patch says so.
+- Patch only reads the log of the group it was asked in, at most a week back per request.
+- Voice notes are logged as `[ptt attachment]` unless someone asks Patch about them.
+- Set `CONVERSATION_RETENTION_DAYS=0` to turn the log off (then also set `FOUNDER_BRIEF_TIME=` empty).
+
+## Configure Notion (spend log and Brain Dump)
+
+Notion is now optional and limited to the spend log and Brain Dump (plus the off-by-default knowledge and script readers). It holds no tasks. Create an internal integration and connect it only to the pages and databases below.
+
+### Founder spend log
 
 Connect the same Notion integration to a separate expense database and set its **data source ID**:
 
@@ -278,31 +253,7 @@ Expenses by Tanvi:
 
 The integration needs **Read content** and **Insert content** access to this database. The model uses the closest configured category and chooses `Other` when uncertain; it asks for clarification instead of guessing a genuinely ambiguous date or amount.
 
-### Existing-task updates
-
-Captain Patch can update the title, status, due date, assignee, priority, task types, and page-body content of one existing task. It first searches the task tracker, accepts only a page ID returned by that search in the same request, and refuses ambiguous bulk changes.
-
-```text
-@patch move Feedbacks from Intern Applications from Completed to In progress and assign it to Tanvi
-@patch add the interview notes to the Feedbacks from Intern Applications task page
-@patch change the launch task priority to High and its due date to Friday
-```
-
-Notes are appended by default. Patch replaces the complete task-page body only when explicitly asked to replace or rewrite it, and it will not delete nested child pages/databases during a replacement. Properties can be cleared only by an explicit request. Assignee changes require the name in `NOTION_ASSIGNEE_MAP_JSON`; redundant writes are skipped. The Notion integration needs **Update content** capability.
-
-### Task comments and attachments
-
-Patch can read existing comments, add a comment, and upload a WhatsApp attachment to one exactly matched task. As with edits, it must search the tracker first and refuses ambiguous matches.
-
-```text
-@patch show the comments on the publishing task
-@patch comment "Research is ready for review" on the publishing task
-@patch attach this screenshot to the launch task
-```
-
-For attachment commands, send the file with the command as its caption, or reply `@patch attach this to the launch task` to the message containing the file. The Notion integration needs the relevant **Read content**, **Insert content**, **Update content**, and comment capabilities. Upload size is also bounded by `MEDIA_MAX_BYTES`.
-
-### Optional Brain Dump access
+### Brain Dump
 
 To let Captain Patch answer questions from one Notion page, add the same internal integration as a connection to that page and set:
 
@@ -343,24 +294,24 @@ Examples:
 @patch summarize the latest weekly product update from company knowledge
 ```
 
+The optional Dekhte Hai script reader is enabled by `NOTION_SCRIPT_SOURCE_MAP_JSON`, which maps each data-source ID to its title property. It fetches every current `Dekhte Hai Ep N` page whenever the series is mentioned.
+
 ## Voice notes, screenshots, and PDFs
 
-Images and PDFs are sent to `AZURE_OPENAI_DEPLOYMENT` for multimodal understanding. No second hosted model is required when the primary Azure deployment supports the input type. `AZURE_OPENAI_MEDIA_DEPLOYMENT` remains an optional override for deployments that use a separate multimodal model. You can send media with an `@patch` caption or reply with an `@patch` command to an existing media message.
+Screenshots and photos go to the model as vision input. PDFs and Office documents are converted to Markdown with Workers AI's `toMarkdown` endpoint (set `CLOUDFLARE_DOCUMENT_CONVERSION=false` to turn this off), so open models can read them. A document that cannot be converted does not drop your message; Patch just says it could not read the file. Send media with an `@patch` caption, or reply to a media message with an `@patch` command.
 
 Voice notes are transcribed first by a private [`whisper.cpp`](https://github.com/ggml-org/whisper.cpp) service in Docker Compose. Because WhatsApp voice notes do not carry a normal text caption, reply to the voice note with `@patch summarize this` (or another command).
 
 ```dotenv
-AZURE_OPENAI_DEPLOYMENT=gpt-luna
-AZURE_OPENAI_MEDIA_DEPLOYMENT=
 WHISPER_MODEL=tiny
 WHISPER_THREADS=2
 WHISPER_LANGUAGE=auto
 MEDIA_MAX_BYTES=5000000
 ```
 
-The default multilingual `tiny` model is about 75 MiB on disk and uses roughly 273 MB of memory. Change `WHISPER_MODEL=base` for better accuracy at the cost of slower CPU inference, about 142 MiB on disk, and roughly 388 MB of memory. The model is downloaded once into the `whisper-models` Docker volume. Audio never goes to a transcription API; Luna receives only the resulting transcript. Transcripts, images, and documents are treated as untrusted user content.
+The default multilingual `tiny` model is about 75 MiB on disk and uses roughly 273 MB of memory. Change `WHISPER_MODEL=base` for better accuracy at the cost of slower CPU inference, about 142 MiB on disk, and roughly 388 MB of memory. The model is downloaded once into the `whisper-models` Docker volume. Audio never goes to a transcription API; the model receives only the resulting transcript. Transcripts, images, and documents are treated as untrusted user content.
 
-## Reminders and proactive task digests
+## Reminders and the daily brief
 
 Reminders are stored in the same persistent SQLite file as message deduplication, so container rebuilds and restarts do not erase them. By default Patch asks the model to schedule an advance notification ten minutes before the due time and another when due. Repetition is added only when explicitly requested and continues until cancelled.
 
@@ -374,41 +325,14 @@ Reminders are stored in the same persistent SQLite file as message deduplication
 
 The reminder confirmation includes its numeric ID. Marking a reminder completed stops all future notifications, including repeats. A reminder belongs to the WhatsApp group where it was created, and completion or cancellation is limited to that group.
 
-The incomplete-task digest is disabled by default. To send one immediately after first startup and then every four hours:
-
-```dotenv
-TASK_DIGEST_INTERVAL_HOURS=4
-TASK_DIGEST_GROUP_IDS=120363000000000000@g.us
-```
-
-If `TASK_DIGEST_GROUP_IDS` is empty, it uses `ALLOWED_GROUP_IDS`. The digest excludes statuses commonly treated as terminal (`Complete`, `Completed`, `Done`, `Cancelled`, `Canceled`, and `Archived`), includes due dates and assignees, paginates through the tracker, and splits long digests across WhatsApp messages. Its next delivery time is persisted in SQLite, so a restart does not restart the four-hour clock.
-
-### Daily founder brief
-
-The daily brief synthesizes incomplete Notion tasks and active reminders into a short prioritized WhatsApp update:
+### Daily brief
 
 ```dotenv
 FOUNDER_BRIEF_TIME=09:00
 FOUNDER_BRIEF_GROUP_IDS=120363000000000000@g.us
 ```
 
-The time uses `TIMEZONE`. If the group list is empty, Patch uses `ALLOWED_GROUP_IDS`. Unlike the deterministic four-hour digest, this feature calls `AZURE_OPENAI_DEPLOYMENT` once per destination per day.
-
-## Notion change notifications
-
-Patch can receive signed Notion webhooks for task creation, task property/page changes, and new or updated comments, then post compact notifications to WhatsApp. Bot-authored events are ignored by default to prevent Patch's own writes from echoing back.
-
-This requires a public HTTPS endpoint; the Docker port is intentionally bound only to `127.0.0.1` and should sit behind Caddy, nginx, a tunnel, or another TLS reverse proxy. Configure:
-
-```dotenv
-NOTION_WEBHOOK_ENABLED=true
-NOTION_WEBHOOK_PORT=3000
-NOTION_WEBHOOK_PATH=/notion/webhook
-NOTION_NOTIFICATION_GROUP_IDS=120363000000000000@g.us
-NOTION_NOTIFY_BOT_EVENTS=false
-```
-
-Create a Notion webhook subscription pointing to `https://YOUR_DOMAIN/notion/webhook`. On the initial verification request, Patch logs `verificationToken`. Copy that value into `NOTION_WEBHOOK_VERIFICATION_TOKEN`, restart the container, and keep the token secret. Subsequent deliveries are rejected unless their `X-Notion-Signature` is valid. See the [Lightsail guide](docs/lightsail.md#optional-public-https-for-notion-webhooks) for a Caddy setup.
+The brief is on by default at 09:00 in `TIMEZONE`; set `FOUNDER_BRIEF_TIME=` empty to turn it off, and Patch then never posts anything you did not ask for except your own reminders. Patch sends one brief per day written from the group conversation since the previous brief: what came up, what was decided, who committed to what (flagging commitments not yet on the task list), open questions, and the D1 tasks that are due or were discussed. If only Patch spoke since the last brief, no brief is sent and the next one covers the gap (up to three days). The old `TASK_DIGEST_*` and `NOTION_WEBHOOK_*` settings have been removed.
 
 ## Find group and sender IDs
 
@@ -472,7 +396,7 @@ Examples:
 ```text
 @patch research the best places to launch Autter to developers
 @patch do a competitive analysis of AI code review tools
-@patch research publishing channels and append the report to the publishing task
+@patch research publishing channels and add the findings to the brain dump
 ```
 
 Every individual Tavily call still uses these server-enforced limits:
@@ -492,54 +416,49 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `AZURE_OPENAI_API_KEY` | Yes | — | API key from the Azure OpenAI resource. |
-| `AZURE_OPENAI_BASE_URL` | Yes | — | Direct Azure v1 URL, for example `https://resource.openai.azure.com/openai/v1/`. |
-| `AZURE_OPENAI_DEPLOYMENT` | Yes | — | Azure deployment name, without the old `azure/` provider prefix. |
-| `AZURE_OPENAI_MEDIA_DEPLOYMENT` | No | `AZURE_OPENAI_DEPLOYMENT` | Optional deployment override for images and PDFs. |
-| `WHISPER_MODEL` | No | `tiny` | Local whisper.cpp multilingual model downloaded by Compose; `base` improves accuracy. |
-| `WHISPER_THREADS` | No | `2` | CPU threads assigned to local transcription. |
-| `WHISPER_LANGUAGE` | No | `auto` | Spoken-language hint sent to local Whisper. |
-| `WHISPER_TIMEOUT_MS` | No | `180000` | Maximum local transcription request duration. |
-| `WHISPER_TRANSCRIPTION_URL` | No | Compose-managed | Local whisper.cpp inference URL for non-Compose runs. |
-| `NOTION_API_KEY` | Yes | — | Notion internal integration token. |
-| `NOTION_DATA_SOURCE_ID` | Yes | — | Task tracker's data source ID. |
-| `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables bounded reads and append-only notes for one specific page. |
-| `NOTION_KNOWLEDGE_ENABLED` | No | `false` | Searches and reads all content shared with the Notion integration. Review Content access first. |
-| `NOTION_TITLE_PROPERTY` | No | `Task name` | Title property name. |
-| `NOTION_STATUS_PROPERTY` | No | `Status` | Status property name. |
-| `NOTION_DEFAULT_STATUS` | No | `Not started` | Status assigned to new tasks. |
-| `NOTION_DUE_DATE_PROPERTY` | No | `Due date` | Date property name. |
-| `NOTION_ASSIGNEE_PROPERTY` | No | `Assignee` | People property name. |
-| `NOTION_DEFAULT_ASSIGNEE_ID` | No | Empty | Default Notion user ID. |
-| `NOTION_ASSIGNEE_MAP_JSON` | No | `{}` | JSON mapping of names to Notion user IDs. |
-| `NOTION_SPEND_DATA_SOURCE_ID` | No | Empty | Enables read/write access to a separate Daily Spend Log data source. |
-| `NOTION_SPEND_PAYER_MAP_JSON` | No | `NOTION_ASSIGNEE_MAP_JSON` | Optional JSON mapping of payer names to Notion user IDs. |
-| `NOTION_PRIORITY_PROPERTY` | No | `Priority` | Select property name. |
-| `NOTION_TASK_TYPE_PROPERTY` | No | `Task type` | Multi-select property name. |
-| `TAVILY_API_KEY` | No | Empty | Enables quick web lookup and delegated research. |
-| `RESEARCH_MAX_SEARCHES` | No | `3` | Maximum distinct Tavily searches in one research run; range `1-5`. |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | — | Cloudflare account that owns Workers AI, AI Gateway, and D1. |
+| `CLOUDFLARE_API_TOKEN` | Yes | — | Token with Workers AI Read and D1 Edit. |
+| `CLOUDFLARE_AI_GATEWAY_ID` | No | `default` | AI Gateway name used for logs, caching, rate limits, and analytics. |
+| `CLOUDFLARE_AI_MODEL` | No | `@cf/moonshotai/kimi-k2.6` | Primary Workers AI model; must support function calling. |
+| `CLOUDFLARE_AI_FALLBACK_MODEL` | No | `@cf/google/gemma-4-26b-a4b-it` | Used when the primary returns 429/5xx. Empty disables fallback. |
+| `CLOUDFLARE_AI_REASONING_EFFORT` | No | `none` | `none`, `high`, or empty for the model default. |
+| `CLOUDFLARE_AI_TIMEOUT_MS` | No | `120000` | Per-request model timeout. |
+| `CLOUDFLARE_D1_DATABASE_ID` | Yes | — | D1 database UUID for the task list. |
+| `CLOUDFLARE_D1_API_TOKEN` | No | `CLOUDFLARE_API_TOKEN` | Optional separate D1-only token. |
+| `CLOUDFLARE_DOCUMENT_CONVERSION` | No | `true` | Convert PDFs and documents to Markdown with Workers AI. |
+| `WHISPER_MODEL` | No | `tiny` | Local whisper.cpp model downloaded by Compose; `base` is more accurate. |
+| `WHISPER_THREADS` | No | `2` | CPU threads for local transcription. |
+| `WHISPER_LANGUAGE` | No | `auto` | Spoken-language hint. |
+| `WHISPER_TIMEOUT_MS` | No | `180000` | Maximum transcription duration. |
+| `WHISPER_TRANSCRIPTION_URL` | No | Compose-managed | whisper.cpp URL for non-Compose runs. |
+| `NOTION_API_KEY` | With Notion features | Empty | Notion integration token. |
+| `NOTION_SPEND_DATA_SOURCE_ID` | No | Empty | Enables the Daily Spend Log. |
+| `NOTION_SPEND_PAYER_MAP_JSON` | With spend log | `NOTION_ASSIGNEE_MAP_JSON` | Payer names to Notion user IDs. |
+| `NOTION_BRAIN_DUMP_PAGE_ID` | No | Empty | Enables Brain Dump reads and appends. |
+| `NOTION_KNOWLEDGE_ENABLED` | No | `false` | Read-only search over everything shared with the integration. |
+| `NOTION_SCRIPT_SOURCE_MAP_JSON` | No | `{}` | Enables the live Dekhte Hai script reader. |
+| `NOTION_SCRIPT_SERIES_NAME` | No | `Dekhte Hai` | Series name used to find episode pages. |
+| `TAVILY_API_KEY` | No | Empty | Enables web lookup and delegated research. |
+| `RESEARCH_MAX_SEARCHES` | No | `3` | Searches per research run (1–5). |
 | `BOT_NAME` | No | `Captain Patch` | Name supplied to the model and logs. |
 | `BOT_TRIGGER` | No | `@patch` | Case-insensitive text trigger. |
-| `TIMEZONE` | No | `Asia/Kolkata` | IANA timezone used for relative dates. |
-| `ALLOWED_GROUP_IDS` | Recommended | Empty | Comma-separated WhatsApp group IDs; empty allows all joined groups. |
+| `TIMEZONE` | No | `Asia/Kolkata` | IANA timezone for relative dates. |
+| `ALLOWED_GROUP_IDS` | Recommended | Empty | Comma-separated group IDs; empty allows all joined groups. |
 | `AUTHORIZED_USER_IDS` | Yes for use | Empty | Comma-separated owner IDs; empty blocks everyone. |
-| `UNAUTHORIZED_REPLY` | No | Harbour-themed fallback | Used only if AI rejection generation fails. |
-| `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages retained in memory; `0` disables context. Maximum `20`. |
-| `TASK_DIGEST_INTERVAL_HOURS` | No | `0` | Incomplete-task digest interval; `0` disables it. Use `4` for four-hour digests. |
-| `TASK_DIGEST_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Optional comma-separated proactive digest destinations. |
-| `FOUNDER_BRIEF_TIME` | No | Empty | Daily brief time in `HH:mm`; empty disables it. |
-| `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Optional comma-separated daily-brief destinations. |
-| `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded WhatsApp attachment size. |
-| `NOTION_WEBHOOK_ENABLED` | No | `false` | Starts the Notion webhook receiver. |
-| `NOTION_WEBHOOK_PORT` | No | `3000` | Local webhook HTTP port. |
-| `NOTION_WEBHOOK_PATH` | No | `/notion/webhook` | Webhook URL path. |
-| `NOTION_WEBHOOK_VERIFICATION_TOKEN` | After verification | Empty | Secret used to verify Notion webhook signatures. |
-| `NOTION_NOTIFICATION_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | WhatsApp destinations for Notion events. |
-| `NOTION_NOTIFY_BOT_EVENTS` | No | `false` | Includes integration-authored events; normally keep false. |
-| `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. Disable after configuration. |
+| `UNAUTHORIZED_REPLY` | No | Harbour-themed | Used if the AI rejection fails. |
+| `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages kept in memory (0–20). |
+| `CONVERSATION_RETENTION_DAYS` | No | `90` | Days of group conversation kept locally for briefs and look-backs; `0` turns the log and the brief off. |
+| `FOUNDER_BRIEF_TIME` | No | `09:00` | Daily brief time `HH:mm`; set it empty to turn the brief off. |
+| `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Daily brief destinations. |
+| `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded attachment size. |
+| `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. |
 | `DATA_DIR` | No | `.data` | WhatsApp session and SQLite directory outside Docker. |
-| `LOG_LEVEL` | No | `info` | Pino log level such as `debug`, `info`, or `warn`. |
-| `PUPPETEER_EXECUTABLE_PATH` | No | Auto | Explicit Chrome/Chromium executable. Docker sets `/usr/bin/chromium`. |
+| `LOG_LEVEL` | No | `info` | Pino log level. |
+| `PUPPETEER_EXECUTABLE_PATH` | No | Auto | Chrome/Chromium executable. Docker sets `/usr/bin/chromium`. |
+
+### Upgrading from the Azure + Notion-tasks version
+
+Remove `AZURE_OPENAI_*`, `NOTION_DATA_SOURCE_ID`, the `NOTION_*_PROPERTY` names, `NOTION_DEFAULT_STATUS`, `NOTION_DEFAULT_ASSIGNEE_ID`, `TASK_DIGEST_*`, and `NOTION_WEBHOOK_*` / `NOTION_NOTIFICATION_GROUP_IDS` / `NOTION_NOTIFY_BOT_EVENTS`, then add the `CLOUDFLARE_*` values above. Existing Notion tasks are not migrated automatically; paste a list and ask Patch to "capture these as tasks" to bring some across.
 
 ## Deployment
 
@@ -560,57 +479,36 @@ Do not run `docker compose down --volumes` unless you intentionally want to remo
 
 ## Customizing the bot
 
-This repository is reusable even though the default character belongs to Autter.
-
 1. Change `BOT_NAME` and `BOT_TRIGGER` in `.env`.
-2. Replace `CAPTAIN_PATCH_PERSONA` and `AUTTER_CONTEXT` in [`src/captain-patch.ts`](src/captain-patch.ts).
+2. Replace `CAPTAIN_PATCH_PERSONA`, `AUTTER_CONTEXT`, and `CHIEF_OF_STAFF_ROLE` in [`src/captain-patch.ts`](src/captain-patch.ts).
 3. Change `UNAUTHORIZED_REPLY` in `.env`.
-4. Adjust the Notion property names in `.env`.
-5. Rename the WhatsApp account's visible profile separately in WhatsApp settings.
-6. Run `npm run check` and `npm run build` before deploying.
+4. Adjust task areas in [`src/task-store.ts`](src/task-store.ts) if your team uses different ones.
+5. Run `npm run check` and `npm run build` before deploying.
 
-Do not put API keys, private customer data, phone numbers, or other secrets into the persona file. It is included in every authorized model request and committed to source control.
+Do not put API keys, private customer data, phone numbers, or other secrets into the persona file. It is included in every model request and committed to source control.
 
 ## Privacy and security model
 
-- Authorization uses WhatsApp sender IDs, not editable profile names.
-- Group and sender allowlists are checked before AI tools are exposed.
-- The unauthorized rejection call has no Notion or web-search tools.
-- Task creation uses the strict `create_notion_task` schema; Brain Dump writes can only append to the configured page. Large appends are split into ordered transport-sized requests rather than truncated.
-- Existing-task updates require an exact result from the same request; whole-page replacement must be explicit and cannot delete nested child pages or databases.
-- Task reads return selected properties; Brain Dump reads are confined to one configured page and capped at 12,000 characters.
-- Company knowledge is opt-in, read-only in the bot, and limited to one title search plus two matched resource reads per request.
-- Notion's API has no teamspace filter; the integration's Content access is the security boundary for company knowledge.
-- Quick web lookup is limited to one Tavily call. An explicit delegated research run is limited to `RESEARCH_MAX_SEARCHES` distinct calls and can run only once per trigger.
-- Group context, Notion records, and web results are explicitly treated as untrusted data in the system prompt.
-- Ordinary messages are buffered only in memory. They are not processed immediately, but up to `CONTEXT_MESSAGE_LIMIT` recent messages can be sent directly to Azure OpenAI when a later authorized trigger occurs.
-- Triggered message bodies, resolved sender IDs, and outgoing replies are written to application logs.
-- Reminder text, schedules, requester IDs, group IDs, and digest schedule state are stored in the SQLite database.
-- The `dia-data` Docker volume contains a reusable WhatsApp linked-device session and must be treated as sensitive. The separate `whisper-models` volume contains only public model weights.
-- `.env`, `.data`, WhatsApp auth directories, logs, and build output are excluded by `.gitignore`.
+- Authorization uses WhatsApp sender IDs, not editable profile names; group and sender allowlists are checked before any tool is exposed. The unauthorized rejection call has no tools.
+- Task edits and deletes require an `#id` the founder named or one returned by `list_tasks` in the same request; deletes are soft and audited in `task_events`.
+- Writes are confirmed from stored data, not model text.
+- Brain Dump writes can only append to the one configured page. Company knowledge is opt-in and read-only.
+- Group context, quoted messages, attachments, transcripts, Notion content, D1 rows, and web results are all treated as untrusted data in the system prompt.
+- Model requests go to Workers AI through your AI Gateway. Gateway logs can contain prompts and replies; set log retention to match your comfort level. Gateway metadata carries only a feature name and a hashed sender id.
+- Every message in allowed groups (and Patch's replies) is stored in local SQLite for `CONVERSATION_RETENTION_DAYS` and pruned after that. It is sent to the model only when a founder asks about earlier discussion or for the daily brief, and only for the group it came from. Set the retention to `0` to store nothing.
+- Up to `CONTEXT_MESSAGE_LIMIT` recent group messages are also included with each trigger (never for task capture unless a founder asks to capture the discussion).
+- Reminders, dedupe state, and the conversation log live in local SQLite in the `dia-data` volume, which also holds the WhatsApp session and must be treated as sensitive.
 
-Before adding the bot to a group, tell participants what data may be processed by Azure OpenAI, Notion, Tavily, and your server logs.
-
-Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+Before adding the bot to a group, tell participants what data may be processed by Cloudflare, Notion, Tavily, and your server logs. Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
-- WhatsApp integration is unofficial and can break when WhatsApp Web changes.
-- Only group chats are handled; direct messages are ignored.
-- Voice transcription is CPU-bound and may take a while on the smallest Lightsail plan; image/PDF understanding depends on the selected Azure deployment's multimodal support.
-- Media must fit `MEDIA_MAX_BYTES`; reply with an `@patch` command when the original media message cannot carry a caption.
-- The configured Azure deployment must support the Responses API and every input type routed to it.
-- Notion is required at startup even if you only want ordinary AI answers.
-- Notion task property types and select options are currently fixed in code.
-- Brain Dump access supports one configured page, bounded reads, and append-only writes; it cannot modify existing notes.
-- Reminder delivery is at-least-once: a crash after WhatsApp accepts a message but before SQLite advances it can cause one duplicate notification.
-- Webhook notifications are also at-least-once around the small interval between WhatsApp delivery and the SQLite deduplication write.
-- Repeating reminders continue until explicitly completed or cancelled; the bot cannot infer that the underlying real-world action was completed.
-- The task digest recognizes a fixed set of terminal status names; customize `isIncompleteTaskStatus` if your tracker uses different completion labels.
-- Company knowledge search matches titles, not arbitrary page-body text, and database reads return only the five most recently edited rows before an individual row is opened.
-- Context is in-memory and is lost when the process restarts.
-- SQLite and local session storage assume a single bot process, not horizontal scaling.
-- A linked WhatsApp session can be paused or logged out and may require QR pairing again.
+- WhatsApp integration is unofficial and can break when WhatsApp Web changes. Only group chats are handled.
+- The D1 REST API is a control-plane API with a global limit of about 1,200 requests per five minutes per user; that is ample for a founding team, but not for a large org.
+- Kimi K2.6 is paid-only and has a lower per-account rate limit than the fallback model; heavy research bursts may fall back to the second model.
+- Open models occasionally pick the wrong tool. Writes are guarded and confirmed, so the failure mode is "asks again" or "does nothing", never a silent write to a guessed task.
+- Reminder delivery is at-least-once around crashes. Context is in memory and lost on restart.
+- SQLite and the WhatsApp session assume a single bot process.
 
 ## Troubleshooting
 
@@ -639,12 +537,17 @@ Copy every relevant `@lid`, `@c.us`, and raw-number variant from the `senderIds`
 docker compose up -d --force-recreate
 ```
 
+### The task list does not respond
+
+Startup fails fast with a `D1 query failed` log if the database id or token is wrong. Check that `CLOUDFLARE_D1_DATABASE_ID` is the UUID (not the name) and that the token has **D1 > Edit** for the same account.
+
+### The model returns 401 or 403
+
+The token needs **Workers AI > Read**; a token with only AI Gateway permissions is rejected. Kimi K2.6 also requires Workers Paid or AI Gateway credits; switch `CLOUDFLARE_AI_MODEL` to the fallback model to confirm.
+
 ### Notion returns 403 or 404
 
-- Enable **Read content** and **Insert content** for the integration.
-- Share the original task database with that integration.
-- Confirm `NOTION_DATA_SOURCE_ID` is a data source ID.
-- Confirm configured property names exactly match Notion.
+Share the spend-log database and Brain Dump page with the integration, and confirm `NOTION_SPEND_DATA_SOURCE_ID` is a data source ID.
 
 ### WhatsApp asks for another QR
 
@@ -675,33 +578,38 @@ npm test
 npm run test:watch
 ```
 
-The test suite covers trigger routing, owner authorization, current and legacy WhatsApp IDs, message deduplication, Chromium profile cleanup, task updates/comments/uploads, founder spend-log reads and retry-safe batch writes, media limits, persistent reminders, proactive scheduling, incomplete-task digests, daily-brief scheduling, Notion webhook formatting, bounded Brain Dump reads, append-only writes, scoped knowledge search/read loops, delegated research, task confirmations, and Tavily request bounds.
+The suite runs the real task-store SQL against in-memory SQLite (D1's engine), pins the exact AI Gateway and D1 request shapes, and covers tool routing, the edit/delete id guard, deterministic confirmations, model fallback, document conversion, spend-log writes, Brain Dump appends, reminders, scheduling, and research.
 
 ## Project structure
 
 ```text
 src/
-├── assistant.ts          AI instructions and tool orchestration
+├── assistant.ts          Chief-of-staff instructions and tool orchestration
 ├── authorization.ts      WhatsApp sender-ID normalization and allowlist
-├── azure-openai.ts       Direct Azure OpenAI v1 client
 ├── bot.ts                WhatsApp lifecycle and message routing
-├── captain-patch.ts      Replaceable persona and Autter context
+├── captain-patch.ts      Replaceable persona, company context, chief-of-staff role
+├── cloudflare-d1.ts      D1 REST client
 ├── config.ts             Validated environment configuration
 ├── context-buffer.ts     Bounded in-memory group context
+├── conversation-store.ts Local group conversation log with retention
 ├── dedupe-store.ts       SQLite message deduplication
-├── founder-brief.ts      Daily AI brief generation
-├── media-ingestion.ts    Attachment validation and voice transcription
-├── notion-webhook.ts     Signed Notion event receiver and notifications
-├── notion.ts             Strict Notion tasks, Brain Dump, and knowledge service
-├── notion-spend.ts       Founder expense reads, batch writes, and retry safety
-├── reminder-store.ts     Persistent reminder and scheduler state
+├── document-converter.ts Workers AI PDF/document to Markdown
+├── founder-brief.ts      Optional daily brief from the conversation and D1
+├── llm.ts                Workers AI chat client via AI Gateway, with fallback
+├── media-ingestion.ts    Attachment validation, transcription, conversion
+├── notion.ts             Brain Dump, optional knowledge and script readers
+├── notion-spend.ts       Founder spend log reads and retry-safe writes
+├── reminder-store.ts     Persistent reminders and scheduler state
 ├── research-agent.ts     Bounded multi-search research specialist
-├── scheduler.ts          Proactive reminder and task-digest delivery
+├── scheduler.ts          Reminder delivery and the optional daily brief
+├── task-store.ts         D1 task list with audit trail
+├── time.ts               Timezone-aware date helpers
 └── web-search.ts         Bounded Tavily search service
 
-docs/lightsail.md         Production VPS deployment guide
-patches/                  Compatibility patch for whatsapp-web.js
-test/                     Vitest test suite
+migrations/0001_tasks.sql   D1 schema
+docs/chief-of-staff-plan.md Roadmap
+docs/lightsail.md           Production VPS deployment guide
+test/                       Vitest test suite
 ```
 
 ## Contributing

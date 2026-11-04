@@ -81,3 +81,50 @@ describe("media ingestion", () => {
     );
   });
 });
+
+describe("document conversion", () => {
+  it("adds Markdown for PDFs and keeps the message when conversion fails", async () => {
+    const toMarkdown = vi
+      .fn()
+      .mockResolvedValueOnce("# Invoice\nAWS ₹4,200")
+      .mockRejectedValueOnce(new Error("unsupported"));
+    const warn = vi.fn();
+    const service = new MediaIngestionService({
+      transcriptionLanguage: "auto",
+      transcriptionTimeoutMs: 10_000,
+      maxBytes: 1_000,
+      documentConverter: { toMarkdown },
+      logger: { info: vi.fn(), warn } as never,
+    });
+    const pdf = {
+      mimeType: "application/pdf",
+      dataBase64: Buffer.from("%PDF").toString("base64"),
+      fileName: "invoice.pdf",
+    };
+
+    await expect(service.ingest(pdf)).resolves.toMatchObject({
+      kind: "pdf",
+      extractedText: "# Invoice\nAWS ₹4,200",
+    });
+    expect(toMarkdown).toHaveBeenCalledWith({
+      fileName: "invoice.pdf",
+      mimeType: "application/pdf",
+      data: Buffer.from("%PDF"),
+    });
+    await expect(service.ingest(pdf)).resolves.toMatchObject({ extractedText: null });
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it("never sends images or audio to the document converter", async () => {
+    const toMarkdown = vi.fn();
+    const service = new MediaIngestionService({
+      transcriptionLanguage: "auto",
+      transcriptionTimeoutMs: 10_000,
+      maxBytes: 1_000,
+      documentConverter: { toMarkdown },
+      logger: { info: vi.fn() } as never,
+    });
+    await service.ingest({ mimeType: "image/png", dataBase64: Buffer.from("png").toString("base64") });
+    expect(toMarkdown).not.toHaveBeenCalled();
+  });
+});

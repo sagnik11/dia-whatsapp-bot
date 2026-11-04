@@ -26,7 +26,7 @@ PR #4 replaces the Notion task tracker and Azure OpenAI with D1 and Workers AI, 
 | Tasks | Search by text, status, owner, area, tag, due range, overdue | `list_tasks` |
 | Tasks | Edit any field, append or replace notes, clear fields; soft delete | `update_tasks`, `delete_tasks` |
 | Tasks | Full history of every change with actor and before/after | `task_events` |
-| Conversation | Every group message (and Patch's replies) kept locally for 90 days | local SQLite conversation log |
+| Conversation | Every group message (and Patch's replies) kept for 90 days | conversation log: local SQLite, moved into D1 once the Patch API Worker is set up |
 | Conversation | "What did we decide yesterday?", "turn today's discussion into tasks" | `read_group_conversation` |
 | Briefs | Daily brief at 09:00 IST from the conversation since the last brief, plus open tasks and reminders; skipped if the group was quiet | scheduler, on by default |
 | Safety | Edits and deletes only for an `#id` the founder named or that was just listed; action messages must call a tool | id guard, `tool_choice: required` |
@@ -132,7 +132,7 @@ Every new table follows the `tasks` pattern: soft delete, actor columns, timesta
 | Table | Holds | Phase |
 | --- | --- | --- |
 | `tasks`, `task_events` | Tasks and their audit trail | 0 |
-| `conversation_messages` (local SQLite) | Group messages and Patch replies, 90-day retention | 0 |
+| `conversation_messages` (local SQLite, then D1 with the Worker) | Group messages and Patch replies, 90-day retention | 0 / 3 |
 | `recurring_tasks` | Template, owner, rule, next run | 1 |
 | `task_items` | Checklist items inside a task | 1 |
 | `follow_ups` | Counterparty, promise, due date, status | 1 |
@@ -174,7 +174,7 @@ Conversation search and memory never cross groups: Patch only reads the log and 
 
 ## Roadmap
 
-Phase 0 is in review as PR #4 and Phase 1 is built on top of it as its own PR; Phases 2 and 3 follow in about 7 weeks, each gated on a measurable result.
+All four phases are merged to main (PRs #4 to #13). Nothing is deployed yet; [DEPLOYMENT.md](DEPLOYMENT.md) is the runbook. Each gate below is checked in live use after deployment.
 
 ```mermaid
 flowchart TB

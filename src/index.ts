@@ -1,10 +1,11 @@
 import { join } from "node:path";
+import { createAdminOps } from "./assistant-admin.js";
 import { Phase1Tools } from "./assistant-phase1.js";
 import { DiaAssistant } from "./assistant.js";
 import { WhatsAppBot } from "./bot.js";
 import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient } from "./cloudflare-d1.js";
-import { config } from "./config.js";
+import { adminConfig, config } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { ConversationStore } from "./conversation-store.js";
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
@@ -58,6 +59,19 @@ const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: co
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
 const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Phase 2 admin and ops: compliance register, metrics, pipelines, investor update.
+const adminOps = adminConfig.enabled
+  ? createAdminOps({
+      db: d1,
+      tasks,
+      memory,
+      llm,
+      timezone: config.timezone,
+      complianceLeadDays: adminConfig.complianceLeadDays,
+      pipelineStaleDays: adminConfig.pipelineStaleDays,
+      logger,
+    })
+  : undefined;
 const backgroundReasoning = config.aiBackgroundReasoningEffort
   ? { reasoningEffort: config.aiBackgroundReasoningEffort }
   : {};
@@ -106,7 +120,7 @@ const assistant = new DiaAssistant({
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
   // Capability modules, in priority order. New phases register theirs here.
-  modules: [phase1],
+  modules: [phase1, ...(adminOps ? [adminOps.module] : [])],
   checklists,
   logger,
 });
@@ -179,6 +193,8 @@ const scheduler = new ProactiveScheduler({
     run: (nowMs: number) =>
       materializeRecurringTasks({ recurring, tasks, timezone: config.timezone, nowMs, logger }),
   },
+  // Silent plug-in jobs; none of them posts to the group.
+  jobs: adminOps ? [adminOps.job] : [],
 });
 const bot = new WhatsAppBot({
   assistant,
@@ -219,7 +235,7 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 async function start(): Promise<void> {
   // Fail fast with a clear error if D1 credentials or the database id are wrong.
-  await Promise.all([tasks.ensureSchema(), phase1Schema.ensure()]);
+  await Promise.all([tasks.ensureSchema(), phase1Schema.ensure(), adminOps?.schema.ensure()]);
   logger.info(
     {
       model: config.aiModel,

@@ -7,7 +7,12 @@ import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient, type SqlExecutor } from "./cloudflare-d1.js";
 import { config, platformConfig } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
-import { ConversationStore } from "./conversation-store.js";
+import { ConversationStore, type ConversationLog } from "./conversation-store.js";
+import {
+  CONVERSATION_SCHEMA_STATEMENTS,
+  D1ConversationStore,
+  moveLocalConversationToD1,
+} from "./conversation-store-d1.js";
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { CloudflareMarkdownConverter } from "./document-converter.js";
@@ -39,7 +44,7 @@ const logger = createLogger(config.logLevel);
 const databasePath = join(config.dataDir, "dia.sqlite");
 const dedupe = new DedupeStore(databasePath);
 const reminders = new ReminderStore(databasePath);
-const conversation =
+const localConversation =
   config.conversationRetentionDays > 0 ? new ConversationStore(databasePath) : undefined;
 
 const llm = new CloudflareGatewayModel({
@@ -63,6 +68,14 @@ const d1: SqlExecutor = patchApi
       logger,
     });
 const tasks = new TaskStore({ db: d1, timezone: config.timezone, logger });
+// The group conversation: D1 once the Worker is configured (founders' decision),
+// otherwise local SQLite on this server.
+const conversationSchema = new SchemaGate(d1, CONVERSATION_SCHEMA_STATEMENTS, logger, "Conversation");
+const d1Conversation =
+  localConversation && platformConfig.conversationInD1
+    ? new D1ConversationStore({ db: d1, schema: conversationSchema, logger })
+    : undefined;
+const conversation: ConversationLog | undefined = d1Conversation ?? localConversation;
 // Phase 1: long-term memory, follow-ups, recurring tasks, checklists.
 const phase1Schema = new SchemaGate(d1, PHASE1_SCHEMA_STATEMENTS, logger, "Phase 1");
 const memory = new MemoryStore({ db: d1, schema: phase1Schema, logger });
@@ -233,7 +246,7 @@ async function shutdown(signal: string): Promise<void> {
   });
   dedupe.close();
   reminders.close();
-  conversation?.close();
+  localConversation?.close();
   process.exit(0);
 }
 
@@ -243,6 +256,15 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 async function start(): Promise<void> {
   // Fail fast with a clear error if D1 credentials or the database id are wrong.
   await Promise.all([tasks.ensureSchema(), phase1Schema.ensure()]);
+  if (d1Conversation && localConversation) {
+    // One-time move of the history kept locally before the switch to D1.
+    await moveLocalConversationToD1({
+      local: localConversation,
+      d1: d1Conversation,
+      sinceMs: Date.now() - config.conversationRetentionDays * 86_400_000,
+      logger,
+    });
+  }
   logger.info(
     {
       model: config.aiModel,
@@ -255,6 +277,7 @@ async function start(): Promise<void> {
       memoryDistill: config.memoryDistillTime ?? "off",
       spendLog: Boolean(notionSpend),
       d1Route: patchApi ? "patch-api-worker" : "rest-api",
+      conversationStore: d1Conversation ? "d1" : localConversation ? "local" : "off",
       semanticMemory: Boolean(semantic),
       archiveAttachments: Boolean(archiveAttachment),
     },
@@ -268,6 +291,6 @@ start().catch(async (error: unknown) => {
   await bot.stop().catch(() => undefined);
   dedupe.close();
   reminders.close();
-  conversation?.close();
+  localConversation?.close();
   process.exitCode = 1;
 });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AUTTER_CONTEXT } from "./captain-patch.js";
-import type { ConversationMessage, ConversationStore } from "./conversation-store.js";
+import type { ConversationLog, ConversationMessage } from "./conversation-store.js";
 import type { LanguageModel } from "./llm.js";
 import type { Logger } from "./logger.js";
 import {
@@ -128,11 +128,11 @@ export async function distillGroupMemory(input: {
   groupId: string;
   sinceMs: number;
   untilMs: number;
-  conversation: Pick<ConversationStore, "list">;
+  conversation: Pick<ConversationLog, "list">;
   memory: Pick<MemoryStore, "search" | "add">;
   distiller: Pick<MemoryDistiller, "distill">;
 }): Promise<number> {
-  const messages = input.conversation.list(input.groupId, {
+  const messages = await input.conversation.list(input.groupId, {
     sinceMs: input.sinceMs,
     untilMs: input.untilMs,
     limit: 500,

@@ -6,16 +6,17 @@ import type { DiaAssistant } from "./assistant.js";
 import { isAuthorizedSender } from "./authorization.js";
 import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationLog } from "./conversation-store.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
 import type { MediaIngestionService } from "./media-ingestion.js";
 import { serializeMessageId } from "./message-id.js";
 import type { ProactiveScheduler } from "./scheduler.js";
+import type { OutgoingFile } from "./tool-outcome.js";
 import type { AssistantAttachment, AssistantRequest } from "./types.js";
 import { isBotTriggered, removeTextTrigger } from "./trigger.js";
 
-const { Client, LocalAuth } = whatsapp;
+const { Client, LocalAuth, MessageMedia } = whatsapp;
 const GROUP_LIST_ATTEMPTS = 4;
 const WHATSAPP_MESSAGE_CHUNK_SIZE = 3_500;
 const WHATSAPP_READY_TIMEOUT_MS = 120_000;
@@ -55,8 +56,15 @@ interface BotOptions {
   listGroupsOnStart: boolean;
   mediaIngestion?: MediaIngestionService;
   /** Keeps the group's conversation so briefs and answers can cite it. */
-  conversation?: Pick<ConversationStore, "record">;
+  conversation?: Pick<ConversationLog, "record">;
   scheduler?: ProactiveScheduler;
+  /** Phase 3 (ARCHIVE_ATTACHMENTS): stores an ingested attachment and returns its key. */
+  archiveAttachment?: (input: {
+    groupId: string;
+    messageId: string;
+    sentAtMs: number;
+    attachment: AssistantAttachment;
+  }) => Promise<string>;
   puppeteerExecutablePath?: string;
   readyTimeoutMs?: number;
   client?: InstanceType<typeof Client>;
@@ -411,6 +419,8 @@ export class WhatsAppBot {
         );
         return;
       }
+      // Runs in the background: a slow or failed upload never delays the reply.
+      void this.archiveAttachment(groupId, mediaMessage, attachments[0]);
     }
 
     const assistantRequest = {
@@ -426,12 +436,19 @@ export class WhatsAppBot {
     } satisfies AssistantRequest;
 
     try {
-      const reply = await this.options.assistant.respond(assistantRequest);
+      const reply = await this.options.assistant.respondWithFiles(assistantRequest);
       this.options.logger.info(
-        { author, groupId, messageId, output: reply },
+        {
+          author,
+          groupId,
+          messageId,
+          output: reply.text,
+          files: reply.files.map((file) => file.fileName),
+        },
         `Sending ${this.options.botName} response`,
       );
-      await this.sendCompleteMessage(groupId, reply);
+      await this.sendCompleteMessage(groupId, reply.text);
+      for (const file of reply.files) await this.sendDocument(groupId, file, messageId);
     } catch (error) {
       this.options.logger.error({ error, messageId }, "Assistant request failed");
       const fallbackReply =
@@ -452,16 +469,73 @@ export class WhatsAppBot {
 
   private async sendAndRecord(groupId: string, text: string): Promise<void> {
     const sent: unknown = await this.client.sendMessage(groupId, text);
+    this.recordSent(groupId, sent, text);
+  }
+
+  /** Sends one file as a WhatsApp document; a failed attachment never hides the reply. */
+  private async sendDocument(groupId: string, file: OutgoingFile, messageId: string): Promise<void> {
+    try {
+      const media = new MessageMedia(
+        file.mimeType,
+        file.data.toString("base64"),
+        file.fileName,
+        file.data.length,
+      );
+      const sent: unknown = await this.client.sendMessage(groupId, media, {
+        sendMediaAsDocument: true,
+      });
+      this.recordSent(groupId, sent, `[document] ${file.fileName}`);
+    } catch (error) {
+      this.options.logger.error(
+        { error, messageId, fileName: file.fileName },
+        "Could not send WhatsApp document",
+      );
+      await this.sendAndRecord(groupId, `⚠️ I couldn't attach ${file.fileName}. Please ask again.`);
+    }
+  }
+
+  private recordSent(groupId: string, sent: unknown, body: string): void {
     const id = sent && typeof sent === "object" && "id" in sent ? sent.id : null;
     if (id && this.isEligibleGroup(groupId)) {
       this.recordConversation({
         groupId,
         messageId: id,
         author: this.options.botName,
-        body: text,
+        body,
         fromBot: true,
         sentAtMs: Date.now(),
       });
+    }
+  }
+
+  /** Archives an ingested attachment and notes its key in the conversation log. */
+  private async archiveAttachment(
+    groupId: string,
+    mediaMessage: whatsapp.Message,
+    attachment: AssistantAttachment | undefined,
+  ): Promise<void> {
+    if (!this.options.archiveAttachment || !attachment) return;
+    try {
+      const messageId = serializeMessageId(mediaMessage.id);
+      const key = await this.options.archiveAttachment({
+        groupId,
+        messageId,
+        sentAtMs: mediaMessage.timestamp * 1_000,
+        attachment,
+      });
+      this.options.logger.info({ groupId, messageId, key }, "Archived WhatsApp attachment");
+      if (this.isEligibleGroup(groupId)) {
+        this.recordConversation({
+          groupId,
+          messageId: `${messageId}:archive`,
+          author: this.options.botName,
+          body: `📎 Archived ${attachment.fileName} as ${key}`,
+          fromBot: true,
+          sentAtMs: Date.now(),
+        });
+      }
+    } catch (error) {
+      this.options.logger.warn({ error, groupId }, "Could not archive WhatsApp attachment");
     }
   }
 
@@ -482,10 +556,15 @@ export class WhatsAppBot {
   }): void {
     if (!this.options.conversation) return;
     try {
-      this.options.conversation.record({
-        ...entry,
-        messageId: serializeMessageId(entry.messageId),
-      });
+      // Never awaited: logging to D1 must not delay a reply.
+      void this.options.conversation
+        .record({ ...entry, messageId: serializeMessageId(entry.messageId) })
+        .catch((error: unknown) => {
+          this.options.logger.warn(
+            { error, groupId: entry.groupId },
+            "Could not record conversation message",
+          );
+        });
     } catch (error) {
       // Losing one log line must never stop Patch from replying.
       this.options.logger.warn(

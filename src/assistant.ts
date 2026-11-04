@@ -13,7 +13,7 @@ import type {
   ToolDefinition,
 } from "./llm.js";
 import type { ChecklistStore } from "./checklist-store.js";
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationLog } from "./conversation-store.js";
 import { conversationForModel } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
 import type { NotionSpendService } from "./notion-spend.js";
@@ -39,6 +39,7 @@ import {
   final,
   output,
   terminal,
+  type OutgoingFile,
   type ToolOutcome,
 } from "./tool-outcome.js";
 import type {
@@ -1065,7 +1066,7 @@ interface AssistantOptions {
   botName: string;
   timezone: string;
   tasks: TaskStore;
-  conversation?: Pick<ConversationStore, "list">;
+  conversation?: Pick<ConversationLog, "list">;
   notion?: NotionWorkspaceService;
   notionSpend?: NotionSpendService;
   reminders?: ReminderStore;
@@ -1076,6 +1077,12 @@ interface AssistantOptions {
   /** Shows task checklists inside list_tasks and get_task. */
   checklists?: Pick<ChecklistStore, "itemsFor">;
   logger: Logger;
+}
+
+/** What Patch sends back for one request: the text, then any attached files. */
+export interface AssistantReply {
+  text: string;
+  files: OutgoingFile[];
 }
 
 interface RequestState {
@@ -1142,7 +1149,19 @@ export class DiaAssistant {
     return rejection;
   }
 
+  /** The reply text only; files a tool attached are dropped. Prefer respondWithFiles. */
   public async respond(request: AssistantRequest): Promise<string> {
+    return (await this.respondWithFiles(request)).text;
+  }
+
+  /** The reply text plus any files tools attached (sent after the text, in order). */
+  public async respondWithFiles(request: AssistantRequest): Promise<AssistantReply> {
+    const files: OutgoingFile[] = [];
+    const text = await this.runRequest(request, files);
+    return { text, files };
+  }
+
+  private async runRequest(request: AssistantRequest, files: OutgoingFile[]): Promise<string> {
     const body = request.body;
     const referenced = referencedTaskIds(
       [body, request.quotedMessage ?? ""].join("\n"),
@@ -1277,6 +1296,7 @@ export class DiaAssistant {
         if (outcome.kind === "terminal") return outcome.text;
         if (outcome.kind === "final") {
           confirmations.push(outcome.text);
+          files.push(...(outcome.files ?? []));
           messages.push(toolMessage(call, { ok: true, confirmationShownToFounder: outcome.text }));
         } else {
           needsAnotherTurn = true;
@@ -1416,7 +1436,7 @@ export class DiaAssistant {
         case "cancel_reminder":
           return this.closeReminder(call.name, args, state);
         case "read_group_conversation":
-          return this.readConversation(args, state);
+          return await this.readConversation(args, state);
         case "read_brain_dump":
           return await this.readBrainDump(state);
         case "append_brain_dump":
@@ -1765,7 +1785,7 @@ export class DiaAssistant {
 
   // -- Group conversation ----------------------------------------------------
 
-  private readConversation(args: unknown, state: RequestState): ToolOutcome {
+  private async readConversation(args: unknown, state: RequestState): Promise<ToolOutcome> {
     if (!this.options.conversation) {
       return output({ error: "The conversation log is turned off." });
     }
@@ -1776,7 +1796,7 @@ export class DiaAssistant {
     const parsed = conversationReadSchema.parse(args);
     const untilMs = Date.now();
     const sinceMs = untilMs - parsed.hours_back * 60 * 60 * 1_000;
-    const messages = this.options.conversation.list(state.request.groupId, {
+    const messages = await this.options.conversation.list(state.request.groupId, {
       sinceMs,
       untilMs,
       text: parsed.text,

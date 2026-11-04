@@ -1,0 +1,36 @@
+# Patch API Worker: D1 binding, Vectorize semantic memory, R2 attachment archive.
+# Setup and deploy steps: docs/platform.md. Run wrangler from this directory.
+name = "patch-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+# The same D1 database the bot already uses (CLOUDFLARE_D1_DATABASE_ID).
+[[d1_databases]]
+binding = "DB"
+database_name = "patch"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# wrangler vectorize create patch-memory --dimensions=1024 --metric=cosine
+[[vectorize]]
+binding = "VECTORS"
+index_name = "patch-memory"
+
+# wrangler r2 bucket create patch-files
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "patch-files"
+
+# Workers AI, for @cf/baai/bge-m3 embeddings.
+[ai]
+binding = "AI"
+
+[vars]
+# Route embedding calls through the same AI Gateway as chat. Empty = direct.
+AI_GATEWAY_ID = "default"
+
+[observability]
+enabled = true
+
+# PATCH_API_TOKEN is a secret, never a var:
+#   wrangler secret put PATCH_API_TOKEN

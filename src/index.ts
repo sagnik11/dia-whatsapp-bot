@@ -1,10 +1,11 @@
 import { join } from "node:path";
+import { createIntegrationModules } from "./assistant-integrations.js";
 import { Phase1Tools } from "./assistant-phase1.js";
 import { DiaAssistant } from "./assistant.js";
 import { WhatsAppBot } from "./bot.js";
 import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient } from "./cloudflare-d1.js";
-import { config } from "./config.js";
+import { config, integrationsConfig } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { ConversationStore } from "./conversation-store.js";
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
@@ -58,6 +59,15 @@ const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: co
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
 const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Phase 3: Gmail, Calendar, GitHub and Sentry tools, each only when configured.
+const integrations = createIntegrationModules(integrationsConfig, {
+  db: d1,
+  memory,
+  followUps,
+  tasks,
+  timezone: config.timezone,
+  logger,
+});
 const backgroundReasoning = config.aiBackgroundReasoningEffort
   ? { reasoningEffort: config.aiBackgroundReasoningEffort }
   : {};
@@ -106,7 +116,7 @@ const assistant = new DiaAssistant({
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
   // Capability modules, in priority order. New phases register theirs here.
-  modules: [phase1],
+  modules: [phase1, ...integrations],
   checklists,
   logger,
 });

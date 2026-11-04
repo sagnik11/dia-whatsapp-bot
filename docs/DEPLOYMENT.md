@@ -10,7 +10,7 @@ Minimum path to a working bot (tasks, memory, follow-ups, daily brief, Monday re
 
 - [ ] Cloudflare core: D1 database, AI Gateway, API token, account ID (section 1)
 - [ ] Server, `.env` and first start (section 3)
-- [ ] WhatsApp pairing, then `ALLOWED_GROUP_IDS` and `AUTHORIZED_USER_IDS` (section 4)
+- [ ] WhatsApp pairing, then `ALLOWED_GROUP_IDS` (section 4)
 - [ ] Smoke test in the group (section 5)
 - [ ] Each person sends `@patch setup` and answers the interview (section 5)
 
@@ -114,8 +114,8 @@ If something is wrong, it stops early:
    docker compose logs -f --since 2m dia
    ```
 
-4. Have each founder send `@patch hello` in the group. While `AUTHORIZED_USER_IDS` is empty every trigger is refused: the bot posts a rejection in the group and logs `Ignored trigger from unauthorized sender` with a `senderIds` array. Copy every ID from each founder's `senderIds`, including both the `@lid` and the `@c.us` forms, into `AUTHORIZED_USER_IDS`, comma-separated.
-5. Run `docker compose up -d --force-recreate` again to load `.env`. A founder's `@patch hello` now gets a normal reply.
+4. Leave `AUTHORIZED_USER_IDS=*` (the `.env.example` default): everyone in the allowed group can use Patch, with no limits, and each person gets their own private memory. Anyone sending `@patch hello` now gets a normal reply.
+5. To restrict it to some people instead, empty `AUTHORIZED_USER_IDS`, recreate the container, have each of them send `@patch hello`, copy every ID from their `Ignored trigger from unauthorized sender` log line (`senderIds`, both the `@lid` and `@c.us` forms) into `AUTHORIZED_USER_IDS`, and recreate again.
 
 The `dia-data` volume holds the WhatsApp session, so later rebuilds do not need a new QR code.
 
@@ -140,7 +140,7 @@ Then each person on the allowlist sends `@patch setup` and answers the 22 questi
 - [ ] `@patch too formal, I never say Dear` → a revised draft and "📝 Noted for next time"
 - [ ] `@patch show my profile` → your voice guide and rules
 
-To add a teammate later, add their ids to `AUTHORIZED_USER_IDS`, recreate the container, and have them run `@patch setup`. See [docs/voice.md](voice.md).
+Anyone who joins the group later just runs `@patch setup` (with `AUTHORIZED_USER_IDS=*`). See [docs/voice.md](voice.md).
 
 ## 6. Patch API Worker (D1 binding, conversation log in D1, semantic search, archive)
 

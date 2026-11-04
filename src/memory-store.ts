@@ -12,7 +12,18 @@ export interface MemoryInput {
   sourceAuthor: string | null;
   sourceMessageId: string | null;
   observedAt: string;
+  /** A person's id (people.id) for a private memory; absent or 0 for one shared with the group. */
+  ownerId?: number;
 }
+
+/** Who a memory search is for. */
+export type MemoryViewer =
+  /** The group's shared memory only: briefs, reviews and anything posted to the group. */
+  | { scope: "shared" }
+  /** Shared memory plus this person's own private memory, from any group. */
+  | { scope: "person"; personId: number }
+  /** Everything in the group, private included: only for deduplicating distilled memories. */
+  | { scope: "all" };
 
 export interface MemoryRecord {
   id: number;
@@ -23,6 +34,8 @@ export interface MemoryRecord {
   sourceMessageId: string | null;
   observedAt: string;
   createdBy: string;
+  /** 0 when shared with the group. */
+  ownerId: number;
 }
 
 export interface MemoryQuery {
@@ -30,6 +43,19 @@ export interface MemoryQuery {
   kind: MemoryKind | null;
   sinceIso: string | null;
   limit: number;
+  /** Defaults to the group's shared memory only. */
+  viewer?: MemoryViewer;
+}
+
+function visibility(groupId: string, viewer: MemoryViewer = { scope: "shared" }): { sql: string; params: SqlValue[] } {
+  switch (viewer.scope) {
+    case "person":
+      return { sql: "((group_id = ? AND owner_id = 0) OR owner_id = ?)", params: [groupId, viewer.personId] };
+    case "all":
+      return { sql: "group_id = ?", params: [groupId] };
+    default:
+      return { sql: "(group_id = ? AND owner_id = 0)", params: [groupId] };
+  }
 }
 
 interface MemoryRow {
@@ -41,10 +67,11 @@ interface MemoryRow {
   source_message_id: string | null;
   observed_at: string;
   created_by: string;
+  owner_id: number;
 }
 
 const COLUMNS =
-  "id, kind, subject, content, source_author, source_message_id, observed_at, created_by";
+  "id, kind, subject, content, source_author, source_message_id, observed_at, created_by, owner_id";
 
 function rowToMemory(row: MemoryRow): MemoryRecord {
   return {
@@ -56,6 +83,7 @@ function rowToMemory(row: MemoryRow): MemoryRecord {
     sourceMessageId: row.source_message_id,
     observedAt: row.observed_at,
     createdBy: row.created_by,
+    ownerId: Number(row.owner_id ?? 0),
   };
 }
 
@@ -68,7 +96,8 @@ interface MemoryStoreOptions {
 
 /**
  * Long-term memory distilled from each group's conversation (and logged on
- * request). It outlives the raw conversation log and never crosses groups.
+ * request). It outlives the raw conversation log. Shared memories belong to
+ * one group; a private memory belongs to one person and only they see it.
  */
 export class MemoryStore {
   public constructor(private readonly options: MemoryStoreOptions) {}
@@ -88,9 +117,9 @@ export class MemoryStore {
       const result = await this.options.db.query<MemoryRow>(
         `INSERT INTO memories (
            group_id, kind, subject, content, source_author, source_message_id,
-           observed_at, created_by, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (group_id, kind, subject, content) DO NOTHING
+           observed_at, created_by, created_at, owner_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (group_id, owner_id, kind, subject, content) DO NOTHING
          RETURNING ${COLUMNS}`,
         [
           groupId,
@@ -102,6 +131,7 @@ export class MemoryStore {
           entry.observedAt,
           createdBy,
           this.nowIso(),
+          Math.max(0, Math.trunc(entry.ownerId ?? 0)),
         ],
       );
       const row = result.results[0];
@@ -124,8 +154,9 @@ export class MemoryStore {
   /** Newest first. Text matches subject or content; several words must all match. */
   public async search(groupId: string, query: MemoryQuery): Promise<MemoryRecord[]> {
     await this.options.schema.ensure();
-    const where = ["group_id = ?", "deleted_at IS NULL"];
-    const params: SqlValue[] = [groupId];
+    const visible = visibility(groupId, query.viewer);
+    const where = [visible.sql, "deleted_at IS NULL"];
+    const params: SqlValue[] = [...visible.params];
     if (query.kind) {
       where.push("kind = ?");
       params.push(query.kind);
@@ -148,11 +179,18 @@ export class MemoryStore {
     return result.results.map(rowToMemory);
   }
 
-  public async forget(groupId: string, id: number, actor: string): Promise<MemoryRecord | null> {
+  /** Forgets a shared memory of this group, or one of the viewer's own private ones. */
+  public async forget(
+    groupId: string,
+    id: number,
+    actor: string,
+    viewer: MemoryViewer = { scope: "shared" },
+  ): Promise<MemoryRecord | null> {
     await this.options.schema.ensure();
+    const visible = visibility(groupId, viewer.scope === "all" ? { scope: "shared" } : viewer);
     const existing = await this.options.db.query<MemoryRow>(
-      `SELECT ${COLUMNS} FROM memories WHERE id = ? AND group_id = ? AND deleted_at IS NULL`,
-      [id, groupId],
+      `SELECT ${COLUMNS} FROM memories WHERE id = ? AND ${visible.sql} AND deleted_at IS NULL`,
+      [id, ...visible.params],
     );
     const row = existing.results[0];
     if (!row) return null;

@@ -92,7 +92,10 @@ const memory = new MemoryStore({ db: d1, schema: phase1Schema, logger });
 const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
-const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Everyone in the group: profiles, setup and writing voice, and a private memory beside the shared one.
+const peopleSchema = new SchemaGate(d1, PEOPLE_SCHEMA_STATEMENTS, logger, "People");
+const people = new PeopleStore({ db: d1, schema: peopleSchema, logger });
+const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists, people }, tasks, config.timezone, logger);
 // Phase 3: Gmail, Calendar, GitHub and Sentry tools, each only when configured.
 const integrations = createIntegrationModules(integrationsConfig, {
   db: d1,
@@ -152,6 +155,7 @@ const semantic = semanticIndex
       db: d1,
       logger,
       messages: Boolean(d1Conversation),
+      people,
       brainDump: Boolean(notion?.canReadBrainDump),
     })
   : undefined;
@@ -196,8 +200,6 @@ const researchAgent = webSearch
     })
   : undefined;
 // Each person on the allowlist: their profile, `@patch setup` interview and writing voice.
-const peopleSchema = new SchemaGate(d1, PEOPLE_SCHEMA_STATEMENTS, logger, "People");
-const people = new PeopleStore({ db: d1, schema: peopleSchema, logger });
 const voiceTools = new VoiceTools({ people, ...(conversation ? { conversation } : {}), logger });
 const setupInterview = new SetupInterview({ people, llm, logger });
 const voiceLearning = new VoiceLearningJob({
@@ -292,7 +294,7 @@ const scheduler = new ProactiveScheduler({
           time: config.memoryDistillTime,
           groups: (sinceMs: number) => conversation.activeGroups(sinceMs),
           run: (groupId: string, sinceMs: number, untilMs: number) =>
-            distillGroupMemory({ groupId, sinceMs, untilMs, conversation, memory, distiller }),
+            distillGroupMemory({ groupId, sinceMs, untilMs, conversation, memory, distiller, people }),
         },
       }
     : {}),

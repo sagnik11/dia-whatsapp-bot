@@ -7,6 +7,7 @@ import { isAuthorizedSender } from "./authorization.js";
 import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
 import type { ConversationLog } from "./conversation-store.js";
+import { parseSetupQuestion, type SetupInterview } from "./setup-interview.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
 import type { MediaIngestionService } from "./media-ingestion.js";
@@ -58,6 +59,8 @@ interface BotOptions {
   /** Keeps the group's conversation so briefs and answers can cite it. */
   conversation?: Pick<ConversationLog, "record">;
   scheduler?: ProactiveScheduler;
+  /** `@patch setup`: the per-person interview, answered by replying to its questions. */
+  setup?: Pick<SetupInterview, "handle">;
   /** Phase 3 (ARCHIVE_ATTACHMENTS): stores an ingested attachment and returns its key. */
   archiveAttachment?: (input: {
     groupId: string;
@@ -294,15 +297,18 @@ export class WhatsAppBot {
     }
 
     const botId = this.client.info.wid._serialized;
-    if (
-      !isBotTriggered({
-        body: message.body,
-        mentionedIds: message.mentionedIds,
-        botId,
-        textTrigger: this.options.botTrigger,
-      })
-    ) {
-      return;
+    const triggered = isBotTriggered({
+      body: message.body,
+      mentionedIds: message.mentionedIds,
+      botId,
+      textTrigger: this.options.botTrigger,
+    });
+    // A reply to one of Patch's setup questions is an answer even without @patch.
+    let earlyQuoted: whatsapp.Message | null = null;
+    if (!triggered) {
+      if (!this.options.setup || !message.hasQuotedMsg) return;
+      earlyQuoted = await message.getQuotedMessage().catch(() => null);
+      if (!earlyQuoted?.fromMe || !parseSetupQuestion(earlyQuoted.body)) return;
     }
 
     if (
@@ -345,6 +351,8 @@ export class WhatsAppBot {
         { author, senderIds },
         "Ignored trigger from unauthorized sender",
       );
+      // Someone else replying to a setup question did not ask Patch anything.
+      if (!triggered) return;
       try {
         const rejection = await this.options.assistant.rejectUnauthorized({
           author,
@@ -380,7 +388,7 @@ export class WhatsAppBot {
       this.options.logger.warn({ error, messageId }, "Could not resolve group name");
       return null;
     });
-    const quotedMessage = message.hasQuotedMsg
+    const quotedMessage = earlyQuoted ?? (message.hasQuotedMsg
       ? await message.getQuotedMessage().catch((error: unknown) => {
           this.options.logger.warn(
             { error, messageId },
@@ -388,7 +396,7 @@ export class WhatsAppBot {
           );
           return null;
         })
-      : null;
+      : null);
     const prompt = removeTextTrigger(message.body, this.options.botTrigger);
     const attachments: AssistantAttachment[] = [];
     const mediaMessage = message.hasMedia
@@ -434,6 +442,26 @@ export class WhatsAppBot {
       recentContext: this.options.context.get(groupId, true),
       attachments,
     } satisfies AssistantRequest;
+
+    if (this.options.setup) {
+      try {
+        const setupReply = await this.options.setup.handle({
+          request: assistantRequest,
+          senderIds,
+          quotedSetup: quotedMessage?.fromMe ? parseSetupQuestion(quotedMessage.body) : null,
+        });
+        if (setupReply !== null) {
+          this.options.logger.info({ author, groupId, messageId, output: setupReply }, `Sending ${this.options.botName} setup reply`);
+          await this.sendCompleteMessage(groupId, setupReply);
+          return;
+        }
+      } catch (error) {
+        this.options.logger.error({ error, messageId }, "Setup interview failed");
+        await this.sendAndRecord(groupId, "I hit an error saving that setup answer. Please send it again in a moment.");
+        return;
+      }
+      if (!triggered) return;
+    }
 
     try {
       const reply = await this.options.assistant.respondWithFiles(assistantRequest);

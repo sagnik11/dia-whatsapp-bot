@@ -12,12 +12,13 @@ Minimum path to a working bot (tasks, memory, follow-ups, daily brief, Monday re
 - [ ] Server, `.env` and first start (section 3)
 - [ ] WhatsApp pairing, then `ALLOWED_GROUP_IDS` and `AUTHORIZED_USER_IDS` (section 4)
 - [ ] Smoke test in the group (section 5)
+- [ ] Each person sends `@patch setup` and answers the interview (section 5)
 
 Optional layers, in this order. Each one is a few `.env` lines and a container restart:
 
 - [ ] Notion spend log and Brain Dump (section 2). Recommended; you can do it before the first start.
 - [ ] Patch API Worker: D1 over a binding, the conversation log in D1, semantic search, attachment archive (section 6)
-- [ ] Integrations: Gmail, Google Calendar, GitHub, Sentry (section 7)
+- [ ] Integrations: Gmail, Google Calendar, GitHub, Sentry (section 7). Not needed to draft replies: paste or screenshot an email instead.
 - [ ] Tavily web search and research (section 8)
 
 ## 1. Cloudflare core
@@ -132,6 +133,14 @@ In the allowed group, as a founder, check each reply and its entry in the AI Gat
 - [ ] `@patch I told Rahul I'd send the DPA by Friday` → an `F<id>` follow-up
 - [ ] `@patch remember that we price per repo` → an `M<id>` memory
 - [ ] The next morning at `FOUNDER_BRIEF_TIME` (09:00): the brief arrives and covers only what was said in the group
+
+Then each person on the allowlist sends `@patch setup` and answers the 22 questions by replying to each one (about 10 minutes; `pause setup` and `@patch setup` again to resume). Afterwards, check:
+
+- [ ] Paste an email and send `@patch reply to this in my tone` → a draft in your voice
+- [ ] `@patch too formal, I never say Dear` → a revised draft and "📝 Noted for next time"
+- [ ] `@patch show my profile` → your voice guide and rules
+
+To add a teammate later, add their ids to `AUTHORIZED_USER_IDS`, recreate the container, and have them run `@patch setup`. See [docs/voice.md](voice.md).
 
 ## 6. Patch API Worker (D1 binding, conversation log in D1, semantic search, archive)
 

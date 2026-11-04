@@ -124,4 +124,4 @@ Exit codes: 0 when both thresholds are met, 1 when either is missed, 2 for a usa
 
 ### Changing the golden set
 
-Add or edit cases in `eval/golden-set.json` (keep it at 50-60 cases, with lower-kebab-case ids). Anonymize names other than the founders. `test/golden-set.test.ts` checks the shape and the categories, and checks that every tool a case references exists in the assistant's tool list. It also runs every case end to end with a scripted oracle model, which must score 100% on both measures, and with a rogue model, which must fail write safety. Run `npx vitest run test/golden-set.test.ts` after any change.
+Add or edit cases in `eval/golden-set.json` (keep it at 50-70 cases, with lower-kebab-case ids). Anonymize names other than the founders. `test/golden-set.test.ts` checks the shape and the categories, and checks that every tool a case references exists in the assistant's tool list. It also runs every case end to end with a scripted oracle model, which must score 100% on both measures, and with a rogue model, which must fail write safety. Run `npx vitest run test/golden-set.test.ts` after any change.

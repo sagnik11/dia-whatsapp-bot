@@ -25,6 +25,12 @@ export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   "add_checklist_items",
   "tick_checklist_items",
   "undo_last_change",
+  // Voice and profiles: each acts only on the requester's own profile.
+  "save_voice_rules",
+  "learn_from_final",
+  "update_my_profile",
+  "forget_voice_rules",
+  "delete_my_profile",
   // Finance (Phase 2)
   "add_subscriptions",
   "update_subscription",
@@ -82,6 +88,9 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "draft_investor_update",
   // Platform (Phase 3)
   "semantic_search",
+  // Voice and profiles
+  "get_writing_voice",
+  "show_my_profile",
   // Integrations (Phase 3)
   "search_email",
   "list_events",

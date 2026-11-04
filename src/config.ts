@@ -215,3 +215,44 @@ export const config = {
   logLevel: env.LOG_LEVEL,
   puppeteerExecutablePath: env.PUPPETEER_EXECUTABLE_PATH,
 } as const;
+
+// --- Platform (Phase 3): Patch API Worker, semantic memory, attachment archive ---
+const platformEnv = z
+  .object({
+    PATCH_API_URL: optionalString.refine(
+      (value) => !value || (/^https?:\/\//i.test(value) && URL.canParse(value)),
+      "PATCH_API_URL must be an http(s) URL such as https://patch-api.<account>.workers.dev",
+    ),
+    PATCH_API_TOKEN: optionalString,
+    SEMANTIC_MEMORY: booleanFlag("false"),
+    ARCHIVE_ATTACHMENTS: booleanFlag("false"),
+  })
+  .superRefine((platform, context) => {
+    if (Boolean(platform.PATCH_API_URL) !== Boolean(platform.PATCH_API_TOKEN)) {
+      context.addIssue({
+        code: "custom",
+        path: ["PATCH_API_TOKEN"],
+        message: "Set PATCH_API_URL and PATCH_API_TOKEN together (or neither)",
+      });
+    }
+    for (const flag of ["SEMANTIC_MEMORY", "ARCHIVE_ATTACHMENTS"] as const) {
+      if (platform[flag] && !platform.PATCH_API_URL) {
+        context.addIssue({
+          code: "custom",
+          path: [flag],
+          message: `${flag}=true needs the Patch API Worker; set PATCH_API_URL and PATCH_API_TOKEN`,
+        });
+      }
+    }
+  })
+  .parse(process.env);
+
+export const platformConfig = {
+  /** When set, every D1 store goes through the Worker's D1 binding. */
+  patchApi:
+    platformEnv.PATCH_API_URL && platformEnv.PATCH_API_TOKEN
+      ? { baseUrl: platformEnv.PATCH_API_URL, token: platformEnv.PATCH_API_TOKEN }
+      : undefined,
+  semanticMemory: platformEnv.SEMANTIC_MEMORY,
+  archiveAttachments: platformEnv.ARCHIVE_ATTACHMENTS,
+} as const;

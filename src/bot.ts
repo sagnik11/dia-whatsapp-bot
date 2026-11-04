@@ -57,6 +57,13 @@ interface BotOptions {
   /** Keeps the group's conversation so briefs and answers can cite it. */
   conversation?: Pick<ConversationStore, "record">;
   scheduler?: ProactiveScheduler;
+  /** Phase 3 (ARCHIVE_ATTACHMENTS): stores an ingested attachment and returns its key. */
+  archiveAttachment?: (input: {
+    groupId: string;
+    messageId: string;
+    sentAtMs: number;
+    attachment: AssistantAttachment;
+  }) => Promise<string>;
   puppeteerExecutablePath?: string;
   readyTimeoutMs?: number;
   client?: InstanceType<typeof Client>;
@@ -411,6 +418,8 @@ export class WhatsAppBot {
         );
         return;
       }
+      // Runs in the background: a slow or failed upload never delays the reply.
+      void this.archiveAttachment(groupId, mediaMessage, attachments[0]);
     }
 
     const assistantRequest = {
@@ -462,6 +471,37 @@ export class WhatsAppBot {
         fromBot: true,
         sentAtMs: Date.now(),
       });
+    }
+  }
+
+  /** Archives an ingested attachment and notes its key in the conversation log. */
+  private async archiveAttachment(
+    groupId: string,
+    mediaMessage: whatsapp.Message,
+    attachment: AssistantAttachment | undefined,
+  ): Promise<void> {
+    if (!this.options.archiveAttachment || !attachment) return;
+    try {
+      const messageId = serializeMessageId(mediaMessage.id);
+      const key = await this.options.archiveAttachment({
+        groupId,
+        messageId,
+        sentAtMs: mediaMessage.timestamp * 1_000,
+        attachment,
+      });
+      this.options.logger.info({ groupId, messageId, key }, "Archived WhatsApp attachment");
+      if (this.isEligibleGroup(groupId)) {
+        this.recordConversation({
+          groupId,
+          messageId: `${messageId}:archive`,
+          author: this.options.botName,
+          body: `📎 Archived ${attachment.fileName} as ${key}`,
+          fromBot: true,
+          sentAtMs: Date.now(),
+        });
+      }
+    } catch (error) {
+      this.options.logger.warn({ error, groupId }, "Could not archive WhatsApp attachment");
     }
   }
 

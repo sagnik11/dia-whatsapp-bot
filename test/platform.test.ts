@@ -24,6 +24,7 @@ import { SemanticTools, isSemanticRequest } from "../src/assistant-semantic.js";
 import { DiaAssistant } from "../src/assistant.js";
 import { WhatsAppBot } from "../src/bot.js";
 import { D1QueryError } from "../src/cloudflare-d1.js";
+import { CONVERSATION_SCHEMA_STATEMENTS, D1ConversationStore } from "../src/conversation-store-d1.js";
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "../src/d1-schema.js";
 import type { CompletionRequest, CompletionResult } from "../src/llm.js";
 import { MemoryStore } from "../src/memory-store.js";
@@ -35,9 +36,9 @@ import {
   createAttachmentArchiver,
 } from "../src/patch-api-client.js";
 import { ProactiveScheduler } from "../src/scheduler.js";
-import { TaskStore, type TaskCreateInput } from "../src/task-store.js";
-import type { AssistantAttachment } from "../src/types.js";
-import { PLATFORM_SCHEMA_STATEMENTS, VectorSyncJob } from "../src/vector-sync.js";
+import { TaskStore, type TaskCreateInput, type TaskPatch } from "../src/task-store.js";
+import type { AssistantAttachment, BrainDumpResult } from "../src/types.js";
+import { PLATFORM_SCHEMA_STATEMENTS, VectorSyncJob, chunkBrainDump } from "../src/vector-sync.js";
 import { textTurn, toolTurn } from "./support/fake-llm.js";
 import { createSqliteExecutor } from "./support/sqlite-executor.js";
 
@@ -134,6 +135,10 @@ function fakeVectorize(options: { ignoreFilter?: boolean } = {}): VectorizeIndex
         .sort((a, b) => b.score - a.score)
         .slice(0, query.topK);
       return { matches };
+    },
+    deleteByIds: async (ids) => {
+      for (const id of ids) vectors.delete(id);
+      return { mutationId: `delete-${ids.length}` };
     },
   };
 }
@@ -284,6 +289,20 @@ describe("Patch API Worker", () => {
     expect((await postJson(env, "/vectors/upsert", { items: [] })).status).toBe(400);
   });
 
+  it("deletes vectors by id, ignoring unknown ids, and validates the request", async () => {
+    const env = workerEnv();
+    await postJson(env, "/vectors/upsert", {
+      items: [{ id: "task:1", text: "Pay AWS", metadata: { group_id: "*", kind: "task", ref: "#1" } }],
+    });
+    const response = await postJson(env, "/vectors/delete", { ids: ["task:1", "task:404"] });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, result: { deleted: 2 } });
+    expect(env.VECTORS.vectors.size).toBe(0);
+    expect((await postJson(env, "/vectors/delete", { ids: [] })).status).toBe(400);
+    expect((await postJson(env, "/vectors/delete", { ids: ["x".repeat(65)] })).status).toBe(400);
+    expect((await call(env, "/vectors/delete", { method: "GET" })).status).toBe(405);
+  });
+
   it("always scopes /vectors/query to one group plus company-wide items", async () => {
     const env = workerEnv();
     await postJson(env, "/vectors/upsert", {
@@ -394,18 +413,50 @@ describe("PatchApiSqlExecutor", () => {
 
 // --- Vector sync --------------------------------------------------------------------
 
-function syncFixture() {
+function syncFixture(
+  options: {
+    now?: () => Date;
+    brainDump?: (options: { maxCharacters: number }) => Promise<BrainDumpResult>;
+  } = {},
+) {
   const executor = createSqliteExecutor();
   databases.push(executor);
   const env = workerEnv();
   const index = new SemanticIndex({ baseUrl: BASE_URL, token: TOKEN, fetch: workerFetch(env) as typeof fetch, logger });
   const upsert = vi.spyOn(index, "upsert");
+  const remove = vi.spyOn(index, "remove");
+  const clock = options.now ? { now: options.now } : {};
   const schema = new SchemaGate(executor, PHASE1_SCHEMA_STATEMENTS, logger, "Phase 1");
-  const memory = new MemoryStore({ db: executor, schema, logger });
-  const tasks = new TaskStore({ db: executor, timezone: "Asia/Kolkata", logger });
-  const job = new VectorSyncJob({ db: executor, index, logger, batchSize: 2 });
-  return { executor, env, index, upsert, memory, tasks, job };
+  const memory = new MemoryStore({ db: executor, schema, logger, ...clock });
+  const tasks = new TaskStore({ db: executor, timezone: "Asia/Kolkata", logger, ...clock });
+  const conversationSchema = new SchemaGate(executor, CONVERSATION_SCHEMA_STATEMENTS, logger, "Conversation");
+  const conversation = new D1ConversationStore({ db: executor, schema: conversationSchema, logger });
+  const job = new VectorSyncJob({
+    db: executor,
+    index,
+    logger,
+    batchSize: 2,
+    conversation: conversationSchema,
+    ...(options.brainDump ? { brainDump: { read: options.brainDump } } : {}),
+    ...clock,
+  });
+  return { executor, env, index, upsert, remove, memory, tasks, conversation, job };
 }
+
+const NONE = { memory: 0, task: 0, message: 0, brainDump: 0, removed: 0 };
+const patch = (fields: Partial<TaskPatch>): TaskPatch => ({
+  title: null,
+  status: null,
+  priority: null,
+  owner: null,
+  area: null,
+  dueAt: null,
+  tags: null,
+  notesMode: null,
+  notes: null,
+  clear: [],
+  ...fields,
+});
 
 const memoryEntry = (subject: string, content: string) => ({
   kind: "fact" as const,
@@ -429,44 +480,163 @@ describe("VectorSyncJob", () => {
     expect(statements).toEqual(PLATFORM_SCHEMA_STATEMENTS.map((s) => s.replace(/\s+/g, " ").trim()));
   });
 
-  it("indexes each new memory and task once and advances the high-water mark", async () => {
+  it("indexes each new memory and task once and advances the cursors", async () => {
     const { env, upsert, memory, tasks, job } = syncFixture();
     await memory.add("g1", [memoryEntry("SOC 2", "Audit starts in January."), memoryEntry("Acme", "Rahul runs procurement.")], "Tanvi");
     await memory.add("g2", [memoryEntry("SOC 2", "Other group's note.")], "Sagnik");
     await tasks.create([draft("Book the SOC 2 auditor"), draft("Pay AWS"), draft("Oops")], { actor: "Sagnik", groupName: null, messageId: "m" });
     await tasks.delete(3, "Sagnik");
 
-    expect(await job.syncAll()).toEqual({ memory: 3, task: 2 });
-    expect(await job.lastId("memory")).toBe(3);
-    expect(await job.lastId("task")).toBe(2);
+    // Task 3 was deleted before it was ever indexed; removing it is a harmless no-op.
+    expect(await job.syncAll()).toEqual({ ...NONE, memory: 3, task: 2, removed: 1 });
+    expect(await job.cursor("memory")).toEqual({ mark: "", lastId: 3 });
+    expect((await job.cursor("task")).lastId).toBe(3);
     expect([...env.VECTORS.vectors.keys()].sort()).toEqual(["memory:1", "memory:2", "memory:3", "task:1", "task:2"]);
     expect(env.VECTORS.vectors.get("memory:3")?.metadata).toMatchObject({ group_id: "g2", kind: "memory", ref: "M3", memory_kind: "fact" });
     expect(env.VECTORS.vectors.get("task:1")?.metadata).toEqual({ group_id: "*", kind: "task", ref: "#1", title: "Book the SOC 2 auditor" });
     expect(upsert).toHaveBeenCalledTimes(3); // memories 2 + 1, tasks 2
 
     upsert.mockClear();
-    expect(await job.syncAll()).toEqual({ memory: 0, task: 0 });
+    expect(await job.syncAll()).toEqual(NONE);
     expect(upsert).not.toHaveBeenCalled();
 
     await memory.add("g1", [memoryEntry("pricing", "We price per repo.")], "Tanvi");
-    expect(await job.syncAll()).toEqual({ memory: 1, task: 0 });
+    expect(await job.syncAll()).toEqual({ ...NONE, memory: 1 });
     expect(upsert.mock.calls[0]?.[0].map((item) => item.id)).toEqual(["memory:4"]);
   });
 
-  it("is idempotent after a lost mark and never advances past a failed upsert", async () => {
+  it("is idempotent after a lost cursor and never advances past a failed upsert", async () => {
     const { executor, env, upsert, memory, job } = syncFixture();
     await memory.add("g1", [memoryEntry("a", "first"), memoryEntry("b", "second")], "Tanvi");
     await job.syncAll();
-    await executor.query("DELETE FROM vector_sync_state");
-    expect(await job.syncAll()).toEqual({ memory: 2, task: 0 });
+    await executor.query("DELETE FROM vector_sync_cursor");
+    expect(await job.syncAll()).toEqual({ ...NONE, memory: 2 });
     expect(env.VECTORS.vectors.size).toBe(2);
 
     await memory.add("g1", [memoryEntry("c", "third")], "Tanvi");
     upsert.mockRejectedValueOnce(new Error("Worker down"));
-    expect(await job.syncAll()).toEqual({ memory: 0, task: 0 });
-    expect(await job.lastId("memory")).toBe(2);
-    expect(await job.syncAll()).toEqual({ memory: 1, task: 0 });
-    expect(await job.lastId("memory")).toBe(3);
+    expect(await job.syncAll()).toEqual(NONE);
+    expect((await job.cursor("memory")).lastId).toBe(2);
+    expect(await job.syncAll()).toEqual({ ...NONE, memory: 1 });
+    expect((await job.cursor("memory")).lastId).toBe(3);
+  });
+
+  it("re-embeds edited tasks and removes deleted tasks and forgotten memories", async () => {
+    let nowMs = Date.parse("2026-11-04T06:00:00.000Z");
+    const { env, remove, memory, tasks, job } = syncFixture({ now: () => new Date(nowMs) });
+    const tick = () => (nowMs += 1_000);
+    await memory.add("g1", [memoryEntry("SOC 2", "Audit starts in January."), memoryEntry("lunch", "Dosa.")], "Tanvi");
+    await tasks.create([draft("Book the auditor"), draft("Pay AWS"), draft("Renew domain")], { actor: "Sagnik", groupName: null, messageId: "m" });
+    await job.syncAll();
+    expect(env.VECTORS.vectors.size).toBe(5);
+
+    tick();
+    await tasks.update(1, patch({ title: "Book the SOC 2 Type I auditor" }), "Tanvi");
+    await tasks.delete(2, "Sagnik");
+    await memory.forget("g1", 2, "Tanvi");
+    tick();
+    expect(await job.syncAll()).toEqual({ ...NONE, task: 1, removed: 2 });
+    expect(env.VECTORS.vectors.get("task:1")?.metadata.title).toBe("Book the SOC 2 Type I auditor");
+    expect(env.VECTORS.vectors.has("task:2")).toBe(false);
+    expect(env.VECTORS.vectors.has("memory:2")).toBe(false);
+    expect(remove.mock.calls.flatMap(([ids]) => ids).sort()).toEqual(["memory:2", "task:2"]);
+
+    tick();
+    await tasks.restore(2, "Sagnik");
+    expect(await job.syncAll()).toEqual({ ...NONE, task: 1 });
+    expect(env.VECTORS.vectors.has("task:2")).toBe(true);
+    expect(await job.syncAll()).toEqual(NONE);
+  });
+
+  it("indexes founders' messages from the D1 conversation log, never Patch's or one-word replies", async () => {
+    const { env, conversation, job, index, executor } = syncFixture();
+    const at = Date.parse("2026-11-03T10:00:00.000Z");
+    const say = (groupId: string, messageId: string, author: string, body: string, fromBot = false) =>
+      conversation.record({ groupId, messageId, author, body, fromBot, sentAtMs: at });
+    await say("g1", "m1", "Tanvi", "We should finish SOC 2 Type I before the Acme pilot starts");
+    await say("g1", "m2", "Sagnik", "ok 👍");
+    await say("g1", "m3", "Captain Patch", "✅ Task #4 added: SOC 2 Type I evidence", true);
+    await say("g2", "m4", "Rahul", "Our SOC 2 Type I report is already done");
+
+    expect(await job.syncAll()).toEqual({ ...NONE, message: 2 });
+    expect([...env.VECTORS.vectors.keys()].sort()).toEqual(["message:1", "message:4"]);
+    expect(env.VECTORS.vectors.get("message:1")?.metadata).toEqual({
+      group_id: "g1",
+      kind: "message",
+      ref: "message:1",
+      author: "Tanvi",
+      sent_at: "2026-11-03T10:00:00.000Z",
+    });
+
+    const semantic = new SemanticTools({ index, db: executor, logger, messages: true });
+    const kinds = semantic.tools[0]?.parameters as { properties: { kinds: { items: { enum: string[] } } } };
+    expect(kinds.properties.kinds.items.enum).toEqual(["memory", "task", "message"]);
+    expect(await semantic.search({ query: "SOC 2 Type I", kinds: ["message"] }, request("q"), new Set())).toMatchObject({
+      payload: {
+        count: 1,
+        matches: [{ type: "message", saidBy: "Tanvi", when: "2026-11-03T10:00:00.000Z", text: "We should finish SOC 2 Type I before the Acme pilot starts" }],
+      },
+    });
+
+    // Once the 90-day log prunes a message, search stops returning it.
+    await conversation.prune(at + 1);
+    expect(await semantic.search({ query: "SOC 2 Type I", kinds: ["message"] }, request("q"), new Set())).toMatchObject({
+      payload: { count: 0 },
+    });
+  });
+
+  it("chunks the Brain Dump by heading and size with stable ids", () => {
+    const ideas = Array.from({ length: 30 }, (_, i) => `Idea ${i}: ${"x".repeat(80)}`).join("\n");
+    const chunks = chunkBrainDump(`Loose note\n# Ideas\n${ideas}\n\n[Content truncated by Captain Patch]`);
+    expect(chunks[0]).toMatchObject({ heading: null, content: "Loose note", position: 0 });
+    expect(chunks.length).toBeGreaterThan(2);
+    expect(chunks.slice(1).every((chunk) => chunk.heading === "Ideas" && chunk.content.length <= 1_300)).toBe(true);
+    expect(chunks.some((chunk) => chunk.content.includes("truncated"))).toBe(false);
+    expect(chunks.every((chunk) => /^brain:[0-9a-f]{32}$/.test(chunk.id))).toBe(true);
+    const appended = chunkBrainDump(`Loose note\n# Ideas\n${ideas}\n# New\nA fresh thought`);
+    expect(appended.slice(0, chunks.length).map((chunk) => chunk.id)).toEqual(chunks.map((chunk) => chunk.id));
+  });
+
+  it("indexes Brain Dump notes hourly and removes notes deleted in Notion", async () => {
+    let nowMs = Date.parse("2026-11-04T06:00:00.000Z");
+    let markdown =
+      "# Pricing\nPer-repo pricing beats per-seat for small teams.\n\n# Hiring\nLooking for a founding designer in Bengaluru.";
+    let truncated = false;
+    const read = vi.fn(async () => ({ pageId: "p", markdown, truncated }));
+    const { env, job, index, executor } = syncFixture({ now: () => new Date(nowMs), brainDump: read });
+    const brainIds = () => [...env.VECTORS.vectors.keys()].filter((id) => id.startsWith("brain:"));
+
+    expect(await job.syncAll()).toEqual({ ...NONE, brainDump: 2 });
+    expect(read).toHaveBeenCalledWith({ maxCharacters: 400_000 });
+    const first = brainIds();
+    expect(env.VECTORS.vectors.get(first[0] ?? "")?.metadata).toMatchObject({ group_id: "*", kind: "brain_dump", ref: "Brain Dump" });
+
+    markdown += "\n\n# Security\nSOC 2 Type I auditor shortlist: A-LIGN and Prescient.";
+    expect(await job.syncAll()).toEqual(NONE); // read at most hourly
+    expect(read).toHaveBeenCalledOnce();
+    nowMs += 3_600_000;
+    expect(await job.syncAll()).toEqual({ ...NONE, brainDump: 1 });
+    expect(first.every((id) => env.VECTORS.vectors.has(id))).toBe(true);
+
+    markdown = markdown.replace("\n\n# Hiring\nLooking for a founding designer in Bengaluru.", "");
+    truncated = true;
+    nowMs += 3_600_000;
+    expect(await job.syncAll()).toEqual(NONE); // a cut-short read never deletes
+    truncated = false;
+    nowMs += 3_600_000;
+    expect(await job.syncAll()).toEqual({ ...NONE, removed: 1 });
+    expect(brainIds()).toHaveLength(2);
+
+    const semantic = new SemanticTools({ index, db: executor, logger, brainDump: true });
+    const found = await semantic.search({ query: "SOC 2 auditor shortlist", kinds: ["brain_dump"] }, request("q"), new Set());
+    const matches = (found as { payload: { matches: Array<Record<string, unknown>> } }).payload.matches;
+    expect(matches).toHaveLength(2);
+    expect(matches[0]).toMatchObject({
+      ref: "Brain Dump",
+      type: "brain_dump",
+      heading: "Security",
+      text: "SOC 2 Type I auditor shortlist: A-LIGN and Prescient.",
+    });
   });
 
   it("runs from the scheduler's jobs without sending anything", async () => {

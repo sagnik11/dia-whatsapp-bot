@@ -142,16 +142,19 @@ function summarizePageProperties(
   );
 }
 
-export function boundBrainDumpMarkdown(markdown: string): {
+export function boundBrainDumpMarkdown(
+  markdown: string,
+  maxCharacters = MAX_BRAIN_DUMP_CHARACTERS,
+): {
   markdown: string;
   truncated: boolean;
 } {
-  if (markdown.length <= MAX_BRAIN_DUMP_CHARACTERS) {
+  if (markdown.length <= maxCharacters) {
     return { markdown, truncated: false };
   }
 
   return {
-    markdown: `${markdown.slice(0, MAX_BRAIN_DUMP_CHARACTERS)}\n\n[Content truncated by Captain Patch]`,
+    markdown: `${markdown.slice(0, maxCharacters)}\n\n[Content truncated by Captain Patch]`,
     truncated: true,
   };
 }
@@ -401,7 +404,12 @@ export class NotionWorkspaceService {
     return { id, type, rows, hasMore: response.has_more };
   }
 
-  public async readBrainDump(): Promise<BrainDumpResult> {
+  /**
+   * The Brain Dump as markdown. The default bound keeps it small enough for a
+   * model prompt; the semantic index asks for a much larger bound so notes
+   * appended at the end are still indexed.
+   */
+  public async readBrainDump(options: { maxCharacters?: number } = {}): Promise<BrainDumpResult> {
     const pageId = this.options.brainDumpPageId;
     if (!pageId) {
       throw new Error("NOTION_BRAIN_DUMP_PAGE_ID is not configured");
@@ -411,7 +419,7 @@ export class NotionWorkspaceService {
       page_id: pageId,
       include_transcript: false,
     });
-    const bounded = boundBrainDumpMarkdown(response.markdown);
+    const bounded = boundBrainDumpMarkdown(response.markdown, options.maxCharacters);
     const truncated = response.truncated || bounded.truncated;
 
     this.options.logger.info(

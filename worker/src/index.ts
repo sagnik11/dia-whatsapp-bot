@@ -306,6 +306,30 @@ export async function handleVectorQuery(body: unknown, env: EmbeddingEnv): Promi
   return ok({ matches });
 }
 
+/**
+ * POST /vectors/delete with `{ids: [...]}`: removes vectors for rows that were
+ * deleted or edited away. Unknown ids are a no-op, so a retry is harmless.
+ */
+export async function handleVectorDelete(body: unknown, env: Pick<Env, "VECTORS">): Promise<Response> {
+  if (!isRecord(body) || !Array.isArray(body.ids)) throw new HttpError(400, "Body must be {ids: string[]}");
+  const ids = body.ids;
+  if (ids.length === 0 || ids.length > MAX_UPSERT_ITEMS) {
+    throw new HttpError(400, `ids must hold 1-${MAX_UPSERT_ITEMS} vector ids`);
+  }
+  const valid: string[] = [];
+  for (const [index, id] of ids.entries()) {
+    if (typeof id !== "string" || !id.trim() || byteLength(id) > MAX_VECTOR_ID_BYTES) {
+      throw new HttpError(400, `ids[${index}] must be 1-${MAX_VECTOR_ID_BYTES} bytes`);
+    }
+    valid.push(id);
+  }
+  const result = await env.VECTORS.deleteByIds([...new Set(valid)]);
+  return ok({
+    deleted: valid.length,
+    ...(isRecord(result) && typeof result.mutationId === "string" ? { mutationId: result.mutationId } : {}),
+  });
+}
+
 // --- Files ----------------------------------------------------------------------
 
 function hasControlCharacters(value: string): boolean {
@@ -403,6 +427,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (pathname === "/vectors/query") {
       if (request.method !== "POST") return methodNotAllowed("POST");
       return await handleVectorQuery(await readJson(request), env);
+    }
+    if (pathname === "/vectors/delete") {
+      if (request.method !== "POST") return methodNotAllowed("POST");
+      return await handleVectorDelete(await readJson(request), env);
     }
     if (pathname.startsWith("/files/")) {
       const key = parseFileKey(pathname);

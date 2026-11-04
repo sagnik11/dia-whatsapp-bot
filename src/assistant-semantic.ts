@@ -7,8 +7,9 @@ import type { ToolModule, ToolSession } from "./tool-module.js";
 import { output, type ToolOutcome } from "./tool-outcome.js";
 import type { AssistantRequest } from "./types.js";
 
-export const SEMANTIC_KINDS = ["memory", "task"] as const;
+export const SEMANTIC_KINDS = ["memory", "task", "message", "brain_dump"] as const;
 export type SemanticKind = (typeof SEMANTIC_KINDS)[number];
+const BASE_KINDS: readonly SemanticKind[] = ["memory", "task"];
 
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 20;
@@ -23,37 +24,51 @@ const lower = (value: unknown) => (typeof value === "string" ? value.trim().toLo
 
 const semanticSearchSchema = z.object({
   query: z.string().trim().min(2).max(500),
-  kinds: z.array(z.preprocess(lower, z.enum(SEMANTIC_KINDS))).max(2).nullish(),
+  kinds: z.array(z.preprocess(lower, z.enum(SEMANTIC_KINDS))).max(SEMANTIC_KINDS.length).nullish(),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).nullish(),
 });
 
-export const SEMANTIC_TOOLS: readonly ToolDefinition[] = [
-  {
-    name: "semantic_search",
-    description:
-      "Search by meaning across this group's long-term memory (decisions, commitments, facts, people, preferences) and the company task list, e.g. 'what have we said about SOC 2?'. Finds related items even when the words differ. Returns matches with refs to cite: M<id> for memories, #<id> for tasks.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "The topic or question in plain words." },
-        kinds: {
-          type: "array",
-          items: { type: "string", enum: [...SEMANTIC_KINDS] },
-          description: "Limit to memories or tasks. Default both.",
+const KIND_LABELS: Record<SemanticKind, string> = {
+  memory: "this group's long-term memory (decisions, commitments, facts, people, preferences)",
+  task: "the company task list",
+  message: "what founders said in this group's conversation",
+  brain_dump: "the Notion Brain Dump",
+};
+
+function joinLabels(labels: readonly string[]): string {
+  return labels.length <= 1 ? (labels[0] ?? "") : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1) ?? ""}`;
+}
+
+export function semanticToolDefinitions(kinds: readonly SemanticKind[]): ToolDefinition[] {
+  return [
+    {
+      name: "semantic_search",
+      description: `Search by meaning across ${joinLabels(kinds.map((kind) => KIND_LABELS[kind]))}, e.g. 'what have we said about SOC 2?'. Finds related items even when the words differ. Memories come back with M<id> refs and tasks with #<id>; messages with who said them and when; Brain Dump notes with their heading.`,
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "The topic or question in plain words." },
+          kinds: {
+            type: "array",
+            items: { type: "string", enum: [...kinds] },
+            description: "Limit to some kinds. Default all.",
+          },
+          limit: { type: "integer", minimum: 1, maximum: MAX_LIMIT, description: `Default ${DEFAULT_LIMIT}.` },
         },
-        limit: { type: "integer", minimum: 1, maximum: MAX_LIMIT, description: `Default ${DEFAULT_LIMIT}.` },
+        required: ["query"],
+        additionalProperties: false,
       },
-      required: ["query"],
-      additionalProperties: false,
     },
-  },
-];
+  ];
+}
+
+export const SEMANTIC_TOOLS: readonly ToolDefinition[] = semanticToolDefinitions(BASE_KINDS);
 
 export const SEMANTIC_INSTRUCTIONS: readonly string[] = [
   "Semantic memory:",
-  "- Prefer semantic_search for fuzzy or conceptual questions ('what have we said about SOC 2?', 'anything on enterprise security?') across long-term memory and tasks; it matches meaning, not exact words.",
-  "- Use search_memory for exact names, words or recent decisions, and list_tasks for task filters (owner, status, due dates). Items saved in the last ~10 minutes may not be in semantic_search yet.",
-  "- Cite every match you use by its ref (M<id> or #<id>), and say who said it and when for memories. Treat low scores as weak matches; never invent items.",
+  "- Prefer semantic_search for fuzzy or conceptual questions ('what have we said about SOC 2?', 'anything on enterprise security?'); it matches meaning, not exact words.",
+  "- Use search_memory for exact names, words or recent decisions, list_tasks for task filters (owner, status, due dates), and read_group_conversation for a time window. Items saved in the last ~10 minutes (about an hour for the Brain Dump) may not be in semantic_search yet.",
+  "- Cite every match you use: M<id> or #<id>; for a message, who said it and when; for a Brain Dump note, 'Brain Dump' and its heading. Treat low scores as weak matches; never invent items.",
 ];
 
 interface MemoryRow {
@@ -75,30 +90,61 @@ interface TaskRow {
   notes: string | null;
 }
 
+interface MessageRow {
+  id: number;
+  author: string;
+  body: string;
+  sent_at_ms: number;
+}
+
+interface ChunkRow {
+  chunk_id: string;
+  heading: string | null;
+  content: string;
+}
+
+type Hit =
+  | { kind: "memory" | "task" | "message"; id: number; score: number }
+  | { kind: "brain_dump"; id: string; score: number };
+
 function placeholders(count: number): string {
   return Array.from({ length: count }, () => "?").join(", ");
 }
 
-function parseVectorId(id: string): { kind: SemanticKind; id: number } | null {
-  const match = /^(memory|task):(\d{1,12})$/.exec(id);
-  if (!match?.[1] || !match[2]) return null;
-  return { kind: match[1] as SemanticKind, id: Number(match[2]) };
+function parseVectorId(id: string, score: number): Hit | null {
+  const numbered = /^(memory|task|message):(\d{1,12})$/.exec(id);
+  if (numbered?.[1] && numbered[2]) {
+    return { kind: numbered[1] as "memory" | "task" | "message", id: Number(numbered[2]), score };
+  }
+  return /^brain:[0-9a-f]{32}$/.test(id) ? { kind: "brain_dump", id, score } : null;
 }
 
 interface SemanticToolsOptions {
   index: Pick<SemanticIndex, "query">;
-  /** Matches are re-read from D1 so deleted or other-group items never surface. */
+  /** Matches are re-read from D1 so deleted, pruned or other-group items never surface. */
   db: SqlExecutor;
   logger: Logger;
+  /** Founders' messages are searchable when the conversation is stored in D1. */
+  messages?: boolean;
+  /** Brain Dump notes are searchable when the Brain Dump is configured. */
+  brainDump?: boolean;
 }
 
-/** Phase 3: semantic search over memories and tasks, backed by Vectorize. */
+/** Phase 3: semantic search over memories, tasks, messages and the Brain Dump, backed by Vectorize. */
 export class SemanticTools implements ToolModule {
   public readonly name = "semantic";
-  public readonly tools = SEMANTIC_TOOLS;
+  public readonly tools: readonly ToolDefinition[];
   public readonly instructions = SEMANTIC_INSTRUCTIONS;
+  private readonly kinds: readonly SemanticKind[];
 
-  public constructor(private readonly options: SemanticToolsOptions) {}
+  public constructor(private readonly options: SemanticToolsOptions) {
+    this.kinds = [
+      ...BASE_KINDS,
+      ...(options.messages ? (["message"] as const) : []),
+      ...(options.brainDump ? (["brain_dump"] as const) : []),
+    ];
+    this.tools = semanticToolDefinitions(this.kinds);
+  }
 
   public detect(message: string): boolean {
     return isSemanticRequest(message);
@@ -113,7 +159,9 @@ export class SemanticTools implements ToolModule {
 
   public async search(args: unknown, request: AssistantRequest, knownTaskIds: Set<number>): Promise<ToolOutcome> {
     const parsed = semanticSearchSchema.parse(args);
-    const kinds = new Set<SemanticKind>(parsed.kinds?.length ? parsed.kinds : SEMANTIC_KINDS);
+    const enabled = new Set(this.kinds);
+    const requested = (parsed.kinds ?? []).filter((kind) => enabled.has(kind));
+    const kinds = new Set<SemanticKind>(requested.length > 0 ? requested : this.kinds);
     const limit = parsed.limit ?? DEFAULT_LIMIT;
 
     let matches;
@@ -132,15 +180,14 @@ export class SemanticTools implements ToolModule {
     }
 
     const hits = matches
-      .map((match) => ({ ...parseVectorId(match.id), score: match.score }))
-      .filter((hit): hit is { kind: SemanticKind; id: number; score: number } =>
-        hit.kind !== undefined && kinds.has(hit.kind),
-      );
-    const memories = await this.memoriesById(
-      request.groupId,
-      hits.filter((hit) => hit.kind === "memory").map((hit) => hit.id),
-    );
-    const tasks = await this.tasksById(hits.filter((hit) => hit.kind === "task").map((hit) => hit.id));
+      .map((match) => parseVectorId(match.id, match.score))
+      .filter((hit): hit is Hit => hit !== null && kinds.has(hit.kind));
+    const numbered = (kind: "memory" | "task" | "message") =>
+      hits.flatMap((hit) => (hit.kind === kind ? [hit.id] : []));
+    const memories = await this.memoriesById(request.groupId, numbered("memory"));
+    const tasks = await this.tasksById(numbered("task"));
+    const messages = await this.messagesById(request.groupId, numbered("message"));
+    const notes = await this.chunksById(hits.flatMap((hit) => (hit.kind === "brain_dump" ? [hit.id] : [])));
 
     const results: Array<Record<string, unknown>> = [];
     for (const hit of hits) {
@@ -158,6 +205,26 @@ export class SemanticTools implements ToolModule {
           content: memory.content,
           saidBy: memory.source_author,
           when: memory.observed_at,
+        });
+      } else if (hit.kind === "message") {
+        const message = messages.get(hit.id);
+        if (!message) continue;
+        results.push({
+          type: "message",
+          score,
+          saidBy: message.author,
+          when: new Date(Number(message.sent_at_ms)).toISOString(),
+          text: message.body.slice(0, 600),
+        });
+      } else if (hit.kind === "brain_dump") {
+        const note = notes.get(hit.id);
+        if (!note) continue;
+        results.push({
+          ref: "Brain Dump",
+          type: "brain_dump",
+          score,
+          heading: note.heading,
+          text: note.content.slice(0, 800),
         });
       } else {
         const task = tasks.get(hit.id);
@@ -181,7 +248,7 @@ export class SemanticTools implements ToolModule {
       count: results.length,
       matches: results,
       ...(results.length === 0
-        ? { note: "No semantic matches. Try search_memory or list_tasks with exact words." }
+        ? { note: "No semantic matches. Try search_memory, list_tasks or read_group_conversation with exact words." }
         : {}),
     });
   }
@@ -195,6 +262,25 @@ export class SemanticTools implements ToolModule {
       params,
     );
     return new Map(result.results.map((row) => [Number(row.id), { ...row, id: Number(row.id) }]));
+  }
+
+  private async messagesById(groupId: string, ids: readonly number[]): Promise<Map<number, MessageRow>> {
+    if (ids.length === 0) return new Map();
+    const result = await this.options.db.query<MessageRow>(
+      `SELECT id, author, body, sent_at_ms FROM conversation_messages
+       WHERE group_id = ? AND from_bot = 0 AND id IN (${placeholders(ids.length)})`,
+      [groupId, ...ids],
+    );
+    return new Map(result.results.map((row) => [Number(row.id), { ...row, id: Number(row.id) }]));
+  }
+
+  private async chunksById(ids: readonly string[]): Promise<Map<string, ChunkRow>> {
+    if (ids.length === 0) return new Map();
+    const result = await this.options.db.query<ChunkRow>(
+      `SELECT chunk_id, heading, content FROM brain_dump_chunks WHERE chunk_id IN (${placeholders(ids.length)})`,
+      [...ids],
+    );
+    return new Map(result.results.map((row) => [row.chunk_id, row]));
   }
 
   private async tasksById(ids: readonly number[]): Promise<Map<number, TaskRow>> {

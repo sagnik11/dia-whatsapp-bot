@@ -484,6 +484,8 @@ Remove `AZURE_OPENAI_*`, `NOTION_DATA_SOURCE_ID`, the `NOTION_*_PROPERTY` names,
 
 ## Deployment
 
+For the step-by-step runbook, from Cloudflare and Notion setup through the Patch API Worker and integrations, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 Captain Patch needs a continuously running process. Your laptop does not need to stay on when the bot runs on a VPS.
 
 For a full Ubuntu deployment—including Docker installation, SSH key use, terminal QR pairing, firewall guidance, updates, and backups—see [Deploy Captain Patch on Amazon Lightsail](docs/lightsail.md).

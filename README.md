@@ -34,6 +34,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - [Configure Cloudflare](#configure-cloudflare)
 - [The task list](#the-task-list)
 - [The group conversation](#the-group-conversation)
+- [Memory, follow-ups, and routines](#memory-follow-ups-and-routines)
 - [Configure Notion (spend log and Brain Dump)](#configure-notion-spend-log-and-brain-dump)
 - [Find group and sender IDs](#find-group-and-sender-ids)
 - [Enable web search](#enable-web-search)
@@ -210,6 +211,23 @@ Patch keeps every message in its allowed groups, plus its own replies, in the lo
 - Patch only reads the log of the group it was asked in, at most a week back per request.
 - Voice notes are logged as `[ptt attachment]` unless someone asks Patch about them.
 - Set `CONVERSATION_RETENTION_DAYS=0` to turn the log off (then also set `FOUNDER_BRIEF_TIME=` empty).
+
+## Memory, follow-ups, and routines
+
+Phase 1 of the [chief-of-staff plan](docs/chief-of-staff-plan.md). All of it lives in D1 (`migrations/0002_phase1.sql`, created on startup).
+
+| What | Ask Patch | Notes |
+| --- | --- | --- |
+| Long-term memory | "what do we know about Acme?", "remember that Rahul prefers email", "forget M7" | Every night at `MEMORY_DISTILL_TIME` (23:30) Patch distills decisions, commitments, facts, people and preferences from the day's conversation. Each memory (`M<id>`) links to the message it came from and outlives the 90-day log. Memory never crosses groups. |
+| Decision log | "log decision: we price per repo" | Decisions are memories of kind `decision`. |
+| Follow-ups | "I told Rahul I'd send the DPA by Friday", "what do we owe people?", "F3 is done" | Promises to or from people outside the group (`F<id>`). |
+| Recurring tasks | "every Monday: send the pipeline update, owner Tanvi", "pause R2" | Each run silently adds a normal task due that day (`R<id>`), tagged `recurring`. Missed runs are not back-filled. |
+| Checklists | "checklist on #8: PAN, GST cert, board resolution", "tick 1 and 3 on #8" | Shown inside `list_tasks` and `get_task`. |
+| Undo | "undo that" | Reverses your most recent task change from the last 24 hours; say it again to step further back. |
+| Minutes and agendas | reply to a voice note with "minutes + tasks", "agenda for Thursday" | Built from the transcript or conversation, tasks, follow-ups and recent decisions. |
+| Monday review | automatic, Mondays 09:30 | Last week's conversation, what shipped, decisions, what slipped, what's owed, and three priorities. Skipped if nothing happened. |
+
+Background jobs (brief, review, nightly memory) use `CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT` (default `high`). A failed brief or review waits 15 minutes before retrying; a failed memory run waits an hour.
 
 ## Configure Notion (spend log and Brain Dump)
 
@@ -449,6 +467,10 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages kept in memory (0–20). |
 | `CONVERSATION_RETENTION_DAYS` | No | `90` | Days of group conversation kept locally for briefs and look-backs; `0` turns the log and the brief off. |
 | `FOUNDER_BRIEF_TIME` | No | `09:00` | Daily brief time `HH:mm`; set it empty to turn the brief off. |
+| `WEEKLY_REVIEW_DAY` | No | `monday` | Day of the weekly review. |
+| `WEEKLY_REVIEW_TIME` | No | `09:30` | Weekly review time `HH:mm`; set it empty to turn the review off. |
+| `MEMORY_DISTILL_TIME` | No | `23:30` | Nightly long-term memory run; set it empty to turn it off. |
+| `CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT` | No | `high` | Reasoning effort for briefs, reviews, and memory. |
 | `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Daily brief destinations. |
 | `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded attachment size. |
 | `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. |

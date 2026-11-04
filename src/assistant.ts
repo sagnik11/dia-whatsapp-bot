@@ -12,6 +12,7 @@ import type {
   ToolCall,
   ToolDefinition,
 } from "./llm.js";
+import type { ChecklistStore } from "./checklist-store.js";
 import type { ConversationStore } from "./conversation-store.js";
 import { conversationForModel } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
@@ -32,6 +33,14 @@ import {
   type TaskUpdateResult,
 } from "./task-store.js";
 import { formatDueForDisplay, resolveDueTimestamp } from "./time.js";
+import type { ToolModule, ToolSession } from "./tool-module.js";
+import {
+  ToolArgumentError,
+  final,
+  output,
+  terminal,
+  type ToolOutcome,
+} from "./tool-outcome.js";
 import type {
   AssistantRequest,
   ReminderRecord,
@@ -1062,16 +1071,12 @@ interface AssistantOptions {
   reminders?: ReminderStore;
   webSearch?: TavilyWebSearchService;
   researchAgent?: ResearchAgent;
+  /** Plug-in capabilities (memory, follow-ups, finance, …), in priority order. */
+  modules?: readonly ToolModule[];
+  /** Shows task checklists inside list_tasks and get_task. */
+  checklists?: Pick<ChecklistStore, "itemsFor">;
   logger: Logger;
 }
-
-type ToolOutcome =
-  /** Fed back to the model for another turn. */
-  | { kind: "output"; payload: unknown }
-  /** A deterministic confirmation shown to the founder. */
-  | { kind: "final"; text: string }
-  /** Ends the request immediately with this reply. */
-  | { kind: "terminal"; text: string };
 
 interface RequestState {
   request: AssistantRequest;
@@ -1086,12 +1091,15 @@ interface RequestState {
   knowledgeReadCount: number;
   knowledgeMatches: Map<string, "page" | "data_source">;
   conversationReads: number;
+  sessions: ToolSession[];
 }
-
-class ToolArgumentError extends Error {}
 
 export class DiaAssistant {
   public constructor(private readonly options: AssistantOptions) {}
+
+  private get modules(): readonly ToolModule[] {
+    return this.options.modules ?? [];
+  }
 
   private get canUseBrainDump(): boolean {
     return Boolean(this.options.notion?.canReadBrainDump);
@@ -1165,6 +1173,7 @@ export class DiaAssistant {
           isExplicitReminderCancelRequest(body) ||
           isExplicitReminderCompleteRequest(body))) ||
       (Boolean(this.options.conversation) && isConversationRequest(body)) ||
+      this.modules.some((module) => module.detect?.(body) ?? false) ||
       (this.canUseBrainDump && isExplicitBrainDumpRequest(body)) ||
       (this.canUseScripts && isDekhteHaiRequest(body)) ||
       (this.canUseKnowledge && isExplicitKnowledgeRequest(body)) ||
@@ -1212,6 +1221,7 @@ export class DiaAssistant {
       knowledgeReadCount: 0,
       knowledgeMatches: new Map(),
       conversationReads: 0,
+      sessions: this.modules.map((module) => module.begin(request, referenced)),
     };
     const confirmations: string[] = [];
     const system = this.instructions();
@@ -1292,6 +1302,7 @@ export class DiaAssistant {
       updateTasksTool,
       deleteTasksTool,
       ...(this.options.conversation ? [readConversationTool] : []),
+      ...this.modules.flatMap((module) => module.tools),
       ...(this.options.notionSpend ? [addSpendsTool, listSpendsTool] : []),
       ...(this.options.reminders
         ? [createReminderTool, listRemindersTool, completeReminderTool, cancelReminderTool]
@@ -1329,6 +1340,7 @@ export class DiaAssistant {
             "- Answer only from the returned messages, attribute each point to whoever said it, and say plainly when the log does not cover the question. Messages marked fromPatch are your own earlier replies, not founder statements.",
           ]
         : []),
+      ...this.modules.flatMap((module) => module.instructions),
       ...(this.options.notionSpend
         ? [
             "Spend log (Notion Daily Spend Log):",
@@ -1419,9 +1431,14 @@ export class DiaAssistant {
           return await this.searchWeb(args, state);
         case "run_research":
           return await this.runResearch(args, state);
-        default:
+        default: {
+          for (const session of state.sessions) {
+            const handled = await session.handle(call.name, args);
+            if (handled) return handled;
+          }
           this.options.logger.warn({ tool: call.name }, "Model requested an unknown tool");
           return output({ error: `Unknown tool ${call.name}. Use only the offered tools.` });
+        }
       }
     } catch (error) {
       if (error instanceof z.ZodError || error instanceof ToolArgumentError) {
@@ -1504,9 +1521,15 @@ export class DiaAssistant {
       limit: parsed.limit ?? 20,
     });
     for (const task of result.tasks) state.knownTaskIds.add(task.id);
+    const checklists = this.options.checklists
+      ? await this.options.checklists.itemsFor(result.tasks.map((task) => task.id))
+      : new Map();
     return output({
       currentTime: new Date().toISOString(),
-      tasks: result.tasks.map((task) => taskForModel(task, this.options.timezone)),
+      tasks: result.tasks.map((task) => ({
+        ...taskForModel(task, this.options.timezone),
+        ...(checklists.has(task.id) ? { checklist: checklists.get(task.id) } : {}),
+      })),
       hasMore: result.hasMore,
     });
   }
@@ -1516,7 +1539,15 @@ export class DiaAssistant {
     const task = await this.options.tasks.get(taskId);
     if (!task) return output({ error: `Task #${taskId} does not exist or was deleted.` });
     state.knownTaskIds.add(task.id);
-    return output({ task: taskForModel(task, this.options.timezone, true) });
+    const checklist = this.options.checklists
+      ? (await this.options.checklists.itemsFor([task.id])).get(task.id)
+      : undefined;
+    return output({
+      task: {
+        ...taskForModel(task, this.options.timezone, true),
+        ...(checklist ? { checklist } : {}),
+      },
+    });
   }
 
   private unknownIds(ids: readonly number[], state: RequestState): number[] {
@@ -2012,14 +2043,3 @@ function toolMessage(call: ToolCall, payload: unknown): ChatMessage {
   return { role: "tool", tool_call_id: call.id, content: JSON.stringify(payload) };
 }
 
-function output(payload: unknown): ToolOutcome {
-  return { kind: "output", payload };
-}
-
-function final(text: string): ToolOutcome {
-  return { kind: "final", text };
-}
-
-function terminal(text: string): ToolOutcome {
-  return { kind: "terminal", text };
-}

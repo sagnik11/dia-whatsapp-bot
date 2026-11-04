@@ -139,6 +139,10 @@ export interface TaskListResult {
   hasMore: boolean;
 }
 
+export type UndoResult =
+  | { action: "removed" | "restored"; task: TaskRecord }
+  | { action: "reverted"; task: TaskRecord; fields: string[] };
+
 export class TaskNotFoundError extends Error {
   public constructor(public readonly taskId: number) {
     super(`Task #${taskId} does not exist or was deleted`);
@@ -413,6 +417,7 @@ export class TaskStore {
     id: number,
     patch: TaskPatch,
     actor: string,
+    meta: Readonly<Record<string, unknown>> = {},
   ): Promise<TaskUpdateResult> {
     await this.ensureSchema();
     const before = await this.get(id);
@@ -517,12 +522,16 @@ export class TaskStore {
         return [field, { from: before[key], to: after[key] }];
       }),
     );
-    await this.recordEvent(id, "updated", actor, diff);
+    await this.recordEvent(id, "updated", actor, { ...diff, ...meta });
     return { before, after, changedFields };
   }
 
   /** Soft-delete: the row disappears from every list but stays in D1 for audit. */
-  public async delete(id: number, actor: string): Promise<TaskRecord> {
+  public async delete(
+    id: number,
+    actor: string,
+    meta: Readonly<Record<string, unknown>> = {},
+  ): Promise<TaskRecord> {
     await this.ensureSchema();
     const before = await this.get(id);
     if (!before) throw new TaskNotFoundError(id);
@@ -532,8 +541,122 @@ export class TaskStore {
       [now, now, actor, id],
     );
     if (result.changes === 0) throw new TaskNotFoundError(id);
-    await this.recordEvent(id, "deleted", actor, { task: before });
+    await this.recordEvent(id, "deleted", actor, { task: before, ...meta });
     return before;
+  }
+
+  /** Bring back a soft-deleted task. */
+  public async restore(
+    id: number,
+    actor: string,
+    meta: Readonly<Record<string, unknown>> = {},
+  ): Promise<TaskRecord> {
+    await this.ensureSchema();
+    const now = this.nowIso();
+    const result = await this.options.db.query<TaskRow>(
+      `UPDATE tasks SET deleted_at = NULL, updated_at = ?, updated_by = ?
+       WHERE id = ? AND deleted_at IS NOT NULL
+       RETURNING ${TASK_COLUMNS}`,
+      [now, actor, id],
+    );
+    const row = result.results[0];
+    if (!row) throw new TaskNotFoundError(id);
+    const task = rowToTask(row);
+    await this.recordEvent(id, "updated", actor, { restored: true, ...meta });
+    return task;
+  }
+
+  /** Tasks finished or dropped since a moment, newest first (for reviews). */
+  public async listClosedSince(sinceIso: string, limit = 100): Promise<TaskRecord[]> {
+    await this.ensureSchema();
+    const result = await this.options.db.query<TaskRow>(
+      `SELECT ${TASK_COLUMNS} FROM tasks
+       WHERE deleted_at IS NULL AND completed_at IS NOT NULL AND completed_at >= ?
+       ORDER BY completed_at DESC LIMIT ${Math.max(1, Math.min(limit, 200))}`,
+      [sinceIso],
+    );
+    return result.results.map(rowToTask);
+  }
+
+  /**
+   * Reverse the actor's most recent task change from the last 24 hours that
+   * has not been undone yet. Repeated undos step further back.
+   */
+  public async undoLast(actor: string): Promise<UndoResult | null> {
+    await this.ensureSchema();
+    const since = new Date(this.now().getTime() - 24 * 60 * 60 * 1_000).toISOString();
+    const result = await this.options.db.query<{
+      id: number;
+      task_id: number;
+      action: string;
+      changes: string;
+    }>(
+      `SELECT id, task_id, action, changes FROM task_events
+       WHERE actor = ? AND created_at >= ?
+         AND json_extract(changes, '$.undoOf') IS NULL
+         AND id NOT IN (
+           SELECT json_extract(changes, '$.undoOf') FROM task_events
+           WHERE json_extract(changes, '$.undoOf') IS NOT NULL
+         )
+       ORDER BY id DESC LIMIT 1`,
+      [actor, since],
+    );
+    const event = result.results[0];
+    if (!event) return null;
+    const meta = { undoOf: Number(event.id) };
+    const taskId = Number(event.task_id);
+
+    if (event.action === "created") {
+      return { action: "removed", task: await this.delete(taskId, actor, meta) };
+    }
+    if (event.action === "deleted") {
+      return { action: "restored", task: await this.restore(taskId, actor, meta) };
+    }
+
+    const changes = JSON.parse(event.changes) as Record<string, { from?: unknown } | unknown>;
+    const from = (field: string): unknown => {
+      const change = changes[field];
+      return change && typeof change === "object" && "from" in change ? change.from : undefined;
+    };
+    if (changes.restored) {
+      return { action: "removed", task: await this.delete(taskId, actor, meta) };
+    }
+    const clear: ClearableTaskField[] = [];
+    const textOrClear = (field: ClearableTaskField, key: string): string | null => {
+      if (!(key in changes)) return null;
+      const value = from(key);
+      if (value === null || value === undefined || value === "") {
+        clear.push(field);
+        return null;
+      }
+      return String(value);
+    };
+    const tagsBefore = from("tags");
+    if ("tags" in changes && Array.isArray(tagsBefore) && tagsBefore.length === 0) {
+      clear.push("tags");
+    }
+    const notes = textOrClear("notes", "notes");
+    const patch: TaskPatch = {
+      title: "title" in changes ? String(from("title") ?? "") || null : null,
+      status: "status" in changes ? ((from("status") as TaskStatus | undefined) ?? null) : null,
+      priority: textOrClear("priority", "priority") as TaskPriority | null,
+      owner: textOrClear("owner", "owner"),
+      area: textOrClear("area", "area"),
+      dueAt: textOrClear("due_at", "due_at"),
+      tags:
+        "tags" in changes && Array.isArray(tagsBefore) && tagsBefore.length > 0
+          ? tagsBefore.map(String)
+          : null,
+      notesMode: notes ? "replace" : null,
+      notes,
+      clear,
+    };
+    const reverted = await this.update(taskId, patch, actor, meta);
+    if (reverted.changedFields.length === 0) {
+      // Already back to how it was; still mark the event so the next undo steps further back.
+      await this.recordEvent(taskId, "updated", actor, { noop: true, ...meta });
+    }
+    return { action: "reverted", task: reverted.after, fields: reverted.changedFields };
   }
 
   private async recordEvent(

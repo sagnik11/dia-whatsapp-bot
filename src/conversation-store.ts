@@ -145,6 +145,17 @@ export class ConversationStore {
     return Boolean(row);
   }
 
+  /** Groups where a founder said something since the cutoff. */
+  public activeGroups(sinceMs: number): string[] {
+    const rows = this.database
+      .prepare(
+        `SELECT DISTINCT group_id FROM conversation_messages
+         WHERE from_bot = 0 AND sent_at_ms >= ? ORDER BY group_id`,
+      )
+      .all(sinceMs) as unknown as Array<{ group_id: string }>;
+    return rows.map((row) => row.group_id);
+  }
+
   /** Delete messages older than the cutoff; returns how many were removed. */
   public prune(olderThanMs: number): number {
     const result = this.database

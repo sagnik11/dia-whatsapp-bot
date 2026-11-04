@@ -8,6 +8,7 @@ import type { ReminderRecord } from "./types.js";
 interface FounderBriefOptions {
   llm: LanguageModel;
   timezone: string;
+  reasoningEffort?: string;
   logger: Logger;
 }
 
@@ -81,6 +82,7 @@ export class FounderBriefGenerator {
           }),
         },
       ],
+      ...(this.options.reasoningEffort ? { reasoningEffort: this.options.reasoningEffort } : {}),
       metadata: { feature: "founder_brief" },
     });
     const output = response.text.trim().slice(0, 3_500);

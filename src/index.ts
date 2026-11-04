@@ -1,23 +1,31 @@
 import { join } from "node:path";
+import { Phase1Tools } from "./assistant-phase1.js";
 import { DiaAssistant } from "./assistant.js";
 import { WhatsAppBot } from "./bot.js";
+import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient } from "./cloudflare-d1.js";
 import { config } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { ConversationStore } from "./conversation-store.js";
+import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { CloudflareMarkdownConverter } from "./document-converter.js";
+import { FollowUpStore } from "./follow-up-store.js";
 import { FounderBriefGenerator, type FounderBriefInput } from "./founder-brief.js";
 import { CloudflareGatewayModel } from "./llm.js";
 import { createLogger } from "./logger.js";
 import { MediaIngestionService } from "./media-ingestion.js";
+import { MemoryDistiller, distillGroupMemory } from "./memory-distiller.js";
+import { MemoryStore } from "./memory-store.js";
 import { NotionSpendService } from "./notion-spend.js";
 import { NotionWorkspaceService } from "./notion.js";
 import { ReminderStore } from "./reminder-store.js";
 import { ResearchAgent } from "./research-agent.js";
+import { RecurringTaskStore, materializeRecurringTasks } from "./recurring-store.js";
 import { ProactiveScheduler } from "./scheduler.js";
 import { TaskStore } from "./task-store.js";
 import { TavilyWebSearchService } from "./web-search.js";
+import { WeeklyReviewGenerator, type WeeklyReviewInput } from "./weekly-review.js";
 
 const logger = createLogger(config.logLevel);
 const databasePath = join(config.dataDir, "dia.sqlite");
@@ -36,16 +44,23 @@ const llm = new CloudflareGatewayModel({
   timeoutMs: config.aiTimeoutMs,
   logger,
 });
-const tasks = new TaskStore({
-  db: new D1HttpClient({
-    accountId: config.cloudflareAccountId,
-    databaseId: config.d1DatabaseId,
-    apiToken: config.d1ApiToken,
-    logger,
-  }),
-  timezone: config.timezone,
+const d1 = new D1HttpClient({
+  accountId: config.cloudflareAccountId,
+  databaseId: config.d1DatabaseId,
+  apiToken: config.d1ApiToken,
   logger,
 });
+const tasks = new TaskStore({ db: d1, timezone: config.timezone, logger });
+// Phase 1: long-term memory, follow-ups, recurring tasks, checklists.
+const phase1Schema = new SchemaGate(d1, PHASE1_SCHEMA_STATEMENTS, logger, "Phase 1");
+const memory = new MemoryStore({ db: d1, schema: phase1Schema, logger });
+const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
+const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
+const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
+const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+const backgroundReasoning = config.aiBackgroundReasoningEffort
+  ? { reasoningEffort: config.aiBackgroundReasoningEffort }
+  : {};
 const notion = config.notionApiKey
   ? new NotionWorkspaceService({
       apiKey: config.notionApiKey,
@@ -90,6 +105,9 @@ const assistant = new DiaAssistant({
   reminders,
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
+  // Capability modules, in priority order. New phases register theirs here.
+  modules: [phase1],
+  checklists,
   logger,
 });
 const mediaIngestion = new MediaIngestionService({
@@ -111,8 +129,12 @@ const mediaIngestion = new MediaIngestionService({
   logger,
 });
 const founderBrief = config.founderBriefTime
-  ? new FounderBriefGenerator({ llm, timezone: config.timezone, logger })
+  ? new FounderBriefGenerator({ llm, timezone: config.timezone, ...backgroundReasoning, logger })
   : undefined;
+const weeklyReview = config.weeklyReviewTime
+  ? new WeeklyReviewGenerator({ llm, timezone: config.timezone, ...backgroundReasoning, logger })
+  : undefined;
+const distiller = new MemoryDistiller({ llm, timezone: config.timezone, ...backgroundReasoning, logger });
 const scheduler = new ProactiveScheduler({
   reminders,
   tasks,
@@ -130,6 +152,33 @@ const scheduler = new ProactiveScheduler({
         },
       }
     : {}),
+  ...(weeklyReview && config.weeklyReviewTime
+    ? {
+        weeklyReview: {
+          weekday: config.weeklyReviewWeekday,
+          time: config.weeklyReviewTime,
+          groupIds: config.founderBriefGroupIds,
+          tasks,
+          followUps,
+          memory,
+          generate: (input: WeeklyReviewInput) => weeklyReview.generate(input),
+        },
+      }
+    : {}),
+  ...(conversation && config.memoryDistillTime
+    ? {
+        memoryJob: {
+          time: config.memoryDistillTime,
+          groups: (sinceMs: number) => conversation.activeGroups(sinceMs),
+          run: (groupId: string, sinceMs: number, untilMs: number) =>
+            distillGroupMemory({ groupId, sinceMs, untilMs, conversation, memory, distiller }),
+        },
+      }
+    : {}),
+  recurringJob: {
+    run: (nowMs: number) =>
+      materializeRecurringTasks({ recurring, tasks, timezone: config.timezone, nowMs, logger }),
+  },
 });
 const bot = new WhatsAppBot({
   assistant,
@@ -170,7 +219,7 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 async function start(): Promise<void> {
   // Fail fast with a clear error if D1 credentials or the database id are wrong.
-  await tasks.ensureSchema();
+  await Promise.all([tasks.ensureSchema(), phase1Schema.ensure()]);
   logger.info(
     {
       model: config.aiModel,
@@ -178,6 +227,9 @@ async function start(): Promise<void> {
       gateway: config.aiGatewayId,
       brainDump: Boolean(notion?.canReadBrainDump),
       conversationRetentionDays: config.conversationRetentionDays,
+      dailyBrief: config.founderBriefTime ?? "off",
+      weeklyReview: config.weeklyReviewTime ? `${config.weeklyReviewWeekday}@${config.weeklyReviewTime}` : "off",
+      memoryDistill: config.memoryDistillTime ?? "off",
       spendLog: Boolean(notionSpend),
     },
     "Chief-of-staff services configured",

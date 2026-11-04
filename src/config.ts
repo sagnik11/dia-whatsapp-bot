@@ -215,3 +215,29 @@ export const config = {
   logLevel: env.LOG_LEVEL,
   puppeteerExecutablePath: env.PUPPETEER_EXECUTABLE_PATH,
 } as const;
+
+// --- Finance (Phase 2) ---
+// Spend-log payment methods that spend company money; reimbursable entries
+// paid this way are never counted as owed to a founder.
+const SPEND_PAYMENT_METHODS = ["company card", "personal card", "upi", "bank transfer", "cash"];
+const financeEnv = z
+  .object({
+    FINANCE_COMPANY_PAYMENT_METHODS: z
+      .string()
+      .default("Company card")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((method) => method.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .refine(
+        (methods) => methods.every((method) => SPEND_PAYMENT_METHODS.includes(method)),
+        `FINANCE_COMPANY_PAYMENT_METHODS must list spend-log payment methods: ${SPEND_PAYMENT_METHODS.join(", ")}`,
+      ),
+  })
+  .parse(process.env);
+
+export const financeConfig = {
+  companyPaymentMethods: financeEnv.FINANCE_COMPANY_PAYMENT_METHODS,
+} as const;

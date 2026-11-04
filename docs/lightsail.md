@@ -210,7 +210,7 @@ Restart the bot:
 sudo docker compose restart dia
 ```
 
-`WhatsApp session authenticated` is not the final ready signal. Wait for `Patch is connected to WhatsApp`. If the saved login authenticates but WhatsApp Web never becomes message-ready, the built-in two-minute watchdog exits the process and Docker restarts it automatically.
+`WhatsApp session authenticated` is not the final ready signal. Wait for `<BOT_NAME> is connected to WhatsApp` (for example `Captain Patch is connected to WhatsApp`). If the saved login authenticates but WhatsApp Web never becomes message-ready, the built-in two-minute watchdog exits the process and Docker restarts it automatically.
 
 If WhatsApp logs the linked device out, remove only the saved authentication directory from the volume or recreate the volume, then repeat the foreground QR-pairing step. Back up the volume before deleting anything.
 

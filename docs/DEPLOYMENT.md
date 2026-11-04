@@ -142,7 +142,7 @@ cd worker
 npx wrangler login
 npx wrangler d1 list
 # Put the bot's database name and id in wrangler.toml under [[d1_databases]]
-# (database_name, database_id; the binding stays DB). Optional sync table:
+# (database_name, database_id; the binding stays DB). Optional sync tables:
 npx wrangler d1 execute <database-name> --remote --file=../migrations/0006_platform.sql
 npx wrangler vectorize create patch-memory --dimensions=1024 --metric=cosine
 npx wrangler vectorize create-metadata-index patch-memory --property-name=group_id --type=string
@@ -179,7 +179,7 @@ CONVERSATION_STORE=auto
 
 - `Chief-of-staff services configured` now shows `d1Route: "patch-api-worker"` and `conversationStore: "d1"`, with `semanticMemory` and `archiveAttachments` true.
 - On this first start the bot copies the local conversation history still inside `CONVERSATION_RETENTION_DAYS` into D1, clears the local table, and logs `Moved the conversation log from local SQLite into D1` (only when there was something to move).
-- `SEMANTIC_MEMORY=true` adds the `semantic_search` tool and a silent sync about every 10 minutes that backfills existing memories and tasks first.
+- `SEMANTIC_MEMORY=true` adds the `semantic_search` tool and a silent sync about every 10 minutes that backfills existing memories and tasks first, and keeps up with edits and deletes after that.
 - Once `SEMANTIC_MEMORY` is on, semantic search also covers the group conversation (when it is stored in D1) and the Notion Brain Dump, with no extra settings.
 
 **Rollback.** Keep `CLOUDFLARE_D1_DATABASE_ID` pointing at the same database. Clear `PATCH_API_URL` and `PATCH_API_TOKEN` (they must be set together), set `SEMANTIC_MEMORY=false` and `ARCHIVE_ATTACHMENTS=false` (both need the Worker), and recreate the container; the stores go back to the REST API. Also set `CONVERSATION_STORE=d1` to keep reading the conversation history that is now in D1; with `auto` the bot goes back to an empty local log.

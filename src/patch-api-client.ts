@@ -139,6 +139,7 @@ export interface SemanticQuery {
 }
 
 const upsertResultSchema = z.object({ upserted: z.number() });
+const deleteResultSchema = z.object({ deleted: z.number() });
 const queryResultSchema = z.object({
   matches: z.array(
     z.object({
@@ -170,6 +171,20 @@ export class SemanticIndex {
       upserted += upsertResultSchema.parse(result).upserted;
     }
     return upserted;
+  }
+
+  /** Removes vectors by id; unknown ids are ignored. */
+  public async remove(ids: readonly string[]): Promise<number> {
+    let deleted = 0;
+    for (let start = 0; start < ids.length; start += UPSERT_CHUNK) {
+      const result = await this.http.postJson(
+        "/vectors/delete",
+        { ids: ids.slice(start, start + UPSERT_CHUNK) },
+        "vector delete",
+      );
+      deleted += deleteResultSchema.parse(result).deleted;
+    }
+    return deleted;
   }
 
   public async query(query: SemanticQuery): Promise<SemanticMatch[]> {

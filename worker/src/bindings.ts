@@ -56,6 +56,8 @@ export interface VectorizeIndexLike {
   /** Resolves with `{ mutationId }` on Vectorize V2; writes become queryable a few seconds later. */
   upsert(vectors: VectorRecord[]): Promise<unknown>;
   query(vector: number[], options: VectorQueryOptions): Promise<{ matches: VectorMatchLike[] }>;
+  /** Unknown ids are ignored. */
+  deleteByIds(ids: string[]): Promise<unknown>;
 }
 
 export interface R2HttpMetadataLike {

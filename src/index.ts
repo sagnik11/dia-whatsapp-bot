@@ -121,8 +121,6 @@ const adminOps = adminConfig.enabled
 // Phase 3: semantic memory (Vectorize) and the R2 attachment archive, each opt-in.
 const semanticIndex =
   patchApi && platformConfig.semanticMemory ? new SemanticIndex({ ...patchApi, logger }) : undefined;
-const semantic = semanticIndex ? new SemanticTools({ index: semanticIndex, db: d1, logger }) : undefined;
-const vectorSync = semanticIndex ? new VectorSyncJob({ db: d1, index: semanticIndex, logger }) : undefined;
 const archiveAttachment =
   patchApi && platformConfig.archiveAttachments
     ? createAttachmentArchiver(new FileArchive({ ...patchApi, logger }), config.timezone)
@@ -140,6 +138,26 @@ const notion = config.notionApiKey
       scriptSources: config.notionScriptSources,
       scriptSeriesName: config.notionScriptSeriesName,
       logger,
+    })
+  : undefined;
+// Semantic search covers founders' messages once the conversation is in D1,
+// and the Brain Dump whenever it is configured.
+const semantic = semanticIndex
+  ? new SemanticTools({
+      index: semanticIndex,
+      db: d1,
+      logger,
+      messages: Boolean(d1Conversation),
+      brainDump: Boolean(notion?.canReadBrainDump),
+    })
+  : undefined;
+const vectorSync = semanticIndex
+  ? new VectorSyncJob({
+      db: d1,
+      index: semanticIndex,
+      logger,
+      ...(d1Conversation ? { conversation: conversationSchema } : {}),
+      ...(notion?.canReadBrainDump ? { brainDump: { read: (options) => notion.readBrainDump(options) } } : {}),
     })
   : undefined;
 const notionSpend =

@@ -6,7 +6,7 @@ import type { DiaAssistant } from "./assistant.js";
 import { isAuthorizedSender } from "./authorization.js";
 import { removeStaleChromiumLocks } from "./chromium-profile.js";
 import type { ContextBuffer } from "./context-buffer.js";
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationLog } from "./conversation-store.js";
 import type { DedupeStore } from "./dedupe-store.js";
 import type { Logger } from "./logger.js";
 import type { MediaIngestionService } from "./media-ingestion.js";
@@ -55,7 +55,7 @@ interface BotOptions {
   listGroupsOnStart: boolean;
   mediaIngestion?: MediaIngestionService;
   /** Keeps the group's conversation so briefs and answers can cite it. */
-  conversation?: Pick<ConversationStore, "record">;
+  conversation?: Pick<ConversationLog, "record">;
   scheduler?: ProactiveScheduler;
   /** Phase 3 (ARCHIVE_ATTACHMENTS): stores an ingested attachment and returns its key. */
   archiveAttachment?: (input: {
@@ -522,10 +522,15 @@ export class WhatsAppBot {
   }): void {
     if (!this.options.conversation) return;
     try {
-      this.options.conversation.record({
-        ...entry,
-        messageId: serializeMessageId(entry.messageId),
-      });
+      // Never awaited: logging to D1 must not delay a reply.
+      void this.options.conversation
+        .record({ ...entry, messageId: serializeMessageId(entry.messageId) })
+        .catch((error: unknown) => {
+          this.options.logger.warn(
+            { error, groupId: entry.groupId },
+            "Could not record conversation message",
+          );
+        });
     } catch (error) {
       // Losing one log line must never stop Patch from replying.
       this.options.logger.warn(

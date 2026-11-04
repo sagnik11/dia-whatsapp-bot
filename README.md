@@ -197,7 +197,7 @@ Tasks live in the D1 `tasks` table with an id, title, notes, status (`todo`, `in
 
 ## The group conversation
 
-Patch keeps every message in its allowed groups, plus its own replies, in the local SQLite database on your server for `CONVERSATION_RETENTION_DAYS` (default 90). Nothing from this log goes to D1 or Notion. It is sent to the model only when a founder asks about earlier discussion or when the daily brief is written.
+Patch keeps every message in its allowed groups, plus its own replies, for `CONVERSATION_RETENTION_DAYS` (default 90). With the Patch API Worker configured (`PATCH_API_URL`), the log lives in Cloudflare D1 (`CONVERSATION_STORE=auto`, the founders' decision), and the first start moves any local history there once; without the Worker it stays in local SQLite on your server. It never goes to Notion. It is sent to the model only when a founder asks about earlier discussion or when the daily brief is written.
 
 ```text
 @patch what did we decide about pricing on Monday?

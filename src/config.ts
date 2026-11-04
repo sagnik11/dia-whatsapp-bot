@@ -226,6 +226,8 @@ const platformEnv = z
     PATCH_API_TOKEN: optionalString,
     SEMANTIC_MEMORY: booleanFlag("false"),
     ARCHIVE_ATTACHMENTS: booleanFlag("false"),
+    // Where the group conversation lives. auto = D1 once the Worker is configured.
+    CONVERSATION_STORE: z.enum(["auto", "d1", "local"]).default("auto"),
   })
   .superRefine((platform, context) => {
     if (Boolean(platform.PATCH_API_URL) !== Boolean(platform.PATCH_API_TOKEN)) {
@@ -255,4 +257,8 @@ export const platformConfig = {
       : undefined,
   semanticMemory: platformEnv.SEMANTIC_MEMORY,
   archiveAttachments: platformEnv.ARCHIVE_ATTACHMENTS,
+  /** Founders' decision: the conversation log moves to D1 with the Worker. */
+  conversationInD1:
+    platformEnv.CONVERSATION_STORE === "d1" ||
+    (platformEnv.CONVERSATION_STORE === "auto" && Boolean(platformEnv.PATCH_API_URL)),
 } as const;

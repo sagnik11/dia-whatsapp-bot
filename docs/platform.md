@@ -110,3 +110,8 @@ The model prefers `semantic_search` for fuzzy or conceptual questions and keeps 
 ## Development
 
 The handlers are plain functions in `worker/src/index.ts` that take the bindings as parameters; `worker/src/bindings.ts` declares the small slice of each binding they use, so there is no `@cloudflare/workers-types` dependency. `test/platform.test.ts` runs them in Node with fake D1 (SQLite), Vectorize, R2 and Workers AI bindings, together with the bot-side clients. `npm run check` lints and typechecks `worker/` with the rest of the repo. Use `npx wrangler dev` in `worker/` (with `--remote` for the Vectorize binding) to try it against real bindings.
+
+## Conversation log in D1
+
+Once `PATCH_API_URL` is set, the group conversation moves from local SQLite into the D1 table `conversation_messages` (`migrations/0007_conversation.sql`). This is the founders' decision, controlled by `CONVERSATION_STORE=auto`; use `local` to keep it on the server or `d1` to force it. On the first start after the switch, Patch copies the history still inside `CONVERSATION_RETENTION_DAYS` into D1 and clears the local table, so nothing is stored twice. Re-running is safe, since D1 dedupes on message id. Each message is one write through the Worker's binding, which avoids the REST API's request limit.
+

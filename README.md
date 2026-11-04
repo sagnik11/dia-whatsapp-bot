@@ -186,11 +186,12 @@ Tasks live in the D1 `tasks` table with an id, title, notes, status (`todo`, `in
 @patch which tasks does Tanvi own that are due this week?
 @patch what's blocked?
 @patch move #7 to in progress and add a note: CA replied, need PAN copy
-@patch rename task 4 to "Ship onboarding v2" and clear its due date
+@patch rename task 4 to "Ship onboarding v2" and move it to next Friday
 @patch delete tasks 11 and 12
 ```
 
-- "me" as an owner means the sender. Relative dates resolve in `TIMEZONE`.
+- Every task has an owner and a due date. "me" means the sender. When nobody is named, Patch picks the owner from each person's role and focus (from `@patch setup`), the shared memory about who handles what, and who owned similar tasks, and says who it picked and why; with no evidence, the sender gets it. A task with no date is due 7 days later, at the end of that day. Both can be changed, never removed.
+- Relative dates resolve in `TIMEZONE`.
 - Notes are appended by default and replaced only when you explicitly ask.
 - Deleting is a soft delete: the task disappears from every list but stays in D1, with its last snapshot recorded in `task_events`.
 - A message retried by WhatsApp will not create duplicate tasks.

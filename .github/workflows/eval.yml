@@ -1,0 +1,66 @@
+name: Golden-set eval
+
+# Manual only. It calls the real Workers AI model through AI Gateway and spends
+# credits, so it never runs on push or pull requests.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Workers AI model to score (blank uses the CLOUDFLARE_AI_MODEL secret)
+        required: false
+        default: ""
+      filter:
+        description: Only run cases whose id, category or message contains this text
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: golden-set-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_AI_GATEWAY_ID: ${{ secrets.CLOUDFLARE_AI_GATEWAY_ID }}
+      CLOUDFLARE_AI_MODEL: ${{ secrets.CLOUDFLARE_AI_MODEL }}
+      # Passed through the environment, never interpolated into the script.
+      EVAL_MODEL: ${{ inputs.model }}
+      EVAL_FILTER: ${{ inputs.filter }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Run the golden-set eval
+        shell: bash
+        run: |
+          args=(--report eval-report.json)
+          if [ -n "$EVAL_MODEL" ]; then args+=(--model "$EVAL_MODEL"); fi
+          if [ -n "$EVAL_FILTER" ]; then args+=(--filter "$EVAL_FILTER"); fi
+          npm run --silent eval -- "${args[@]}" | tee eval-report.txt
+          exit "${PIPESTATUS[0]}"
+      - name: Add the report to the job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f eval-report.txt ]; then
+            { echo '```'; cat eval-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-set-eval
+          path: |
+            eval-report.json
+            eval-report.txt
+          if-no-files-found: ignore

@@ -227,7 +227,18 @@ describe("Phase 1 assistant tools", () => {
   function assistant(llm: ReturnType<typeof scripted>) {
     const s = services();
     const phase1 = new Phase1Tools(s, s.tasks, "Asia/Kolkata", logger);
-    return { ...s, bot: new DiaAssistant({ llm, botName: "Patch", timezone: "Asia/Kolkata", tasks: s.tasks, phase1, logger }) };
+    return {
+      ...s,
+      bot: new DiaAssistant({
+        llm,
+        botName: "Patch",
+        timezone: "Asia/Kolkata",
+        tasks: s.tasks,
+        modules: [phase1],
+        checklists: s.checklists,
+        logger,
+      }),
+    };
   }
 
   const request = (body: string, extra: object = {}) => ({

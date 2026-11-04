@@ -6,6 +6,7 @@ import type { MemoryStore } from "./memory-store.js";
 import type { ReminderStore } from "./reminder-store.js";
 import type { TaskStore } from "./task-store.js";
 import { nextDailyRunAt, nextWeeklyRunAt } from "./time.js";
+import type { ScheduledJob } from "./tool-module.js";
 import type { WeeklyReviewInput } from "./weekly-review.js";
 import type { ReminderRecord } from "./types.js";
 
@@ -62,6 +63,8 @@ interface SchedulerOptions {
   recurringJob?: {
     run: (nowMs: number) => Promise<number>;
   };
+  /** Plug-in jobs from capability modules, each run at most once per interval. */
+  jobs?: readonly ScheduledJob[];
 }
 
 export function formatReminderDelivery(reminder: ReminderRecord): string {
@@ -81,6 +84,7 @@ export class ProactiveScheduler {
   private activeRun: Promise<void> | undefined;
   private lastPruneMs = 0;
   private lastRecurringCheckMs = 0;
+  private readonly lastJobRunMs = new Map<string, number>();
 
   public constructor(private readonly options: SchedulerOptions) {}
 
@@ -138,6 +142,11 @@ export class ProactiveScheduler {
       await this.guard("Monday review", () => this.sendWeeklyReviews(nowMs, send));
       await this.guard("recurring tasks", () => this.runRecurring(nowMs));
       await this.guard("memory distillation", () => this.runMemoryJob(nowMs));
+      for (const job of this.options.jobs ?? []) {
+        if (nowMs - (this.lastJobRunMs.get(job.name) ?? 0) < job.intervalMs) continue;
+        this.lastJobRunMs.set(job.name, nowMs);
+        await this.guard(job.name, () => job.run(nowMs, send));
+      }
     } finally {
       this.running = false;
     }

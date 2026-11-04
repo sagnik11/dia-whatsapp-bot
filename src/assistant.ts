@@ -12,13 +12,7 @@ import type {
   ToolCall,
   ToolDefinition,
 } from "./llm.js";
-import {
-  PHASE1_INSTRUCTIONS,
-  PHASE1_TOOLS,
-  Phase1Tools,
-  isPhase1Request,
-  type Phase1State,
-} from "./assistant-phase1.js";
+import type { ChecklistStore } from "./checklist-store.js";
 import type { ConversationStore } from "./conversation-store.js";
 import { conversationForModel } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
@@ -39,6 +33,7 @@ import {
   type TaskUpdateResult,
 } from "./task-store.js";
 import { formatDueForDisplay, resolveDueTimestamp } from "./time.js";
+import type { ToolModule, ToolSession } from "./tool-module.js";
 import {
   ToolArgumentError,
   final,
@@ -1076,8 +1071,10 @@ interface AssistantOptions {
   reminders?: ReminderStore;
   webSearch?: TavilyWebSearchService;
   researchAgent?: ResearchAgent;
-  /** Phase 1: memory, follow-ups, recurring tasks, checklists, undo. */
-  phase1?: Phase1Tools;
+  /** Plug-in capabilities (memory, follow-ups, finance, …), in priority order. */
+  modules?: readonly ToolModule[];
+  /** Shows task checklists inside list_tasks and get_task. */
+  checklists?: Pick<ChecklistStore, "itemsFor">;
   logger: Logger;
 }
 
@@ -1094,11 +1091,15 @@ interface RequestState {
   knowledgeReadCount: number;
   knowledgeMatches: Map<string, "page" | "data_source">;
   conversationReads: number;
-  phase1: Phase1State | null;
+  sessions: ToolSession[];
 }
 
 export class DiaAssistant {
   public constructor(private readonly options: AssistantOptions) {}
+
+  private get modules(): readonly ToolModule[] {
+    return this.options.modules ?? [];
+  }
 
   private get canUseBrainDump(): boolean {
     return Boolean(this.options.notion?.canReadBrainDump);
@@ -1172,7 +1173,7 @@ export class DiaAssistant {
           isExplicitReminderCancelRequest(body) ||
           isExplicitReminderCompleteRequest(body))) ||
       (Boolean(this.options.conversation) && isConversationRequest(body)) ||
-      (Boolean(this.options.phase1) && isPhase1Request(body)) ||
+      this.modules.some((module) => module.detect?.(body) ?? false) ||
       (this.canUseBrainDump && isExplicitBrainDumpRequest(body)) ||
       (this.canUseScripts && isDekhteHaiRequest(body)) ||
       (this.canUseKnowledge && isExplicitKnowledgeRequest(body)) ||
@@ -1220,7 +1221,7 @@ export class DiaAssistant {
       knowledgeReadCount: 0,
       knowledgeMatches: new Map(),
       conversationReads: 0,
-      phase1: this.options.phase1 ? Phase1Tools.newState(request, referenced) : null,
+      sessions: this.modules.map((module) => module.begin(request, referenced)),
     };
     const confirmations: string[] = [];
     const system = this.instructions();
@@ -1301,7 +1302,7 @@ export class DiaAssistant {
       updateTasksTool,
       deleteTasksTool,
       ...(this.options.conversation ? [readConversationTool] : []),
-      ...(this.options.phase1 ? PHASE1_TOOLS : []),
+      ...this.modules.flatMap((module) => module.tools),
       ...(this.options.notionSpend ? [addSpendsTool, listSpendsTool] : []),
       ...(this.options.reminders
         ? [createReminderTool, listRemindersTool, completeReminderTool, cancelReminderTool]
@@ -1339,7 +1340,7 @@ export class DiaAssistant {
             "- Answer only from the returned messages, attribute each point to whoever said it, and say plainly when the log does not cover the question. Messages marked fromPatch are your own earlier replies, not founder statements.",
           ]
         : []),
-      ...(this.options.phase1 ? PHASE1_INSTRUCTIONS : []),
+      ...this.modules.flatMap((module) => module.instructions),
       ...(this.options.notionSpend
         ? [
             "Spend log (Notion Daily Spend Log):",
@@ -1431,11 +1432,10 @@ export class DiaAssistant {
         case "run_research":
           return await this.runResearch(args, state);
         default: {
-          const phase1 =
-            this.options.phase1 && state.phase1
-              ? await this.options.phase1.handle(call.name, args, state.phase1)
-              : null;
-          if (phase1) return phase1;
+          for (const session of state.sessions) {
+            const handled = await session.handle(call.name, args);
+            if (handled) return handled;
+          }
           this.options.logger.warn({ tool: call.name }, "Model requested an unknown tool");
           return output({ error: `Unknown tool ${call.name}. Use only the offered tools.` });
         }
@@ -1521,8 +1521,8 @@ export class DiaAssistant {
       limit: parsed.limit ?? 20,
     });
     for (const task of result.tasks) state.knownTaskIds.add(task.id);
-    const checklists = this.options.phase1
-      ? await this.options.phase1.checklistsFor(result.tasks.map((task) => task.id))
+    const checklists = this.options.checklists
+      ? await this.options.checklists.itemsFor(result.tasks.map((task) => task.id))
       : new Map();
     return output({
       currentTime: new Date().toISOString(),
@@ -1539,8 +1539,8 @@ export class DiaAssistant {
     const task = await this.options.tasks.get(taskId);
     if (!task) return output({ error: `Task #${taskId} does not exist or was deleted.` });
     state.knownTaskIds.add(task.id);
-    const checklist = this.options.phase1
-      ? (await this.options.phase1.checklistsFor([task.id])).get(task.id)
+    const checklist = this.options.checklists
+      ? (await this.options.checklists.itemsFor([task.id])).get(task.id)
       : undefined;
     return output({
       task: {

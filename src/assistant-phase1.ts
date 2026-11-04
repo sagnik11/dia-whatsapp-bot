@@ -18,6 +18,7 @@ import {
 } from "./recurring-store.js";
 import { TASK_AREAS, TASK_PRIORITIES, type TaskStore } from "./task-store.js";
 import { formatDueForDisplay, resolveDueTimestamp } from "./time.js";
+import type { ToolModule, ToolSession } from "./tool-module.js";
 import { ToolArgumentError, final, output, type ToolOutcome } from "./tool-outcome.js";
 import type { AssistantRequest } from "./types.js";
 
@@ -428,7 +429,20 @@ function memoryForModel(memory: MemoryRecord) {
 
 // --- Handlers -----------------------------------------------------------------------
 
-export class Phase1Tools {
+export class Phase1Tools implements ToolModule {
+  public readonly name = "phase1";
+  public readonly tools = PHASE1_TOOLS;
+  public readonly instructions = PHASE1_INSTRUCTIONS;
+
+  public detect(message: string): boolean {
+    return isPhase1Request(message);
+  }
+
+  public begin(request: AssistantRequest, knownTaskIds: Set<number>): ToolSession {
+    const state = Phase1Tools.newState(request, knownTaskIds);
+    return { handle: (name, args) => this.handle(name, args, state) };
+  }
+
   public constructor(
     private readonly services: Phase1Services,
     private readonly tasks: TaskStore,
@@ -477,10 +491,6 @@ export class Phase1Tools {
       default:
         return null;
     }
-  }
-
-  public checklistsFor(taskIds: readonly number[]): Promise<Map<number, ChecklistItem[]>> {
-    return this.services.checklists.itemsFor(taskIds);
   }
 
   private owner(value: string | null, state: Phase1State): string | null {

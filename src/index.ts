@@ -105,7 +105,9 @@ const assistant = new DiaAssistant({
   reminders,
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
-  phase1,
+  // Capability modules, in priority order. New phases register theirs here.
+  modules: [phase1],
+  checklists,
   logger,
 });
 const mediaIngestion = new MediaIngestionService({

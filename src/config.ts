@@ -47,6 +47,8 @@ const schema = z
       "@cf/google/gemma-4-26b-a4b-it",
     ),
     CLOUDFLARE_AI_REASONING_EFFORT: z.enum(["", "none", "high"]).default("none"),
+    // Briefs, reviews and nightly memory can afford to think longer than chat.
+    CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT: z.enum(["", "none", "high"]).default("high"),
     CLOUDFLARE_AI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
     CLOUDFLARE_D1_DATABASE_ID: z
       .string()
@@ -82,6 +84,13 @@ const schema = z
     CONVERSATION_RETENTION_DAYS: z.coerce.number().int().min(0).max(365).default(90),
     // On by default (founders' decision); set it empty to turn the brief off.
     FOUNDER_BRIEF_TIME: defaultOnTime("09:00"),
+    // Monday review (founders' decision); set the time empty to turn it off.
+    WEEKLY_REVIEW_TIME: defaultOnTime("09:30"),
+    WEEKLY_REVIEW_DAY: z
+      .enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])
+      .default("monday"),
+    // Nightly long-term memory distillation; set it empty to turn it off.
+    MEMORY_DISTILL_TIME: defaultOnTime("23:30"),
     FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
     MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
     LIST_GROUPS_ON_START: booleanFlag("true"),
@@ -95,6 +104,17 @@ const schema = z
       env.NOTION_SPEND_DATA_SOURCE_ID ||
       env.NOTION_KNOWLEDGE_ENABLED ||
       env.NOTION_SCRIPT_SOURCE_MAP_JSON.trim() !== "{}";
+    if (
+      (env.WEEKLY_REVIEW_TIME || env.MEMORY_DISTILL_TIME) &&
+      env.CONVERSATION_RETENTION_DAYS === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["CONVERSATION_RETENTION_DAYS"],
+        message:
+          "The Monday review and long-term memory read the group conversation; set CONVERSATION_RETENTION_DAYS above 0 or clear WEEKLY_REVIEW_TIME and MEMORY_DISTILL_TIME",
+      });
+    }
     if (env.FOUNDER_BRIEF_TIME && env.CONVERSATION_RETENTION_DAYS === 0) {
       context.addIssue({
         code: "custom",
@@ -153,6 +173,7 @@ export const config = {
   aiModel: env.CLOUDFLARE_AI_MODEL,
   aiFallbackModel: env.CLOUDFLARE_AI_FALLBACK_MODEL || undefined,
   aiReasoningEffort: env.CLOUDFLARE_AI_REASONING_EFFORT || undefined,
+  aiBackgroundReasoningEffort: env.CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT || undefined,
   aiTimeoutMs: env.CLOUDFLARE_AI_TIMEOUT_MS,
   d1DatabaseId: env.CLOUDFLARE_D1_DATABASE_ID,
   d1ApiToken: env.CLOUDFLARE_D1_API_TOKEN ?? env.CLOUDFLARE_API_TOKEN,
@@ -180,6 +201,12 @@ export const config = {
   contextMessageLimit: env.CONTEXT_MESSAGE_LIMIT,
   conversationRetentionDays: env.CONVERSATION_RETENTION_DAYS,
   founderBriefTime: env.FOUNDER_BRIEF_TIME,
+  weeklyReviewTime: env.WEEKLY_REVIEW_TIME,
+  weeklyReviewWeekday:
+    ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].indexOf(
+      env.WEEKLY_REVIEW_DAY,
+    ) + 1,
+  memoryDistillTime: env.MEMORY_DISTILL_TIME,
   founderBriefGroupIds:
     configuredBriefGroupIds.size > 0 ? configuredBriefGroupIds : allowedGroupIds,
   mediaMaxBytes: env.MEDIA_MAX_BYTES,

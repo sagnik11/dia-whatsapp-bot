@@ -124,3 +124,22 @@ export function formatDueForDisplay(value: string, timezone: string): string {
     timeZone: timezone,
   }).format(new Date(timestamp));
 }
+
+/** Next occurrence of an ISO weekday (1 = Monday … 7 = Sunday) at HH:mm local time. */
+export function nextWeeklyRunAt(
+  nowMs: number,
+  weekday: number,
+  time: string,
+  timezone: string,
+): number {
+  let candidate = nextDailyRunAt(nowMs, time, timezone);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const parts = zonedParts(new Date(candidate), timezone);
+    const sundayZero = new Date(
+      Date.UTC(parts.year ?? 1970, (parts.month ?? 1) - 1, parts.day ?? 1),
+    ).getUTCDay();
+    if ((sundayZero === 0 ? 7 : sundayZero) === weekday) return candidate;
+    candidate = nextDailyRunAt(candidate + 60_000, time, timezone);
+  }
+  return candidate;
+}

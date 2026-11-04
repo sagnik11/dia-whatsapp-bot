@@ -1,9 +1,12 @@
 import type { ConversationStore } from "./conversation-store.js";
+import type { FollowUpStore } from "./follow-up-store.js";
 import type { FounderBriefInput } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
+import type { MemoryStore } from "./memory-store.js";
 import type { ReminderStore } from "./reminder-store.js";
 import type { TaskStore } from "./task-store.js";
-import { nextDailyRunAt } from "./time.js";
+import { nextDailyRunAt, nextWeeklyRunAt } from "./time.js";
+import type { WeeklyReviewInput } from "./weekly-review.js";
 import type { ReminderRecord } from "./types.js";
 
 export { nextDailyRunAt } from "./time.js";
@@ -15,6 +18,10 @@ const DAY_MS = 24 * HOUR_MS;
 /** A brief never reaches back further than this, even after quiet days. */
 const MAX_BRIEF_WINDOW_MS = 3 * DAY_MS;
 const MAX_BRIEF_MESSAGES = 400;
+const WEEK_MS = 7 * DAY_MS;
+const RECURRING_CHECK_MS = 15 * 60 * 1_000;
+/** A failed brief or review waits this long instead of retrying every tick. */
+const RETRY_MS = 15 * 60 * 1_000;
 
 /**
  * Patch only speaks unprompted for reminders a founder explicitly set, plus
@@ -34,6 +41,27 @@ interface SchedulerOptions {
     groupIds: ReadonlySet<string>;
     generate: (input: FounderBriefInput) => Promise<string>;
   };
+  /** Monday review written from last week's conversation and work. */
+  weeklyReview?: {
+    weekday: number;
+    time: string;
+    groupIds: ReadonlySet<string>;
+    tasks: Pick<TaskStore, "listOpen" | "listClosedSince">;
+    followUps: Pick<FollowUpStore, "list">;
+    memory: Pick<MemoryStore, "search">;
+    generate: (input: WeeklyReviewInput) => Promise<string>;
+  };
+  /** Silent nightly job that distills the conversation into long-term memory. */
+  memoryJob?: {
+    time: string;
+    /** Groups worth distilling: those where founders talked recently. */
+    groups: (sinceMs: number) => readonly string[];
+    run: (groupId: string, sinceMs: number, untilMs: number) => Promise<number>;
+  };
+  /** Silent job that adds tasks from recurring templates. */
+  recurringJob?: {
+    run: (nowMs: number) => Promise<number>;
+  };
 }
 
 export function formatReminderDelivery(reminder: ReminderRecord): string {
@@ -52,6 +80,7 @@ export class ProactiveScheduler {
   private running = false;
   private activeRun: Promise<void> | undefined;
   private lastPruneMs = 0;
+  private lastRecurringCheckMs = 0;
 
   public constructor(private readonly options: SchedulerOptions) {}
 
@@ -104,7 +133,11 @@ export class ProactiveScheduler {
       }
 
       this.pruneConversation(nowMs);
-      await this.sendFounderBriefs(nowMs, send);
+      // Each job is isolated so one failing service cannot block the others.
+      await this.guard("founder brief", () => this.sendFounderBriefs(nowMs, send));
+      await this.guard("Monday review", () => this.sendWeeklyReviews(nowMs, send));
+      await this.guard("recurring tasks", () => this.runRecurring(nowMs));
+      await this.guard("memory distillation", () => this.runMemoryJob(nowMs));
     } finally {
       this.running = false;
     }
@@ -178,9 +211,10 @@ export class ProactiveScheduler {
           "Sent daily founder brief",
         );
       } catch (error) {
+        this.options.reminders.setNextRun(`founder_brief:${groupId}`, nowMs + RETRY_MS);
         this.options.logger.error(
           { error, groupId },
-          "Failed to send founder brief; it will be retried",
+          "Failed to send founder brief; retrying in 15 minutes",
         );
       }
     }
@@ -193,6 +227,108 @@ export class ProactiveScheduler {
       nowMs - DAY_MS,
     );
     return Math.max(lastBrief, nowMs - MAX_BRIEF_WINDOW_MS);
+  }
+
+  private async guard(name: string, job: () => Promise<void>): Promise<void> {
+    try {
+      await job();
+    } catch (error) {
+      this.options.logger.error({ error, job: name }, "Scheduled job failed; it will be retried");
+    }
+  }
+
+  private async sendWeeklyReviews(nowMs: number, send: SendMessage): Promise<void> {
+    const review = this.options.weeklyReview;
+    const conversation = this.options.conversation;
+    if (!review || !conversation || review.groupIds.size === 0) return;
+    const key = (groupId: string) => `weekly_review:${groupId}`;
+    const dueGroups = [...review.groupIds].filter(
+      (groupId) =>
+        this.options.reminders.getOrCreateNextRun(
+          key(groupId),
+          nextWeeklyRunAt(nowMs, review.weekday, review.time, this.options.timezone),
+        ) <= nowMs,
+    );
+    if (dueGroups.length === 0) return;
+
+    const sinceMs = nowMs - WEEK_MS;
+    const nextRun = nextWeeklyRunAt(nowMs + 60_000, review.weekday, review.time, this.options.timezone);
+    const [openTasks, closedTasks, followUps] = await Promise.all([
+      review.tasks.listOpen(),
+      review.tasks.listClosedSince(new Date(sinceMs).toISOString()),
+      review.followUps.list({ statuses: ["open"], owner: null, counterparty: null, dueTo: null, limit: 50 }),
+    ]);
+    for (const groupId of dueGroups) {
+      const talked = conversation.hasHumanMessages(groupId, sinceMs, nowMs);
+      if (!talked && closedTasks.length === 0) {
+        this.options.reminders.setNextRun(key(groupId), nextRun);
+        this.options.logger.info({ groupId }, "Skipped Monday review: nothing happened last week");
+        continue;
+      }
+      try {
+        const output = await review.generate({
+          conversation: conversation.list(groupId, { sinceMs, untilMs: nowMs, limit: 600 }),
+          closedTasks,
+          openTasks,
+          followUps,
+          memories: await review.memory.search(groupId, {
+            text: null,
+            kind: null,
+            sinceIso: new Date(sinceMs).toISOString(),
+            limit: 80,
+          }),
+          sinceMs,
+          untilMs: nowMs,
+        });
+        await send(groupId, output);
+        this.options.reminders.setNextRun(key(groupId), nextRun);
+        this.options.logger.info({ groupId, output }, "Sent Monday review");
+      } catch (error) {
+        this.options.reminders.setNextRun(key(groupId), nowMs + RETRY_MS);
+        this.options.logger.error({ error, groupId }, "Failed to send Monday review; retrying in 15 minutes");
+      }
+    }
+  }
+
+  private async runRecurring(nowMs: number): Promise<void> {
+    const job = this.options.recurringJob;
+    if (!job || nowMs - this.lastRecurringCheckMs < RECURRING_CHECK_MS) return;
+    this.lastRecurringCheckMs = nowMs;
+    const created = await job.run(nowMs);
+    if (created > 0) this.options.logger.info({ created }, "Added tasks from recurring templates");
+  }
+
+  private async runMemoryJob(nowMs: number): Promise<void> {
+    const job = this.options.memoryJob;
+    if (!job) return;
+    for (const groupId of job.groups(nowMs - MAX_BRIEF_WINDOW_MS)) {
+      const runKey = `memory_distill:${groupId}`;
+      if (
+        this.options.reminders.getOrCreateNextRun(
+          runKey,
+          nextDailyRunAt(nowMs, job.time, this.options.timezone),
+        ) > nowMs
+      ) {
+        continue;
+      }
+      const sinceKey = `memory_distill_since:${groupId}`;
+      const sinceMs = Math.max(
+        this.options.reminders.getOrCreateNextRun(sinceKey, nowMs - DAY_MS),
+        nowMs - MAX_BRIEF_WINDOW_MS,
+      );
+      try {
+        const added = await job.run(groupId, sinceMs, nowMs);
+        this.options.reminders.setNextRun(sinceKey, nowMs);
+        this.options.reminders.setNextRun(
+          runKey,
+          nextDailyRunAt(nowMs + 60_000, job.time, this.options.timezone),
+        );
+        this.options.logger.info({ groupId, added }, "Distilled conversation into long-term memory");
+      } catch (error) {
+        this.options.reminders.setNextRun(runKey, nowMs + HOUR_MS);
+        this.options.logger.error({ error, groupId }, "Memory distillation failed; retrying in an hour");
+      }
+    }
   }
 
   private triggerRun(errorMessage: string): void {

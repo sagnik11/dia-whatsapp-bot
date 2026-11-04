@@ -27,6 +27,8 @@ export interface CompletionRequest {
    */
   toolChoice?: "auto" | "required" | { name: string };
   maxTokens?: number;
+  /** Overrides the configured reasoning effort for the primary model. */
+  reasoningEffort?: string;
   /** Small, non-sensitive labels attached to the AI Gateway log entry. */
   metadata?: Readonly<Record<string, string>>;
 }
@@ -173,9 +175,9 @@ export class CloudflareGatewayModel implements LanguageModel {
         : {}),
       ...(request.maxTokens ? { max_completion_tokens: request.maxTokens } : {}),
     };
-    if (isPrimary && this.options.reasoningEffort) {
-      (body as unknown as Record<string, unknown>).reasoning_effort =
-        this.options.reasoningEffort;
+    const reasoningEffort = request.reasoningEffort ?? this.options.reasoningEffort;
+    if (isPrimary && reasoningEffort) {
+      (body as unknown as Record<string, unknown>).reasoning_effort = reasoningEffort;
     }
 
     const completion = await this.client.chat.completions.create(

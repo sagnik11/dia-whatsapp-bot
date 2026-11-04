@@ -1,0 +1,87 @@
+-- Captain Patch Phase 2 admin and ops: compliance register, metrics, sales
+-- pipeline and hiring candidates. Changes are audited in audit_events
+-- (migrations/0002_phase1.sql). Patch runs these idempotent statements on
+-- startup; to create them ahead of time:
+--   npx wrangler d1 execute <database-name> --remote --file=migrations/0004_admin.sql
+
+CREATE TABLE IF NOT EXISTS compliance_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  authority TEXT,
+  area TEXT NOT NULL DEFAULT 'Legal' CHECK (area IN ('Legal', 'Finance')),
+  due_on TEXT NOT NULL,
+  due_day INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 31),
+  recurrence TEXT NOT NULL DEFAULT 'none'
+    CHECK (recurrence IN ('none', 'monthly', 'quarterly', 'yearly')),
+  owner TEXT,
+  lead_days INTEGER NOT NULL DEFAULT 14 CHECK (lead_days BETWEEN 0 AND 365),
+  checklist TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  task_id INTEGER,
+  task_due_on TEXT,
+  last_done_on TEXT,
+  created_by TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS compliance_items_due ON compliance_items (deleted_at, status, due_on);
+
+CREATE TABLE IF NOT EXISTS metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  value REAL NOT NULL,
+  unit TEXT,
+  as_of TEXT NOT NULL,
+  note TEXT,
+  entered_by TEXT NOT NULL,
+  source_message_id TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (source_message_id, name, as_of)
+);
+
+CREATE INDEX IF NOT EXISTS metrics_series ON metrics (name, as_of, id);
+
+CREATE TABLE IF NOT EXISTS pipeline (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company TEXT NOT NULL,
+  contact TEXT,
+  stage TEXT NOT NULL DEFAULT 'lead'
+    CHECK (stage IN ('lead', 'qualified', 'pilot', 'negotiation', 'won', 'lost')),
+  value_inr REAL,
+  next_step TEXT,
+  next_step_at TEXT,
+  owner TEXT,
+  notes TEXT,
+  stage_changed_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS pipeline_stage ON pipeline (deleted_at, stage);
+
+CREATE TABLE IF NOT EXISTS candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  role TEXT,
+  stage TEXT NOT NULL DEFAULT 'sourced'
+    CHECK (stage IN ('sourced', 'screen', 'interview', 'offer', 'hired', 'rejected')),
+  next_action TEXT,
+  next_action_at TEXT,
+  owner TEXT,
+  notes TEXT,
+  stage_changed_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS candidates_stage ON candidates (deleted_at, stage);

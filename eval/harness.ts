@@ -25,6 +25,18 @@ export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   "add_checklist_items",
   "tick_checklist_items",
   "undo_last_change",
+  // Finance (Phase 2)
+  "add_subscriptions",
+  "update_subscription",
+  "set_budgets",
+  // Admin and ops (Phase 2)
+  "add_compliance_items",
+  "update_compliance",
+  "log_metrics",
+  "create_deals",
+  "update_deals",
+  "create_candidates",
+  "update_candidates",
 ]);
 
 /**
@@ -49,6 +61,21 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "read_dekhte_hai_scripts",
   "search_web",
   "run_research",
+  // Finance (Phase 2)
+  "spend_summary",
+  "reimbursement_settlement",
+  "detect_subscriptions",
+  "list_subscriptions",
+  "budget_status",
+  // Admin and ops (Phase 2): the investor update is a draft returned in chat.
+  "list_compliance",
+  "latest_metrics",
+  "metric_trend",
+  "list_pipeline",
+  "list_candidates",
+  "draft_investor_update",
+  // Platform (Phase 3)
+  "semantic_search",
 ]);
 
 const goldenCaseSchema = z

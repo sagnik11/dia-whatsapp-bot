@@ -19,6 +19,7 @@
     "test/**/*.ts",
     "eval/**/*.ts",
     "scripts/**/*.ts",
+    "worker/**/*.ts",
     "eslint.config.js",
     "vitest.config.ts"
   ],

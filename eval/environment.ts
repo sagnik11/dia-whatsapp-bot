@@ -1,11 +1,15 @@
 import { createSqliteExecutor } from "../test/support/sqlite-executor.js";
+import { createAdminOps } from "../src/assistant-admin.js";
 import { ExportTools } from "../src/assistant-export.js";
+import { FinanceTools } from "../src/assistant-finance.js";
 import { Phase1Tools } from "../src/assistant-phase1.js";
+import { SemanticTools } from "../src/assistant-semantic.js";
 import { DiaAssistant } from "../src/assistant.js";
 import { ChecklistStore } from "../src/checklist-store.js";
 import { ConversationStore } from "../src/conversation-store.js";
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "../src/d1-schema.js";
 import { coreExportSources } from "../src/export-sources.js";
+import { BudgetStore, FINANCE_SCHEMA_STATEMENTS, SubscriptionStore } from "../src/finance-store.js";
 import { FollowUpStore } from "../src/follow-up-store.js";
 import type { LanguageModel } from "../src/llm.js";
 import type { Logger } from "../src/logger.js";
@@ -16,7 +20,7 @@ import { RecurringTaskStore } from "../src/recurring-store.js";
 import { ReminderStore } from "../src/reminder-store.js";
 import type { ResearchAgent } from "../src/research-agent.js";
 import { TaskStore, type TaskCreateInput } from "../src/task-store.js";
-import type { AssistantRequest, SpendBatchResult, SpendInput } from "../src/types.js";
+import type { AssistantRequest, SpendBatchResult, SpendInput, SpendSummary } from "../src/types.js";
 import type { TavilyWebSearchService } from "../src/web-search.js";
 
 export const EVAL_GROUP_ID = "eval-group@g.us";
@@ -78,15 +82,7 @@ function stubServices() {
       failedCount: 0,
       createdAmount: spends.reduce((total, spend) => total + spend.amount, 0),
     }),
-    listSpends: async () => ({
-      hasMore: false,
-      totalAmount: 5_580,
-      spends: [
-        { id: "s1", url: "", spend: "Auto to client office", amount: 260, date: "2026-10-14", paidBy: ["Tanvi"], category: "Travel", paymentMethod: "Cash", vendor: null, notes: null, reimbursable: true },
-        { id: "s2", url: "", spend: "AWS", amount: 4_200, date: "2026-10-03", paidBy: ["Sagnik"], category: "Hosting & Infrastructure", paymentMethod: "Company card", vendor: "AWS", notes: null, reimbursable: false },
-        { id: "s3", url: "", spend: "Figma", amount: 1_120, date: "2026-10-01", paidBy: ["Sagnik"], category: "Software & SaaS", paymentMethod: "Company card", vendor: "Figma", notes: null, reimbursable: false },
-      ],
-    }),
+    listSpends: async () => ({ hasMore: false, totalAmount: 5_580, spends: [...SEED_SPENDS] }),
   };
   const webSearch = {
     search: async (input: { query: string }) => ({
@@ -168,6 +164,13 @@ async function seed(stores: {
   );
 }
 
+/** The stubbed Daily Spend Log, shared by list_spends and the finance roll-ups. */
+const SEED_SPENDS: readonly SpendSummary[] = [
+  { id: "s1", url: "", spend: "Auto to client office", amount: 260, date: "2026-10-14", paidBy: ["Tanvi"], category: "Travel", paymentMethod: "Cash", vendor: null, notes: null, reimbursable: true },
+  { id: "s2", url: "", spend: "AWS", amount: 4_200, date: "2026-10-03", paidBy: ["Sagnik"], category: "Hosting & Infrastructure", paymentMethod: "Company card", vendor: "AWS", notes: null, reimbursable: false },
+  { id: "s3", url: "", spend: "Figma", amount: 1_120, date: "2026-10-01", paidBy: ["Sagnik"], category: "Software & SaaS", paymentMethod: "Company card", vendor: "Figma", notes: null, reimbursable: false },
+];
+
 /**
  * A DiaAssistant wired exactly like production (every module, every optional
  * service) but on in-memory SQLite and stubs, so no D1, Notion, Tavily or
@@ -184,6 +187,27 @@ export async function createEvalEnvironment(llm: LanguageModel, logger: Logger):
   const recurring = new RecurringTaskStore({ db, schema: phase1Schema, timezone: TIMEZONE, logger });
   const checklists = new ChecklistStore({ db, schema: phase1Schema, logger });
   await seed({ tasks, followUps, memory, recurring, checklists, reminders, conversation }, Date.now());
+  const financeSchema = new SchemaGate(db, FINANCE_SCHEMA_STATEMENTS, logger, "Finance");
+  const finance = new FinanceTools(
+    {
+      subscriptions: new SubscriptionStore({ db, schema: financeSchema, timezone: TIMEZONE, logger }),
+      budgets: new BudgetStore({ db, schema: financeSchema, timezone: TIMEZONE, logger }),
+      spendLog: { listAllSpends: async () => ({ spends: [...SEED_SPENDS], truncated: false }) },
+    },
+    { companyPaymentMethods: ["company card"], logger },
+  );
+  const adminOps = createAdminOps({
+    db,
+    tasks,
+    memory,
+    llm,
+    timezone: TIMEZONE,
+    complianceLeadDays: 14,
+    pipelineStaleDays: 14,
+    logger,
+  });
+  // Vectorize is not available offline; an empty index keeps semantic_search in the tool list.
+  const semantic = new SemanticTools({ index: { query: async () => [] }, db, logger });
 
   const assistant = new DiaAssistant({
     llm,
@@ -196,6 +220,9 @@ export async function createEvalEnvironment(llm: LanguageModel, logger: Logger):
     // Keep in step with src/index.ts.
     modules: [
       new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, TIMEZONE, logger),
+      finance,
+      adminOps.module,
+      semantic,
       new ExportTools(coreExportSources({ db, tasks, phase1Schema, checklists }), TIMEZONE, logger),
     ],
     checklists,

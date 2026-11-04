@@ -13,7 +13,7 @@ import type {
   ToolDefinition,
 } from "./llm.js";
 import type { ChecklistStore } from "./checklist-store.js";
-import type { ConversationStore } from "./conversation-store.js";
+import type { ConversationLog } from "./conversation-store.js";
 import { conversationForModel } from "./founder-brief.js";
 import type { Logger } from "./logger.js";
 import type { NotionSpendService } from "./notion-spend.js";
@@ -1066,7 +1066,7 @@ interface AssistantOptions {
   botName: string;
   timezone: string;
   tasks: TaskStore;
-  conversation?: Pick<ConversationStore, "list">;
+  conversation?: Pick<ConversationLog, "list">;
   notion?: NotionWorkspaceService;
   notionSpend?: NotionSpendService;
   reminders?: ReminderStore;
@@ -1436,7 +1436,7 @@ export class DiaAssistant {
         case "cancel_reminder":
           return this.closeReminder(call.name, args, state);
         case "read_group_conversation":
-          return this.readConversation(args, state);
+          return await this.readConversation(args, state);
         case "read_brain_dump":
           return await this.readBrainDump(state);
         case "append_brain_dump":
@@ -1785,7 +1785,7 @@ export class DiaAssistant {
 
   // -- Group conversation ----------------------------------------------------
 
-  private readConversation(args: unknown, state: RequestState): ToolOutcome {
+  private async readConversation(args: unknown, state: RequestState): Promise<ToolOutcome> {
     if (!this.options.conversation) {
       return output({ error: "The conversation log is turned off." });
     }
@@ -1796,7 +1796,7 @@ export class DiaAssistant {
     const parsed = conversationReadSchema.parse(args);
     const untilMs = Date.now();
     const sinceMs = untilMs - parsed.hours_back * 60 * 60 * 1_000;
-    const messages = this.options.conversation.list(state.request.groupId, {
+    const messages = await this.options.conversation.list(state.request.groupId, {
       sinceMs,
       untilMs,
       text: parsed.text,

@@ -38,9 +38,9 @@ async function offeredToolNames(): Promise<string[]> {
 }
 
 describe("golden set shape", () => {
-  it("holds 50-60 valid, uniquely named cases", () => {
+  it("holds 50-70 valid, uniquely named cases", () => {
     expect(golden.cases.length).toBeGreaterThanOrEqual(50);
-    expect(golden.cases.length).toBeLessThanOrEqual(60);
+    expect(golden.cases.length).toBeLessThanOrEqual(70);
     const raw: unknown = JSON.parse(readFileSync(new URL("../eval/golden-set.json", import.meta.url), "utf8"));
     expect(goldenSetSchema.safeParse(raw).success).toBe(true);
   });
@@ -57,6 +57,7 @@ describe("golden set shape", () => {
     for (const category of [
       "tasks", "task-reads", "task-edits", "task-deletes", "write-safety", "spends", "brain-dump", "reminders",
       "conversation", "memory", "follow-ups", "recurring", "checklists", "undo", "research", "chit-chat", "export",
+      "voice",
     ]) {
       expect(categories, category).toContain(category);
     }

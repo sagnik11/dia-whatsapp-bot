@@ -35,6 +35,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - [The task list](#the-task-list)
 - [The group conversation](#the-group-conversation)
 - [Memory, follow-ups, and routines](#memory-follow-ups-and-routines)
+- [Setup and writing in your voice](#setup-and-writing-in-your-voice)
 - [Configure Notion (spend log and Brain Dump)](#configure-notion-spend-log-and-brain-dump)
 - [Find group and sender IDs](#find-group-and-sender-ids)
 - [Enable web search](#enable-web-search)
@@ -54,7 +55,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - Logs and totals founder expenses in the Notion **Daily Spend Log**.
 - Reads and appends to the Notion **Brain Dump** page, including "research this and save it there".
 - Understands screenshots (vision), PDFs and Office documents (converted to Markdown by Workers AI), and voice notes (transcribed locally with `whisper.cpp`).
-- Drafts emails, investor updates, JDs, agendas, follow-ups, and summaries on request.
+- Drafts emails, replies, investor updates, JDs, agendas, follow-ups, and summaries on request, **in the voice of whoever it is from**. Each person runs `@patch setup` once, a 22-question interview in the group, and Patch keeps learning from their corrections, the versions they actually send, and their group messages.
 - Stores persistent personal reminders in SQLite (advance, due-time, and optional repeats).
 - Sends **one** daily brief at 09:00 (on by default) written from the conversation since the last brief, cross-checked against D1 tasks and reminders, and skipped when the group was quiet. There is no periodic task digest and no Notion task notifications.
 - Optionally performs bounded Tavily web search and multi-search delegated research with citations.
@@ -227,7 +228,13 @@ Phase 1 of the [chief-of-staff plan](docs/chief-of-staff-plan.md). All of it liv
 | Minutes and agendas | reply to a voice note with "minutes + tasks", "agenda for Thursday" | Built from the transcript or conversation, tasks, follow-ups and recent decisions. |
 | Monday review | automatic, Mondays 09:30 | Last week's conversation, what shipped, decisions, what slipped, what's owed, and three priorities. Skipped if nothing happened. |
 
-Background jobs (brief, review, nightly memory) use `CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT` (default `high`). A failed brief or review waits 15 minutes before retrying; a failed memory run waits an hour.
+## Setup and writing in your voice
+
+Each person on the allowlist sends `@patch setup` in the group and answers 22 short questions, one at a time, by replying to each one: their role, who they write to, how they open and sign off, language mix, emoji, formality, phrases they use and avoid, how they push back, plus a few sample emails (screenshots and voice notes work). Patch turns it into a voice guide.
+
+Then paste or screenshot an email and ask `@patch reply to this in my tone`, or `@patch write to the CA in Tanvi's voice`. Corrections ("too formal", "I never say Dear") become lasting rules, a pasted final version teaches Patch what it got wrong, and every 6 hours it learns from what each person writes in the group. `@patch show my profile` shows what Patch knows; each person can change or delete only their own. Details: [docs/voice.md](docs/voice.md).
+
+Background jobs (brief, review, nightly memory, voice learning) use `CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT` (default `high`). A failed brief or review waits 15 minutes before retrying; a failed memory run waits an hour.
 
 ## Configure Notion (spend log and Brain Dump)
 

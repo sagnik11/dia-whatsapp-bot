@@ -43,6 +43,10 @@ import { RecurringTaskStore, materializeRecurringTasks } from "./recurring-store
 import { ProactiveScheduler } from "./scheduler.js";
 import { TaskStore } from "./task-store.js";
 import { VectorSyncJob } from "./vector-sync.js";
+import { VoiceTools } from "./assistant-voice.js";
+import { PEOPLE_SCHEMA_STATEMENTS, PeopleStore } from "./people-store.js";
+import { SetupInterview } from "./setup-interview.js";
+import { VoiceLearningJob } from "./voice.js";
 import { TavilyWebSearchService } from "./web-search.js";
 import { WeeklyReviewGenerator, type WeeklyReviewInput } from "./weekly-review.js";
 
@@ -191,6 +195,18 @@ const researchAgent = webSearch
       logger,
     })
   : undefined;
+// Each person on the allowlist: their profile, `@patch setup` interview and writing voice.
+const peopleSchema = new SchemaGate(d1, PEOPLE_SCHEMA_STATEMENTS, logger, "People");
+const people = new PeopleStore({ db: d1, schema: peopleSchema, logger });
+const voiceTools = new VoiceTools({ people, ...(conversation ? { conversation } : {}), logger });
+const setupInterview = new SetupInterview({ people, llm, logger });
+const voiceLearning = new VoiceLearningJob({
+  people,
+  llm,
+  logger,
+  ...(conversation ? { conversation } : {}),
+  ...backgroundReasoning,
+});
 const assistant = new DiaAssistant({
   llm,
   botName: config.botName,
@@ -205,6 +221,7 @@ const assistant = new DiaAssistant({
   // Capability modules, in priority order. New phases register theirs here.
   modules: [
     phase1,
+    voiceTools,
     finance,
     ...(adminOps ? [adminOps.module] : []),
     ...(semantic ? [semantic] : []),
@@ -283,7 +300,7 @@ const scheduler = new ProactiveScheduler({
     run: (nowMs: number) =>
       materializeRecurringTasks({ recurring, tasks, timezone: config.timezone, nowMs, logger }),
   },
-  jobs: [...(adminOps ? [adminOps.job] : []), ...(vectorSync ? [vectorSync] : [])],
+  jobs: [voiceLearning, ...(adminOps ? [adminOps.job] : []), ...(vectorSync ? [vectorSync] : [])],
 });
 const bot = new WhatsAppBot({
   assistant,
@@ -299,6 +316,7 @@ const bot = new WhatsAppBot({
   mediaIngestion,
   ...(conversation ? { conversation } : {}),
   scheduler,
+  setup: setupInterview,
   ...(archiveAttachment ? { archiveAttachment } : {}),
   ...(config.puppeteerExecutablePath
     ? { puppeteerExecutablePath: config.puppeteerExecutablePath }

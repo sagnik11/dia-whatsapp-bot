@@ -8,6 +8,7 @@ import { GmailTools } from "../src/assistant-gmail.js";
 import { Phase1Tools } from "../src/assistant-phase1.js";
 import { SemanticTools } from "../src/assistant-semantic.js";
 import { SentryTools } from "../src/assistant-sentry.js";
+import { VoiceTools } from "../src/assistant-voice.js";
 import type { CalendarEvent } from "../src/calendar-client.js";
 import { DiaAssistant } from "../src/assistant.js";
 import { ChecklistStore } from "../src/checklist-store.js";
@@ -20,6 +21,7 @@ import type { LanguageModel } from "../src/llm.js";
 import type { Logger } from "../src/logger.js";
 import { MemoryStore } from "../src/memory-store.js";
 import { INTEGRATIONS_SCHEMA_STATEMENTS, OutboundStore } from "../src/outbound-store.js";
+import { PEOPLE_SCHEMA_STATEMENTS, PeopleStore } from "../src/people-store.js";
 import type { NotionSpendService } from "../src/notion-spend.js";
 import type { NotionWorkspaceService } from "../src/notion.js";
 import { RecurringTaskStore } from "../src/recurring-store.js";
@@ -212,6 +214,17 @@ export async function createEvalEnvironment(llm: LanguageModel, logger: Logger):
     pipelineStaleDays: 14,
     logger,
   });
+  // Sagnik has finished setup; Tanvi has a profile but no voice yet.
+  const people = new PeopleStore({ db, schema: new SchemaGate(db, PEOPLE_SCHEMA_STATEMENTS, logger, "People"), logger });
+  const sagnik = await people.ensure({ name: "Sagnik", senderIds: ["sagnik@c.us"] });
+  await people.setVoice(
+    sagnik.id,
+    "- Opens with 'Hey <first name>,'; signs off 'Cheers, S'\n- Short: 3-5 sentences, no fluff\n- Never 'I hope this finds you well'",
+    "Co-founder; owns product and engineering.",
+  );
+  await people.setSetup(sagnik.id, { status: "done", step: 22, followUp: null });
+  await people.ensure({ name: "Tanvi", senderIds: ["tanvi@c.us"] });
+  const voice = new VoiceTools({ people, conversation, logger });
   // Vectorize is not available offline; an empty index keeps semantic_search in the tool list.
   const semantic = new SemanticTools({ index: { query: async () => [] }, db, logger });
   // Integrations run on stub clients: an eval can never reach Gmail, Calendar,
@@ -283,6 +296,7 @@ export async function createEvalEnvironment(llm: LanguageModel, logger: Logger):
     // Keep in step with src/index.ts.
     modules: [
       new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, TIMEZONE, logger),
+      voice,
       finance,
       adminOps.module,
       semantic,

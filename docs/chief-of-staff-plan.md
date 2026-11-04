@@ -63,6 +63,7 @@ Nine domains, each a capability, an example command, where the data lives, and t
 | Meetings | Agenda from open, blocked tasks and recent discussion | "agenda for Thursday" | read-only | 1 |
 | Meetings | Meeting prep and booking with calendar access | "prep me for the 4pm with Acme" | Google Calendar (read, book on request) | 3 |
 | Comms | Drafts: emails, JDs, follow-ups, Dekhte Hai scripts | "draft a nudge to the designer" | none | 0 |
+| Comms | Per-person setup interview and drafts in each person's voice, learning from corrections, sent versions and group messages | "@patch setup", "reply to this in my tone" | `people`, `person_notes` | 3 |
 | Comms | Monthly investor update draft | "draft October's update" | tasks, metrics, spends, conversation | 2 |
 | Comms | Gmail drafts, sent when a founder says "send it" | "put that in Gmail as a draft" | Gmail | 3 |
 | Pipelines | Pilots, leads and hiring stages with next steps | "add Acme to pilots, next step DPA" | `pipeline`, `candidates` | 2 |
@@ -143,6 +144,7 @@ Every new table follows the `tasks` pattern: soft delete, actor columns, timesta
 | `budgets` | Month, category, amount | 2 |
 | `metrics` | Name, value, unit, as-of | 2 |
 | `pipeline`, `candidates` | Stage, next step, owner | 2 |
+| `people`, `person_ids`, `person_notes` | Each person's profile, setup interview, voice guide, and the answers, samples, rules, lessons and chat observations it is built from | 3 |
 
 ## Model strategy and cost
 

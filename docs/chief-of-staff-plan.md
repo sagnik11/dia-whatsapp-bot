@@ -169,8 +169,8 @@ Patch stays founders-only: Sagnik and Tanvi have full access, everyone else gets
 
 | Who | Tasks, follow-ups, decisions, memory | Spends | Brain Dump | Conversation search | Email and calendar (Phase 3) |
 | --- | --- | --- | --- | --- | --- |
-| Founders | Full | Full | Read and append | The group they ask in | Drafts freely; sends and books on "send it" / "book it" |
-| Anyone else | None (rejection) | None | None | None | None |
+| Everyone in an allowed group (`AUTHORIZED_USER_IDS=*`) | Full; memory is private per person plus the group's shared memory | Full | Read and append | The group they ask in | Drafts freely; sends and books on "send it" / "book it" |
+| Anyone outside the allowed groups | None | None | None | None | None |
 
 Conversation search and memory never cross groups: Patch only reads the log and memories of the group it was asked in.
 
@@ -215,7 +215,7 @@ Five decisions are made and built into the plan above; two are still open.
 | Conversation retention | 90 days of raw messages, distilled into long-term memory that outlives them | Retention in Phase 0, memory in Phase 1 |
 | Existing Notion tasks | Start fresh; nothing is migrated | Phase 0 |
 | Gmail and Google Calendar | Yes: drafts and sends email, reads and books meetings, only after an explicit "send it" or "book it" | Phase 3 |
-| Team-member roles | Not needed; Patch stays founders-only | Team mode removed from the roadmap |
+| Who can use Patch | Everyone in the group, no limits and no roles; each person has a private memory and voice profile beside the shared memory | `AUTHORIZED_USER_IDS=*`, personal memory (PR #16) |
 
 Still open:
 

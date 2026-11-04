@@ -16,9 +16,11 @@ export const PHASE1_SCHEMA_STATEMENTS: readonly string[] = [
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   deleted_at TEXT,
-  UNIQUE (group_id, kind, subject, content)
+  owner_id INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (group_id, owner_id, kind, subject, content)
 )`,
   "CREATE INDEX IF NOT EXISTS memories_lookup ON memories (group_id, deleted_at, kind, observed_at)",
+  "CREATE INDEX IF NOT EXISTS memories_owner ON memories (owner_id, deleted_at, observed_at)",
   `CREATE TABLE IF NOT EXISTS follow_ups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   owner TEXT NOT NULL,

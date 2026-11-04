@@ -92,7 +92,7 @@ const schema = z
     // Nightly long-term memory distillation; set it empty to turn it off.
     MEMORY_DISTILL_TIME: defaultOnTime("23:30"),
     FOUNDER_BRIEF_GROUP_IDS: z.string().default(""),
-    MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(5_000_000),
+    MEDIA_MAX_BYTES: z.coerce.number().int().min(1).max(25_000_000).default(25_000_000),
     LIST_GROUPS_ON_START: booleanFlag("true"),
     DATA_DIR: z.string().default(".data"),
     LOG_LEVEL: z.string().default("info"),
@@ -121,6 +121,15 @@ const schema = z
         path: ["FOUNDER_BRIEF_TIME"],
         message:
           "The daily brief is written from the group conversation; set CONVERSATION_RETENTION_DAYS above 0 or clear FOUNDER_BRIEF_TIME",
+      });
+    }
+    const everyone = env.AUTHORIZED_USER_IDS.split(",").map((id) => id.trim()).includes("*");
+    if (everyone && !env.ALLOWED_GROUP_IDS.split(",").some((id) => id.trim())) {
+      context.addIssue({
+        code: "custom",
+        path: ["ALLOWED_GROUP_IDS"],
+        message:
+          "AUTHORIZED_USER_IDS=* lets everyone in the allowed groups use Patch, so ALLOWED_GROUP_IDS must list those groups",
       });
     }
     if (needsNotion && !env.NOTION_API_KEY) {

@@ -65,4 +65,4 @@ Rules, lessons and profile changes only ever apply to the person asking. Anyone 
 
 ## Adding a teammate
 
-Add their WhatsApp ids to `AUTHORIZED_USER_IDS` (see the allowlist steps in [DEPLOYMENT.md](DEPLOYMENT.md#4-whatsapp-pairing-and-allowlists)) and recreate the container. They get Patch exactly as founders do, then run `@patch setup`.
+With `AUTHORIZED_USER_IDS=*` (the default in `.env.example`), anyone added to the group can use Patch straight away; they just run `@patch setup`. If you restrict access to listed ids instead, add theirs first (see [DEPLOYMENT.md](DEPLOYMENT.md#4-whatsapp-pairing-and-allowlists)).

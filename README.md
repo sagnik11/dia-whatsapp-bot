@@ -48,7 +48,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 
 ## What it does
 
-- Listens in WhatsApp **group chats**, responds only when triggered, and accepts commands only from allowlisted senders.
+- Listens in WhatsApp **group chats** and responds only when triggered. With `AUTHORIZED_USER_IDS=*` everyone in the allowed groups can use it with no limits; or list sender ids to restrict it.
 - Keeps Autter's **task list in Cloudflare D1**: create (single or batch), search and filter, edit any field, append notes, complete, and delete, with an audit trail of every change.
 - Runs on an **open-source model** (default `@cf/moonshotai/kimi-k2.6`) through **Cloudflare AI Gateway**, with automatic fallback to a second model (default `@cf/google/gemma-4-26b-a4b-it`) when the primary is rate limited or down.
 - Keeps the **group conversation** locally (90 days by default) so Patch can answer "what did we decide?", turn a discussion into tasks, and write briefs from what was actually said.
@@ -219,7 +219,7 @@ Phase 1 of the [chief-of-staff plan](docs/chief-of-staff-plan.md). All of it liv
 
 | What | Ask Patch | Notes |
 | --- | --- | --- |
-| Long-term memory | "what do we know about Acme?", "remember that Rahul prefers email", "forget M7" | Every night at `MEMORY_DISTILL_TIME` (23:30) Patch distills decisions, commitments, facts, people and preferences from the day's conversation. Each memory (`M<id>`) links to the message it came from and outlives the 90-day log. Memory never crosses groups. |
+| Long-term memory | "what do we know about Acme?", "remember that Rahul prefers email", "forget M7" | Every night at `MEMORY_DISTILL_TIME` (23:30) Patch distills decisions, commitments, facts, people and preferences from the day's conversation. Each memory (`M<id>`) links to the message it came from and outlives the 90-day log. Everyone has a **private memory** beside the group's **shared** one: "remember…" is private to the asker unless it's a team decision or "for everyone"; distilled commitments and preferences go to the person who said them; decisions, facts and people are shared. A private memory follows its owner across groups and is never shown to anyone else. |
 | Decision log | "log decision: we price per repo" | Decisions are memories of kind `decision`. |
 | Follow-ups | "I told Rahul I'd send the DPA by Friday", "what do we owe people?", "F3 is done" | Promises to or from people outside the group (`F<id>`). |
 | Recurring tasks | "every Monday: send the pipeline update, owner Tanvi", "pause R2" | Each run silently adds a normal task due that day (`R<id>`), tagged `recurring`. Missed runs are not back-filled. |
@@ -331,7 +331,7 @@ Voice notes are transcribed first by a private [`whisper.cpp`](https://github.co
 WHISPER_MODEL=tiny
 WHISPER_THREADS=2
 WHISPER_LANGUAGE=auto
-MEDIA_MAX_BYTES=5000000
+MEDIA_MAX_BYTES=25000000
 ```
 
 The default multilingual `tiny` model is about 75 MiB on disk and uses roughly 273 MB of memory. Change `WHISPER_MODEL=base` for better accuracy at the cost of slower CPU inference, about 142 MiB on disk, and roughly 388 MB of memory. The model is downloaded once into the `whisper-models` Docker volume. Audio never goes to a transcription API; the model receives only the resulting transcript. Transcripts, images, and documents are treated as untrusted user content.
@@ -380,9 +380,9 @@ If `ALLOWED_GROUP_IDS` is empty, every joined group is eligible. A production de
 
 ### Authorized senders
 
-`AUTHORIZED_USER_IDS` is required in practice: when it is empty, every trigger is rejected.
+`AUTHORIZED_USER_IDS=*` (the `.env.example` default) lets everyone in the allowed groups use Patch with no limits, so nobody's ids need collecting. It requires `ALLOWED_GROUP_IDS`, or the bot refuses to start. Each person still gets their own private memory and voice profile.
 
-To discover an owner's identifiers:
+To restrict Patch to some people instead, list their sender ids; when the list is empty, every trigger is rejected. To discover someone's identifiers:
 
 1. Start the bot and follow its logs.
 2. Ask the owner to send `@patch hello` in an allowed group.
@@ -469,7 +469,7 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `BOT_TRIGGER` | No | `@patch` | Case-insensitive text trigger. |
 | `TIMEZONE` | No | `Asia/Kolkata` | IANA timezone for relative dates. |
 | `ALLOWED_GROUP_IDS` | Recommended | Empty | Comma-separated group IDs; empty allows all joined groups. |
-| `AUTHORIZED_USER_IDS` | Yes for use | Empty | Comma-separated owner IDs; empty blocks everyone. |
+| `AUTHORIZED_USER_IDS` | Yes for use | Empty | `*` for everyone in the allowed groups (needs `ALLOWED_GROUP_IDS`), or comma-separated sender IDs; empty blocks everyone. |
 | `UNAUTHORIZED_REPLY` | No | Harbour-themed | Used if the AI rejection fails. |
 | `CONTEXT_MESSAGE_LIMIT` | No | `6` | Recent group messages kept in memory (0–20). |
 | `CONVERSATION_RETENTION_DAYS` | No | `90` | Days of group conversation kept locally for briefs and look-backs; `0` turns the log and the brief off. |
@@ -479,7 +479,7 @@ Copy [`.env.example`](.env.example) and change only what your deployment needs.
 | `MEMORY_DISTILL_TIME` | No | `23:30` | Nightly long-term memory run; set it empty to turn it off. |
 | `CLOUDFLARE_AI_BACKGROUND_REASONING_EFFORT` | No | `high` | Reasoning effort for briefs, reviews, and memory. |
 | `FOUNDER_BRIEF_GROUP_IDS` | No | `ALLOWED_GROUP_IDS` | Daily brief destinations. |
-| `MEDIA_MAX_BYTES` | No | `5000000` | Maximum decoded attachment size. |
+| `MEDIA_MAX_BYTES` | No | `25000000` | Maximum decoded attachment size (25 MB is the most allowed). |
 | `LIST_GROUPS_ON_START` | No | `true` | Logs group names/IDs after connecting. |
 | `DATA_DIR` | No | `.data` | WhatsApp session and SQLite directory outside Docker. |
 | `LOG_LEVEL` | No | `info` | Pino log level. |
@@ -520,7 +520,8 @@ Do not put API keys, private customer data, phone numbers, or other secrets into
 
 ## Privacy and security model
 
-- Authorization uses WhatsApp sender IDs, not editable profile names; group and sender allowlists are checked before any tool is exposed. The unauthorized rejection call has no tools.
+- Authorization uses WhatsApp sender IDs, not editable profile names; group and sender allowlists are checked before any tool is exposed. With `AUTHORIZED_USER_IDS=*`, anyone in an allowed group can use every tool, so keep the group to people you trust. The unauthorized rejection call has no tools.
+- Private memories and voice profiles are keyed to a person's sender ids and are never returned for anyone else's request.
 - Task edits and deletes require an `#id` the founder named or one returned by `list_tasks` in the same request; deletes are soft and audited in `task_events`.
 - Writes are confirmed from stored data, not model text.
 - Brain Dump writes can only append to the one configured page. Company knowledge is opt-in and read-only.

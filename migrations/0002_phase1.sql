@@ -1,5 +1,7 @@
 -- Captain Patch Phase 1: long-term memory, follow-ups, recurring tasks,
--- task checklists and a shared audit trail. Patch runs these idempotent
+-- task checklists and a shared audit trail. A memory with owner_id 0 is
+-- shared with the group; otherwise it is private to that person (people.id).
+-- Patch runs these idempotent
 -- statements on startup; to create them ahead of time:
 --   npx wrangler d1 execute <database-name> --remote --file=migrations/0002_phase1.sql
 
@@ -16,10 +18,13 @@ CREATE TABLE IF NOT EXISTS memories (
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   deleted_at TEXT,
-  UNIQUE (group_id, kind, subject, content)
+  owner_id INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (group_id, owner_id, kind, subject, content)
 );
 
 CREATE INDEX IF NOT EXISTS memories_lookup ON memories (group_id, deleted_at, kind, observed_at);
+
+CREATE INDEX IF NOT EXISTS memories_owner ON memories (owner_id, deleted_at, observed_at);
 
 CREATE TABLE IF NOT EXISTS follow_ups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

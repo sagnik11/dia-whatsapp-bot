@@ -3,6 +3,7 @@ import type { SqlExecutor, SqlValue } from "./cloudflare-d1.js";
 import type { ToolDefinition } from "./llm.js";
 import type { Logger } from "./logger.js";
 import type { SemanticIndex } from "./patch-api-client.js";
+import type { PeopleStore } from "./people-store.js";
 import type { ToolModule, ToolSession } from "./tool-module.js";
 import { output, type ToolOutcome } from "./tool-outcome.js";
 import type { AssistantRequest } from "./types.js";
@@ -128,6 +129,8 @@ interface SemanticToolsOptions {
   messages?: boolean;
   /** Brain Dump notes are searchable when the Brain Dump is configured. */
   brainDump?: boolean;
+  /** Lets the requester's own private memories match; without it only shared memories do. */
+  people?: Pick<PeopleStore, "findBySender">;
 }
 
 /** Phase 3: semantic search over memories, tasks, messages and the Brain Dump, backed by Vectorize. */
@@ -184,7 +187,8 @@ export class SemanticTools implements ToolModule {
       .filter((hit): hit is Hit => hit !== null && kinds.has(hit.kind));
     const numbered = (kind: "memory" | "task" | "message") =>
       hits.flatMap((hit) => (hit.kind === kind ? [hit.id] : []));
-    const memories = await this.memoriesById(request.groupId, numbered("memory"));
+    const viewer = (await this.options.people?.findBySender([request.requestedById]))?.id ?? 0;
+    const memories = await this.memoriesById(request.groupId, viewer, numbered("memory"));
     const tasks = await this.tasksById(numbered("task"));
     const messages = await this.messagesById(request.groupId, numbered("message"));
     const notes = await this.chunksById(hits.flatMap((hit) => (hit.kind === "brain_dump" ? [hit.id] : [])));
@@ -253,12 +257,14 @@ export class SemanticTools implements ToolModule {
     });
   }
 
-  private async memoriesById(groupId: string, ids: readonly number[]): Promise<Map<number, MemoryRow>> {
+  /** This group's shared memories, plus the viewer's own private ones; never anyone else's. */
+  private async memoriesById(groupId: string, viewerId: number, ids: readonly number[]): Promise<Map<number, MemoryRow>> {
     if (ids.length === 0) return new Map();
-    const params: SqlValue[] = [groupId, ...ids];
+    const params: SqlValue[] = [groupId, viewerId, ...ids];
     const result = await this.options.db.query<MemoryRow>(
       `SELECT id, kind, subject, content, source_author, observed_at FROM memories
-       WHERE group_id = ? AND deleted_at IS NULL AND id IN (${placeholders(ids.length)})`,
+       WHERE ((group_id = ? AND owner_id = 0) OR (owner_id > 0 AND owner_id = ?))
+         AND deleted_at IS NULL AND id IN (${placeholders(ids.length)})`,
       params,
     );
     return new Map(result.results.map((row) => [Number(row.id), { ...row, id: Number(row.id) }]));

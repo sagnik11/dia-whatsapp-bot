@@ -8,7 +8,8 @@ import {
 } from "./follow-up-store.js";
 import type { ToolDefinition } from "./llm.js";
 import type { Logger } from "./logger.js";
-import { MEMORY_KINDS, type MemoryRecord, type MemoryStore } from "./memory-store.js";
+import { MEMORY_KINDS, type MemoryRecord, type MemoryStore, type MemoryViewer } from "./memory-store.js";
+import type { PeopleStore } from "./people-store.js";
 import {
   RECURRENCE_FREQUENCIES,
   RecurringValidationError,
@@ -27,6 +28,8 @@ export interface Phase1Services {
   followUps: FollowUpStore;
   recurring: RecurringTaskStore;
   checklists: ChecklistStore;
+  /** Gives each person a private memory beside the group's shared one. Without it, all memory is shared. */
+  people?: Pick<PeopleStore, "ensure">;
 }
 
 export interface Phase1State {
@@ -35,6 +38,8 @@ export interface Phase1State {
   knownMemoryIds: Set<number>;
   knownFollowUpIds: Set<number>;
   knownRecurringIds: Set<number>;
+  /** The requester's people.id, resolved once per request for private memory. */
+  personId?: number;
 }
 
 // --- Detection and id references ------------------------------------------------
@@ -118,6 +123,7 @@ const weekdaySchema = z.preprocess((value) => {
 }, z.number().int().min(1).max(7).nullish());
 
 const rememberSchema = z.object({
+  scope: z.preprocess(lower, z.enum(["personal", "shared"]).nullish()),
   kind: z.preprocess(lower, z.enum(MEMORY_KINDS)),
   subject: z.string().trim().min(1).max(120),
   content: z.string().trim().min(1).max(1_000),
@@ -207,7 +213,7 @@ export const PHASE1_TOOLS: readonly ToolDefinition[] = [
   {
     name: "search_memory",
     description:
-      "Search this group's long-term memory: decisions, commitments, facts, people and preferences distilled from past conversations (they outlive the 90-day log). Use for 'what do we know about X', past decisions, and anything older than the last few days.",
+      "Search long-term memory: this group's shared memory plus the requester's own private memory. Decisions, commitments, facts, people and preferences distilled from past conversations (they outlive the 90-day log). Use for 'what do we know about X', past decisions, and anything older than the last few days. Private items come back with personal: true.",
     parameters: {
       type: "object",
       properties: {
@@ -222,10 +228,16 @@ export const PHASE1_TOOLS: readonly ToolDefinition[] = [
   {
     name: "remember",
     description:
-      "Save one item to long-term memory when a founder says 'remember…', 'log decision…', or states something they want kept. Decisions go in as kind decision (the decision log).",
+      "Save one item to long-term memory when someone says 'remember…', 'log decision…', or states something they want kept. Decisions go in as kind decision (the decision log).",
     parameters: {
       type: "object",
       properties: {
+        scope: {
+          type: "string",
+          enum: ["personal", "shared"],
+          description:
+            "personal: only the requester will ever see it (their notes, preferences, own commitments). shared: everyone in the group (team decisions, company facts, anything said to be for everyone). Default: shared for decisions, personal otherwise.",
+        },
         kind: { type: "string", enum: memoryKindsList },
         subject: { type: "string", description: "Short topic or entity, e.g. 'pricing', 'Acme pilot'." },
         content: { type: "string", description: "One self-contained sentence with names and absolute dates." },
@@ -396,7 +408,9 @@ export const PHASE1_INSTRUCTIONS: readonly string[] = [
   "Long-term memory:",
   "- Every night Patch distills decisions, commitments, facts, people and preferences from the conversation into memory that outlives the 90-day log.",
   "- Use search_memory for 'what do we know about X', past decisions, and anything that may be older than the last few days; use read_group_conversation for recent detail. Cite memories with who said it and when.",
-  "- Use remember when a founder says 'remember…' or 'log decision…'; decisions are the decision log. Use forget_memory only when asked.",
+  "- Use remember when someone says 'remember…' or 'log decision…'; decisions are the decision log. Use forget_memory only when asked.",
+  "- Everyone has a private memory beside the group's shared one. remember saves to the requester's private memory (scope personal) for their own notes, preferences and commitments; use scope shared for team decisions, company facts stated as 'we…', and anything they say is for everyone or the team. A private memory belongs to its owner only: never quote one in a reply to someone else.",
+  "Shared lists, personal views: tasks and follow-ups are one shared list. First-person asks ('my tasks', 'what's on my plate', 'what do I owe people') filter by the requester as owner; 'we', 'the team' or 'everyone' means all of them.",
   "Follow-ups (F<id>): promises to or from people outside the group. Use create_follow_ups, list_follow_ups and update_follow_ups.",
   "Recurring tasks (R<id>): use create_recurring_task for anything on a schedule; each run silently adds a normal task due that day.",
   "Checklists: add_checklist_items and tick_checklist_items work on one exact task #id.",
@@ -424,6 +438,7 @@ function memoryForModel(memory: MemoryRecord) {
     content: memory.content,
     saidBy: memory.sourceAuthor,
     when: memory.observedAt,
+    ...(memory.ownerId ? { personal: true } : {}),
   };
 }
 
@@ -512,9 +527,20 @@ export class Phase1Tools implements ToolModule {
     });
   }
 
+  /** The requester's view of memory: the group's shared memory plus their own private memory. */
+  private async viewer(state: Phase1State): Promise<MemoryViewer> {
+    if (!this.services.people) return { scope: "shared" };
+    state.personId ??= (
+      await this.services.people.ensure({ name: state.request.requestedBy, senderIds: [state.request.requestedById] })
+    ).id;
+    return { scope: "person", personId: state.personId };
+  }
+
   private async searchMemory(args: unknown, state: Phase1State): Promise<ToolOutcome> {
     const parsed = searchMemorySchema.parse(args);
+    const viewer = await this.viewer(state);
     const memories = await this.services.memory.search(state.request.groupId, {
+      viewer,
       text: parsed.text,
       kind: parsed.kind ?? null,
       sinceIso: parsed.days_back
@@ -528,6 +554,9 @@ export class Phase1Tools implements ToolModule {
 
   private async remember(args: unknown, state: Phase1State): Promise<ToolOutcome> {
     const parsed = rememberSchema.parse(args);
+    const scope = parsed.scope ?? (parsed.kind === "decision" ? "shared" : "personal");
+    const viewer = scope === "personal" ? await this.viewer(state) : null;
+    const ownerId = viewer?.scope === "person" ? viewer.personId : 0;
     const result = await this.services.memory.add(
       state.request.groupId,
       [
@@ -538,6 +567,7 @@ export class Phase1Tools implements ToolModule {
           sourceAuthor: state.request.requestedBy,
           sourceMessageId: state.request.messageId,
           observedAt: new Date().toISOString(),
+          ownerId,
         },
       ],
       state.request.requestedBy,
@@ -546,15 +576,16 @@ export class Phase1Tools implements ToolModule {
     if (!memory) return final(`🧠 Already remembered: ${parsed.subject}.`);
     state.knownMemoryIds.add(memory.id);
     const label = memory.kind === "decision" ? "Decision logged" : "Remembered";
-    return final(`🧠 ${label} (M${memory.id}, ${memory.kind}): ${memory.content}`);
+    const audience = !this.services.people ? "" : memory.ownerId ? " for you only" : " for everyone";
+    return final(`🧠 ${label}${audience} (M${memory.id}, ${memory.kind}): ${memory.content}`);
   }
 
   private async forget(args: unknown, state: Phase1State): Promise<ToolOutcome> {
     const { memory_id: id } = forgetMemorySchema.parse(args);
     const blocked = this.unknown([id], state.knownMemoryIds, "M", "search_memory");
     if (blocked) return blocked;
-    const memory = await this.services.memory.forget(state.request.groupId, id, state.request.requestedBy);
-    return final(memory ? `🗑️ Forgot M${id}: ${memory.content}` : `⚠️ M${id} was not found in this group's memory.`);
+    const memory = await this.services.memory.forget(state.request.groupId, id, state.request.requestedBy, await this.viewer(state));
+    return final(memory ? `🗑️ Forgot M${id}: ${memory.content}` : `⚠️ M${id} is not in this group's memory or yours.`);
   }
 
   private async createFollowUps(args: unknown, state: Phase1State): Promise<ToolOutcome> {

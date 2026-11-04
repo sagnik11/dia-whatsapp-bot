@@ -39,6 +39,7 @@ import {
   final,
   output,
   terminal,
+  type OutgoingFile,
   type ToolOutcome,
 } from "./tool-outcome.js";
 import type {
@@ -1078,6 +1079,12 @@ interface AssistantOptions {
   logger: Logger;
 }
 
+/** What Patch sends back for one request: the text, then any attached files. */
+export interface AssistantReply {
+  text: string;
+  files: OutgoingFile[];
+}
+
 interface RequestState {
   request: AssistantRequest;
   knownTaskIds: Set<number>;
@@ -1142,7 +1149,19 @@ export class DiaAssistant {
     return rejection;
   }
 
+  /** The reply text only; files a tool attached are dropped. Prefer respondWithFiles. */
   public async respond(request: AssistantRequest): Promise<string> {
+    return (await this.respondWithFiles(request)).text;
+  }
+
+  /** The reply text plus any files tools attached (sent after the text, in order). */
+  public async respondWithFiles(request: AssistantRequest): Promise<AssistantReply> {
+    const files: OutgoingFile[] = [];
+    const text = await this.runRequest(request, files);
+    return { text, files };
+  }
+
+  private async runRequest(request: AssistantRequest, files: OutgoingFile[]): Promise<string> {
     const body = request.body;
     const referenced = referencedTaskIds(
       [body, request.quotedMessage ?? ""].join("\n"),
@@ -1277,6 +1296,7 @@ export class DiaAssistant {
         if (outcome.kind === "terminal") return outcome.text;
         if (outcome.kind === "final") {
           confirmations.push(outcome.text);
+          files.push(...(outcome.files ?? []));
           messages.push(toolMessage(call, { ok: true, confirmationShownToFounder: outcome.text }));
         } else {
           needsAnotherTurn = true;

@@ -1,11 +1,12 @@
 import { join } from "node:path";
+import { FinanceTools } from "./assistant-finance.js";
 import { Phase1Tools } from "./assistant-phase1.js";
 import { DiaAssistant } from "./assistant.js";
 import { SemanticTools } from "./assistant-semantic.js";
 import { WhatsAppBot } from "./bot.js";
 import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient, type SqlExecutor } from "./cloudflare-d1.js";
-import { config, platformConfig } from "./config.js";
+import { config, financeConfig, platformConfig } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { ConversationStore, type ConversationLog } from "./conversation-store.js";
 import {
@@ -16,6 +17,7 @@ import {
 import { PHASE1_SCHEMA_STATEMENTS, SchemaGate } from "./d1-schema.js";
 import { DedupeStore } from "./dedupe-store.js";
 import { CloudflareMarkdownConverter } from "./document-converter.js";
+import { BudgetStore, FINANCE_SCHEMA_STATEMENTS, SubscriptionStore } from "./finance-store.js";
 import { FollowUpStore } from "./follow-up-store.js";
 import { FounderBriefGenerator, type FounderBriefInput } from "./founder-brief.js";
 import { CloudflareGatewayModel } from "./llm.js";
@@ -116,6 +118,16 @@ const notionSpend =
         logger,
       })
     : undefined;
+// Phase 2 money: subscriptions and budgets in D1; roll-ups read the spend log when configured.
+const financeSchema = new SchemaGate(d1, FINANCE_SCHEMA_STATEMENTS, logger, "Finance");
+const finance = new FinanceTools(
+  {
+    subscriptions: new SubscriptionStore({ db: d1, schema: financeSchema, timezone: config.timezone, logger }),
+    budgets: new BudgetStore({ db: d1, schema: financeSchema, timezone: config.timezone, logger }),
+    ...(notionSpend ? { spendLog: notionSpend } : {}),
+  },
+  { companyPaymentMethods: financeConfig.companyPaymentMethods, logger },
+);
 const webSearch = config.tavilyApiKey
   ? new TavilyWebSearchService({ apiKey: config.tavilyApiKey, logger })
   : undefined;
@@ -140,7 +152,7 @@ const assistant = new DiaAssistant({
   ...(webSearch ? { webSearch } : {}),
   ...(researchAgent ? { researchAgent } : {}),
   // Capability modules, in priority order. New phases register theirs here.
-  modules: [phase1, ...(semantic ? [semantic] : [])],
+  modules: [phase1, finance, ...(semantic ? [semantic] : [])],
   checklists,
   logger,
 });

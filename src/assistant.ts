@@ -32,6 +32,13 @@ import {
   type TaskStore,
   type TaskUpdateResult,
 } from "./task-store.js";
+import { DEFAULT_DUE_DAYS, defaultDueDate, type OwnerPick, type TaskAssigner } from "./task-assignment.js";
+
+/** Every task keeps an owner and a due date: they can be changed, never cleared. */
+const REQUEST_CLEARABLE_FIELDS = CLEARABLE_TASK_FIELDS.filter((field) => field !== "owner" && field !== "due_at") as [
+  Exclude<(typeof CLEARABLE_TASK_FIELDS)[number], "owner" | "due_at">,
+  ...Array<Exclude<(typeof CLEARABLE_TASK_FIELDS)[number], "owner" | "due_at">>,
+];
 import { formatDueForDisplay, resolveDueTimestamp } from "./time.js";
 import type { ToolModule, ToolSession } from "./tool-module.js";
 import {
@@ -173,7 +180,7 @@ const taskUpdateItemSchema = z.object({
   tags: tagsSchema,
   notes_mode: z.enum(["append", "replace"]).nullish(),
   notes: optionalText(20_000),
-  clear_fields: z.array(z.enum(CLEARABLE_TASK_FIELDS)).max(6).nullish(),
+  clear_fields: z.array(z.enum(REQUEST_CLEARABLE_FIELDS)).max(6).nullish(),
 });
 
 const updateTasksSchema = z.object({
@@ -424,8 +431,8 @@ const updateTasksTool: ToolDefinition = {
             notes: { type: "string", description: "Notes text to append or replace." },
             clear_fields: {
               type: "array",
-              items: { type: "string", enum: [...CLEARABLE_TASK_FIELDS] },
-              description: "Fields the founder explicitly asked to remove.",
+              items: { type: "string", enum: [...REQUEST_CLEARABLE_FIELDS] },
+              description: "Fields the founder explicitly asked to remove. Owner and due date can be changed but never removed.",
             },
           },
           required: ["task_id"],
@@ -883,6 +890,31 @@ function taskDetails(task: TaskRecord, timezone: string): string {
   return details.length > 0 ? ` — ${details.join(" · ")}` : "";
 }
 
+/** Says which owners Patch picked and which due dates it defaulted, so nobody is surprised. */
+export function filledInLines(
+  results: readonly TaskCreateResult[],
+  drafts: ReadonlyArray<{ owner: string | null; dueAt: string | null }>,
+  picks: ReadonlyMap<number, OwnerPick>,
+): string[] {
+  const picked: string[] = [];
+  const defaulted: string[] = [];
+  results.forEach((result, index) => {
+    const draft = drafts[index];
+    if (result.duplicate || !draft) return;
+    if (!draft.owner) {
+      picked.push(`#${result.task.id} → ${result.task.owner ?? "?"} (${picks.get(index)?.reason ?? "no owner named, so you"})`);
+    }
+    if (!draft.dueAt) defaulted.push(`#${result.task.id}`);
+  });
+  const lines: string[] = [];
+  if (picked.length > 0) lines.push(`👤 Owner picked: ${picked.join("; ")}`);
+  if (defaulted.length > 0) {
+    lines.push(`📅 No date given, so ${defaulted.join(", ")} ${defaulted.length === 1 ? "is" : "are"} due in ${DEFAULT_DUE_DAYS} days.`);
+  }
+  if (lines.length > 0) lines.push("Reassign or move any of them by #id.");
+  return lines;
+}
+
 export function formatTaskCreateConfirmation(
   results: readonly TaskCreateResult[],
   timezone: string,
@@ -1076,6 +1108,8 @@ interface AssistantOptions {
   modules?: readonly ToolModule[];
   /** Shows task checklists inside list_tasks and get_task. */
   checklists?: Pick<ChecklistStore, "itemsFor">;
+  /** Picks an owner for tasks nobody assigned; without it they go to the requester. */
+  assignOwners?: Pick<TaskAssigner, "assign">;
   logger: Logger;
 }
 
@@ -1348,8 +1382,8 @@ export class DiaAssistant {
       "Task list (Cloudflare D1):",
       "- It is the only task system. Notion holds no tasks; never mention a Notion task tracker.",
       "- Use list_tasks before answering anything about existing tasks; never claim to know the list without it.",
-      "- Use create_tasks only when a founder clearly asks to add or capture tasks. Derive titles and notes only from the triggered message and any message it quotes, or, when a founder asks to capture the discussion, from read_group_conversation results. Create one task per distinct action item, owned by whoever took it on. Missing due dates are fine; do not ask for them.",
-      "- An owner of 'me' means the sender. Leave owner empty when nobody was named.",
+      "- Use create_tasks only when a founder clearly asks to add or capture tasks. Derive titles and notes only from the triggered message and any message it quotes, or, when a founder asks to capture the discussion, from read_group_conversation results. Create one task per distinct action item, owned by whoever took it on. Never ask for a missing owner or due date: Patch picks an owner from the team's roles, memory and past tasks, and a task with no date is due in 7 days.",
+      "- An owner of 'me' means the sender. Leave owner empty when nobody was named, so Patch picks one; leave due_at empty when no date was given. Every task keeps an owner and a due date: they can be changed but never removed.",
       "- To change or delete a task described in words, call list_tasks first and act only on an unambiguous match. If several tasks match, ask which #id.",
       "- Use update_tasks for status, owner, due date, priority, area, tags, title, and notes. Finished work is status done; dropped work is cancelled. Use delete_tasks only when a founder explicitly says delete or remove.",
       "- Writes are confirmed to the founder automatically from the stored data. Do not restate them; answer only what remains.",
@@ -1499,17 +1533,35 @@ export class DiaAssistant {
   private async createTasks(args: unknown, state: RequestState): Promise<ToolOutcome> {
     const parsed = createTasksSchema.parse(args);
     parsed.tasks.forEach((task, index) => this.validateDue(task.due_at, `tasks.${index}.due_at`));
+    const drafts = parsed.tasks.map((task) => ({
+      title: task.title,
+      notes: task.notes,
+      status: task.status ?? null,
+      priority: task.priority ?? null,
+      owner: this.owner(task.owner, state),
+      area: task.area ?? null,
+      dueAt: task.due_at,
+      tags: task.tags ?? [],
+    }));
+    // Every task gets an owner and a due date.
+    const unowned = drafts.flatMap((draft, index) =>
+      draft.owner ? [] : [{ index, title: draft.title, notes: draft.notes, area: draft.area }],
+    );
+    const picks =
+      unowned.length > 0 && this.options.assignOwners
+        ? await this.options.assignOwners.assign({
+            groupId: state.request.groupId,
+            requester: state.request.requestedBy,
+            tasks: unowned,
+          })
+        : new Map<number, OwnerPick>();
+    const defaultDue = defaultDueDate(Date.now(), this.options.timezone);
     try {
       const results = await this.options.tasks.create(
-        parsed.tasks.map((task) => ({
-          title: task.title,
-          notes: task.notes,
-          status: task.status ?? null,
-          priority: task.priority ?? null,
-          owner: this.owner(task.owner, state),
-          area: task.area ?? null,
-          dueAt: task.due_at,
-          tags: task.tags ?? [],
+        drafts.map((draft, index) => ({
+          ...draft,
+          owner: draft.owner ?? picks.get(index)?.owner ?? state.request.requestedBy,
+          dueAt: draft.dueAt ?? defaultDue,
         })),
         {
           actor: state.request.requestedBy,
@@ -1518,7 +1570,9 @@ export class DiaAssistant {
         },
       );
       for (const result of results) state.knownTaskIds.add(result.task.id);
-      return final(formatTaskCreateConfirmation(results, this.options.timezone));
+      return final(
+        [formatTaskCreateConfirmation(results, this.options.timezone), ...filledInLines(results, drafts, picks)].join("\n"),
+      );
     } catch (error) {
       return this.taskWriteFailure(error, state, "add those tasks");
     }

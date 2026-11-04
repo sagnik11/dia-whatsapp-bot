@@ -19,7 +19,7 @@ export async function addCompliance(ctx: AdminContext, args: unknown, state: Adm
       area: item.area ?? null,
       dueOn: item.due_on,
       recurrence: item.recurrence ?? "none",
-      owner: ctx.owner(item.owner, state),
+      owner: ctx.owner(item.owner, state) ?? state.request.requestedBy,
       leadDays: item.lead_days ?? null,
       checklist: item.checklist,
       notes: item.notes,

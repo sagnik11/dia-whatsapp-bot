@@ -295,13 +295,14 @@ describe("DiaAssistant task list", () => {
       }),
     );
 
-    expect(reply).toBe(
-      [
-        "✅ 2 tasks added:",
-        "• #1 Renew autter.dev domain — owner Sagnik · due 10 Nov 2026 · high priority",
-        "• #2 Call Rahul about the pilot — owner Tanvi",
-      ].join("\n"),
-    );
+    const lines = String(reply).split("\n");
+    expect(lines.slice(0, 2)).toEqual([
+      "✅ 2 tasks added:",
+      "• #1 Renew autter.dev domain — owner Sagnik · due 10 Nov 2026 · high priority",
+    ]);
+    // No date was given for #2, so it is due in a week.
+    expect(lines[2]).toMatch(/^• #2 Call Rahul about the pilot — owner Tanvi · due \d{1,2} \w+ \d{4}$/);
+    expect(lines.slice(3)).toEqual(["📅 No date given, so #2 is due in 7 days.", "Reassign or move any of them by #id."]);
     expect(llm.requests[0]?.toolChoice).toBe("required");
     expect(JSON.stringify(llm.requests[0]?.messages)).not.toContain("Unrelated historical context");
     expect(llm.requests[0]?.system).toContain("Cloudflare D1");
@@ -398,8 +399,8 @@ describe("DiaAssistant task list", () => {
       request("@patch add a task to draft the investor update, and what's overdue?"),
     );
 
-    expect(reply).toBe(
-      "✅ Task #1 added: Draft November investor update\n\nNothing is overdue. Clean deck, Captain.",
+    expect(reply).toMatch(
+      /^✅ Task #1 added: Draft November investor update — owner Sagnik · due \d{1,2} \w+ \d{4}\n👤 Owner picked: #1 → Sagnik \(no owner named, so you\)\n📅 No date given, so #1 is due in 7 days\.\nReassign or move any of them by #id\.\n\nNothing is overdue\. Clean deck, Captain\.$/,
     );
   });
 
@@ -414,7 +415,9 @@ describe("DiaAssistant task list", () => {
       request("@patch add a task to pay AWS next friday"),
     );
 
-    expect(reply).toBe("✅ Task #1 added: Pay AWS — due 6 Nov 2026");
+    expect(reply).toBe(
+      "✅ Task #1 added: Pay AWS — owner Sagnik · due 6 Nov 2026\n👤 Owner picked: #1 → Sagnik (no owner named, so you)\nReassign or move any of them by #id.",
+    );
     expect(JSON.stringify(llm.requests[1]?.messages)).toContain("not an ISO 8601 date");
   });
 
@@ -650,7 +653,9 @@ describe("DiaAssistant group conversation", () => {
       request("@patch capture what we discussed as tasks"),
     );
 
-    expect(reply).toBe("✅ Task #1 added: Send Rahul the DPA — owner Tanvi");
+    expect(reply).toMatch(
+      /^✅ Task #1 added: Send Rahul the DPA — owner Tanvi · due \d{1,2} \w+ \d{4}\n📅 No date given, so #1 is due in 7 days\.\nReassign or move any of them by #id\.$/,
+    );
     conversation.close();
   });
 });

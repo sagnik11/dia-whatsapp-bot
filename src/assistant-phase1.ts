@@ -680,7 +680,7 @@ export class Phase1Tools implements ToolModule {
         {
           title: parsed.title,
           notes: parsed.notes,
-          owner: this.owner(parsed.owner, state),
+          owner: this.owner(parsed.owner, state) ?? state.request.requestedBy,
           area: parsed.area,
           priority: parsed.priority ?? null,
           rule: {

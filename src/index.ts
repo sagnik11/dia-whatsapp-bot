@@ -44,6 +44,7 @@ import { ProactiveScheduler } from "./scheduler.js";
 import { TaskStore } from "./task-store.js";
 import { VectorSyncJob } from "./vector-sync.js";
 import { VoiceTools } from "./assistant-voice.js";
+import { TaskAssigner } from "./task-assignment.js";
 import { PEOPLE_SCHEMA_STATEMENTS, PeopleStore } from "./people-store.js";
 import { SetupInterview } from "./setup-interview.js";
 import { VoiceLearningJob } from "./voice.js";
@@ -231,6 +232,8 @@ const assistant = new DiaAssistant({
     ...integrations,
   ],
   checklists,
+  // Tasks nobody assigned get an owner from roles, shared memory and past tasks.
+  assignOwners: new TaskAssigner({ llm, tasks, people, memory, logger }),
   logger,
 });
 const mediaIngestion = new MediaIngestionService({

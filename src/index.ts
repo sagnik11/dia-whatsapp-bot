@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createIntegrationModules } from "./assistant-integrations.js";
 import { ExportTools } from "./assistant-export.js";
 import { createAdminOps } from "./assistant-admin.js";
 import { FinanceTools } from "./assistant-finance.js";
@@ -8,7 +9,7 @@ import { SemanticTools } from "./assistant-semantic.js";
 import { WhatsAppBot } from "./bot.js";
 import { ChecklistStore } from "./checklist-store.js";
 import { D1HttpClient, type SqlExecutor } from "./cloudflare-d1.js";
-import { adminConfig, config, financeConfig, platformConfig } from "./config.js";
+import { adminConfig, config, financeConfig, integrationsConfig, platformConfig } from "./config.js";
 import { ContextBuffer } from "./context-buffer.js";
 import { ConversationStore, type ConversationLog } from "./conversation-store.js";
 import {
@@ -88,6 +89,15 @@ const followUps = new FollowUpStore({ db: d1, schema: phase1Schema, timezone: co
 const recurring = new RecurringTaskStore({ db: d1, schema: phase1Schema, timezone: config.timezone, logger });
 const checklists = new ChecklistStore({ db: d1, schema: phase1Schema, logger });
 const phase1 = new Phase1Tools({ memory, followUps, recurring, checklists }, tasks, config.timezone, logger);
+// Phase 3: Gmail, Calendar, GitHub and Sentry tools, each only when configured.
+const integrations = createIntegrationModules(integrationsConfig, {
+  db: d1,
+  memory,
+  followUps,
+  tasks,
+  timezone: config.timezone,
+  logger,
+});
 // Phase 2 reporting: CSV exports sent as WhatsApp documents. Other modules can
 // add datasets with exportTools.registry.register(...).
 const exportTools = new ExportTools(
@@ -181,6 +191,7 @@ const assistant = new DiaAssistant({
     ...(adminOps ? [adminOps.module] : []),
     ...(semantic ? [semantic] : []),
     exportTools,
+    ...integrations,
   ],
   checklists,
   logger,

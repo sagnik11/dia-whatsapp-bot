@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
+    "google-auth": "tsx scripts/google-auth.ts",
     "eval": "tsx scripts/eval.ts",
     "postinstall": "patch-package",
     "start": "node dist/index.js",

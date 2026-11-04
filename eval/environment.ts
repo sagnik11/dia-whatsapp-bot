@@ -1,9 +1,14 @@
 import { createSqliteExecutor } from "../test/support/sqlite-executor.js";
 import { createAdminOps } from "../src/assistant-admin.js";
 import { ExportTools } from "../src/assistant-export.js";
+import { CalendarTools } from "../src/assistant-calendar.js";
 import { FinanceTools } from "../src/assistant-finance.js";
+import { GitHubTools } from "../src/assistant-github.js";
+import { GmailTools } from "../src/assistant-gmail.js";
 import { Phase1Tools } from "../src/assistant-phase1.js";
 import { SemanticTools } from "../src/assistant-semantic.js";
+import { SentryTools } from "../src/assistant-sentry.js";
+import type { CalendarEvent } from "../src/calendar-client.js";
 import { DiaAssistant } from "../src/assistant.js";
 import { ChecklistStore } from "../src/checklist-store.js";
 import { ConversationStore } from "../src/conversation-store.js";
@@ -14,6 +19,7 @@ import { FollowUpStore } from "../src/follow-up-store.js";
 import type { LanguageModel } from "../src/llm.js";
 import type { Logger } from "../src/logger.js";
 import { MemoryStore } from "../src/memory-store.js";
+import { INTEGRATIONS_SCHEMA_STATEMENTS, OutboundStore } from "../src/outbound-store.js";
 import type { NotionSpendService } from "../src/notion-spend.js";
 import type { NotionWorkspaceService } from "../src/notion.js";
 import { RecurringTaskStore } from "../src/recurring-store.js";
@@ -208,6 +214,63 @@ export async function createEvalEnvironment(llm: LanguageModel, logger: Logger):
   });
   // Vectorize is not available offline; an empty index keeps semantic_search in the tool list.
   const semantic = new SemanticTools({ index: { query: async () => [] }, db, logger });
+  // Integrations run on stub clients: an eval can never reach Gmail, Calendar,
+  // GitHub or Sentry, while the send/book guards stay the real code.
+  const ledger = new OutboundStore({
+    db,
+    schema: new SchemaGate(db, INTEGRATIONS_SCHEMA_STATEMENTS, logger, "Integrations"),
+    logger,
+  });
+  const stubEvent = (input: { title: string; start: string; end: string }): CalendarEvent => ({
+    id: "eval-event",
+    title: input.title,
+    start: input.start,
+    end: input.end,
+    allDay: false,
+    attendees: [],
+    location: null,
+    description: null,
+    link: null,
+    meetLink: null,
+  });
+  const integrations = [
+    new GmailTools({
+      gmail: {
+        createDraft: async () => ({ draftId: "eval-draft", messageId: "eval-message", threadId: null }),
+        sendDraft: async () => ({ messageId: "eval-message", threadId: null }),
+        search: async () => [],
+      },
+      ledger,
+      logger,
+    }),
+    new CalendarTools({
+      calendar: {
+        listEvents: async () => [],
+        getEvent: async () => stubEvent({ title: "Eval sync", start: new Date().toISOString(), end: new Date().toISOString() }),
+        insertEvent: async (input) => stubEvent({ title: input.title, start: input.startIso, end: input.endIso }),
+      },
+      ledger,
+      memory,
+      followUps,
+      tasks,
+      accountEmail: "founders@example.com",
+      timezone: TIMEZONE,
+      logger,
+    }),
+    new GitHubTools({
+      github: {
+        mergedPulls: async () => [],
+        openPulls: async () => [],
+        defaultBranch: async () => "main",
+        failingChecks: async () => [],
+        latestTag: async () => null,
+        refDate: async () => null,
+      },
+      repos: ["autter/app"],
+      timezone: TIMEZONE,
+    }),
+    new SentryTools({ sentry: { newOrRegressed: async () => [] }, projects: ["app"], timezone: TIMEZONE }),
+  ];
 
   const assistant = new DiaAssistant({
     llm,
@@ -224,6 +287,7 @@ export async function createEvalEnvironment(llm: LanguageModel, logger: Logger):
       adminOps.module,
       semantic,
       new ExportTools(coreExportSources({ db, tasks, phase1Schema, checklists }), TIMEZONE, logger),
+      ...integrations,
     ],
     checklists,
     logger,

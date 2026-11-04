@@ -37,6 +37,12 @@ export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   "update_deals",
   "create_candidates",
   "update_candidates",
+  // Integrations (Phase 3): drafts and proposals are writes; sending and booking
+  // also need the founder's own go-ahead, which the guard enforces in code.
+  "draft_email",
+  "send_email",
+  "propose_event",
+  "book_event",
 ]);
 
 /**
@@ -76,6 +82,13 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "draft_investor_update",
   // Platform (Phase 3)
   "semantic_search",
+  // Integrations (Phase 3)
+  "search_email",
+  "list_events",
+  "prep_meeting",
+  "github_activity",
+  "draft_release_notes",
+  "sentry_issues",
 ]);
 
 const goldenCaseSchema = z

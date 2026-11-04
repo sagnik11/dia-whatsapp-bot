@@ -305,3 +305,90 @@ export const platformConfig = {
     platformEnv.CONVERSATION_STORE === "d1" ||
     (platformEnv.CONVERSATION_STORE === "auto" && Boolean(platformEnv.PATCH_API_URL)),
 } as const;
+
+// --- Integrations (Phase 3) ---------------------------------------------------
+// Gmail, Google Calendar, GitHub and Sentry are each optional and enabled only
+// when all of their variables are set. A half-configured service fails fast.
+const csv = (value: string) =>
+  value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const integrationsEnv = z
+  .object({
+    GOOGLE_CLIENT_ID: optionalString,
+    GOOGLE_CLIENT_SECRET: optionalString,
+    GOOGLE_REFRESH_TOKEN: optionalString,
+    GOOGLE_ACCOUNT_EMAIL: optionalString,
+    GOOGLE_CALENDAR_ID: optionalString,
+    GOOGLE_SERVICES: z.string().default("gmail,calendar"),
+    GITHUB_TOKEN: optionalString,
+    GITHUB_REPOS: z.string().default(""),
+    SENTRY_AUTH_TOKEN: optionalString,
+    SENTRY_ORG: optionalString,
+    SENTRY_PROJECTS: z.string().default(""),
+    SENTRY_BASE_URL: z.url().default("https://sentry.io"),
+    INTEGRATIONS_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
+  })
+  .superRefine((env, context) => {
+    const issue = (path: string, message: string) => context.addIssue({ code: "custom", path: [path], message });
+    const google = [env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET, env.GOOGLE_REFRESH_TOKEN, env.GOOGLE_ACCOUNT_EMAIL];
+    if (google.some(Boolean) && !google.every(Boolean)) {
+      issue(
+        "GOOGLE_REFRESH_TOKEN",
+        "Gmail and Calendar need GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN (from `npm run google-auth`) and GOOGLE_ACCOUNT_EMAIL; set all four or none",
+      );
+    }
+    if (env.GOOGLE_ACCOUNT_EMAIL && !z.email().safeParse(env.GOOGLE_ACCOUNT_EMAIL).success) {
+      issue("GOOGLE_ACCOUNT_EMAIL", "GOOGLE_ACCOUNT_EMAIL must be an email address");
+    }
+    if (csv(env.GOOGLE_SERVICES).some((service) => !["gmail", "calendar"].includes(service.toLowerCase()))) {
+      issue("GOOGLE_SERVICES", "GOOGLE_SERVICES is a comma list of gmail and/or calendar");
+    }
+    const repos = csv(env.GITHUB_REPOS);
+    if (Boolean(env.GITHUB_TOKEN) !== repos.length > 0) {
+      issue("GITHUB_REPOS", "GitHub digests need both GITHUB_TOKEN and GITHUB_REPOS (owner/name, comma separated)");
+    }
+    if (repos.some((repo) => !/^[\w.-]+\/[\w.-]+$/.test(repo))) {
+      issue("GITHUB_REPOS", "GITHUB_REPOS entries must look like owner/name");
+    }
+    const sentry = [env.SENTRY_AUTH_TOKEN, env.SENTRY_ORG, csv(env.SENTRY_PROJECTS).length > 0];
+    if (sentry.some(Boolean) && !sentry.every(Boolean)) {
+      issue("SENTRY_PROJECTS", "Sentry digests need SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECTS; set all three or none");
+    }
+  })
+  .parse(process.env);
+
+const googleServices = new Set(csv(integrationsEnv.GOOGLE_SERVICES).map((service) => service.toLowerCase()));
+
+export const integrationsConfig = {
+  google:
+    integrationsEnv.GOOGLE_CLIENT_ID &&
+    integrationsEnv.GOOGLE_CLIENT_SECRET &&
+    integrationsEnv.GOOGLE_REFRESH_TOKEN &&
+    integrationsEnv.GOOGLE_ACCOUNT_EMAIL
+      ? {
+          clientId: integrationsEnv.GOOGLE_CLIENT_ID,
+          clientSecret: integrationsEnv.GOOGLE_CLIENT_SECRET,
+          refreshToken: integrationsEnv.GOOGLE_REFRESH_TOKEN,
+          accountEmail: integrationsEnv.GOOGLE_ACCOUNT_EMAIL,
+          calendarId: integrationsEnv.GOOGLE_CALENDAR_ID ?? "primary",
+          gmail: googleServices.has("gmail"),
+          calendar: googleServices.has("calendar"),
+        }
+      : undefined,
+  github: integrationsEnv.GITHUB_TOKEN
+    ? { token: integrationsEnv.GITHUB_TOKEN, repos: csv(integrationsEnv.GITHUB_REPOS) }
+    : undefined,
+  sentry:
+    integrationsEnv.SENTRY_AUTH_TOKEN && integrationsEnv.SENTRY_ORG
+      ? {
+          token: integrationsEnv.SENTRY_AUTH_TOKEN,
+          org: integrationsEnv.SENTRY_ORG,
+          projects: csv(integrationsEnv.SENTRY_PROJECTS),
+          baseUrl: integrationsEnv.SENTRY_BASE_URL,
+        }
+      : undefined,
+  timeoutMs: integrationsEnv.INTEGRATIONS_TIMEOUT_MS,
+};

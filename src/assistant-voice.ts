@@ -6,6 +6,7 @@ import type { PeopleStore, Person, PersonNote } from "./people-store.js";
 import type { ToolModule, ToolSession } from "./tool-module.js";
 import { ToolArgumentError, final, output, terminal, type ToolOutcome } from "./tool-outcome.js";
 import type { AssistantRequest } from "./types.js";
+import { PATCH_TONE_TOPIC } from "./setup-questions.js";
 import { messagesBy } from "./voice.js";
 
 const MAX_RULES_KEPT = 60;
@@ -13,7 +14,7 @@ const MAX_FINALS_KEPT = 12;
 const CHAT_SAMPLE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1_000;
 
 export function isVoiceRequest(message: string): boolean {
-  return /\b(?:in|with) (?:my|our|[a-z]+'s) (?:tone|voice|style)\b|\bsounds? like me\b|\bas me\b|\b(?:my|show my) (?:profile|voice|tone)\b|\btoo (?:formal|casual|long|short|stiff|salesy|wordy|polite|blunt)\b|\bi(?:'d| would)? never (?:say|write|use)\b|\bwhat i (?:actually )?sent\b|\b(?:draft|write)\b[\s\S]{0,30}\b(?:reply|response|e-?mail|mail|message|nudge|follow-?up|intro|linkedin)\b|\breply to (?:this|that|him|her|them)\b/i.test(
+  return /\b(?:in|with) (?:my|our|[a-z]+'s) (?:tone|voice|style)\b|\bsounds? like me\b|\bas me\b|\b(?:my|show my) (?:profile|voice|tone)\b|\btoo (?:formal|casual|long|short|stiff|salesy|wordy|polite|blunt|sarcastic|rude)\b|\b(?:less|more|stop|no more|tone down|cut out)\b[\s\S]{0,25}\b(?:sarcas\w*|jok\w*|banter|teas\w*|rude\w*|snark\w*|emoji\w*)|\btalk to me\b|\bi(?:'d| would)? never (?:say|write|use)\b|\bwhat i (?:actually )?sent\b|\b(?:draft|write)\b[\s\S]{0,30}\b(?:reply|response|e-?mail|mail|message|nudge|follow-?up|intro|linkedin)\b|\breply to (?:this|that|him|her|them)\b/i.test(
     message,
   );
 }
@@ -38,6 +39,7 @@ const profileSchema = z
     about: z.string().trim().max(600).nullish(),
   })
   .refine((value) => Object.values(value).some((field) => field !== undefined && field !== null), "Give at least one field");
+const toneSchema = z.object({ tone: z.string().trim().min(3).max(300) });
 const forgetSchema = z.object({ refs: z.array(z.string().trim().regex(/^V?\d{1,9}$/i)).min(1).max(20) });
 
 const audienceProperty = {
@@ -107,6 +109,19 @@ export const VOICE_TOOLS: readonly ToolDefinition[] = [
     },
   },
   {
+    name: "set_patch_tone",
+    description:
+      "How Patch should talk to the requester from now on ('be less sarcastic with me', 'just give me the answer', 'banter is fine'). Only ever the requester's own setting.",
+    parameters: {
+      type: "object",
+      properties: {
+        tone: { type: "string", description: "Their preference in a short phrase, e.g. 'straight to the point, no jokes'." },
+      },
+      required: ["tone"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "forget_voice_rules",
     description: "Remove some of the requester's own voice rules or lessons by V<id> ref (as shown by show_my_profile or named by the requester).",
     parameters: {
@@ -131,7 +146,8 @@ export const VOICE_INSTRUCTIONS: readonly string[] = [
   "- If the person has no profile, write plainly and add one line suggesting they send '@patch setup'.",
   "- When the requester corrects a draft of their own voice ('too formal', 'I never say X', 'always sign as S'), call save_voice_rules with short, general rules, then give the revised draft. Only a person can change their own voice: if they correct a draft written as someone else, revise it and say only that person can change their profile.",
   "- When they paste the version they actually sent after your draft, call learn_from_final with the final text and the concrete differences from your draft as lessons.",
-  "- show_my_profile, update_my_profile, forget_voice_rules (V<id> refs) and delete_my_profile only ever act on the requester's own profile. Setup itself runs when someone sends '@patch setup'.",
+  "- show_my_profile, update_my_profile, set_patch_tone, forget_voice_rules (V<id> refs) and delete_my_profile only ever act on the requester's own profile. Setup itself runs when someone sends '@patch setup'.",
+  "- When someone asks you to talk to them differently ('less sarcastic', 'no jokes', 'more casual'), call set_patch_tone. It changes how Patch talks to them, not how their drafts are written.",
 ];
 
 function ruleRef(note: PersonNote): string {
@@ -173,6 +189,8 @@ export class VoiceTools implements ToolModule {
             return this.showProfile(request, listedRuleIds);
           case "update_my_profile":
             return this.updateProfile(args, request);
+          case "set_patch_tone":
+            return this.setTone(args, request);
           case "forget_voice_rules":
             return this.forgetRules(args, request, listedRuleIds);
           case "delete_my_profile":
@@ -303,6 +321,7 @@ export class VoiceTools implements ToolModule {
       about: person.about,
       setup: person.setup.status === "done" ? "done" : person.setup.status === "none" ? "not started" : `${person.setup.status} at question ${person.setup.step + 1}`,
       voice: person.voice,
+      patchTone: notes.find((note) => note.kind === "answer" && note.topic === PATCH_TONE_TOPIC)?.content ?? "friendly (the default)",
       rules: rules.map((note) => ({ ref: ruleRef(note), kind: note.kind, text: note.content })),
       counts: {
         answers: notes.filter((note) => note.kind === "answer").length,
@@ -324,6 +343,13 @@ export class VoiceTools implements ToolModule {
     await this.options.people.setProfile(person.id, fields, request.requestedBy);
     const lines = Object.entries(fields).map(([key, value]) => `• ${key}: ${value}`);
     return final(`✅ Updated your profile:\n${lines.join("\n")}`);
+  }
+
+  private async setTone(args: unknown, request: AssistantRequest): Promise<ToolOutcome> {
+    const { tone } = toneSchema.parse(args);
+    const person = await this.ensureSelf(request);
+    await this.options.people.replaceNote(person.id, { kind: "answer", topic: PATCH_TONE_TOPIC, content: tone, sourceMessageId: request.messageId });
+    return final(`👍 Got it, ${person.name}. From now on I'll talk to you like this: ${tone}`);
   }
 
   private async forgetRules(args: unknown, request: AssistantRequest, listed: Set<number>): Promise<ToolOutcome> {

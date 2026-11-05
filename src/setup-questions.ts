@@ -15,6 +15,9 @@ export interface SetupQuestion {
   profileField?: "role" | "focus";
 }
 
+/** The setup answer that says how Patch should talk to this person. */
+export const PATCH_TONE_TOPIC = "patch_tone";
+
 export const SETUP_QUESTIONS: readonly SetupQuestion[] = [
   {
     key: "role",
@@ -155,6 +158,13 @@ export const SETUP_QUESTIONS: readonly SetupQuestion[] = [
     key: "draft_style",
     section: "Working with Patch",
     text: "When I draft for you, do you want one ready-to-send version or two options (say, warm and crisp)? With a subject line?",
+    kind: "answer",
+    probe: false,
+  },
+  {
+    key: PATCH_TONE_TOPIC,
+    section: "Working with Patch",
+    text: "How should I talk to you in the group: straight to the point, friendly, or with a bit of banter? Anything I should never joke about?",
     kind: "answer",
     probe: false,
   },

@@ -74,8 +74,21 @@ function toOpenAiTool(tool: ToolDefinition): OpenAI.Chat.Completions.ChatComplet
   };
 }
 
-function stripReasoning(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+/**
+ * Removes a reasoning model's thinking from its reply. Complete blocks go;
+ * when the chat template opened the block itself (Kimi, DeepSeek and others),
+ * only the closing tag arrives, so everything before the last one goes; and
+ * an unclosed block (cut off mid-thought) holds no answer at all.
+ */
+export function stripReasoning(text: string): string {
+  let out = text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/◁think▷[\s\S]*?◁\/think▷/g, "");
+  for (const closing of ["</think>", "◁/think▷"]) {
+    const at = out.toLowerCase().lastIndexOf(closing);
+    if (at >= 0) out = out.slice(at + closing.length);
+  }
+  const open = out.search(/<think>|◁think▷/i);
+  if (open >= 0) out = out.slice(0, open);
+  return out.trim();
 }
 
 /**

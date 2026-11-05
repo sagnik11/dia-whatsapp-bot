@@ -4,7 +4,7 @@ import type { LanguageModel } from "./llm.js";
 import type { Logger } from "./logger.js";
 import { extractJsonObject } from "./memory-distiller.js";
 import { normalizeName, type PeopleStore, type Person, type PersonNote } from "./people-store.js";
-import { SETUP_QUESTIONS } from "./setup-questions.js";
+import { PATCH_TONE_TOPIC, SETUP_QUESTIONS } from "./setup-questions.js";
 import type { ScheduledJob } from "./tool-module.js";
 
 export const VOICE_LEARNING_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -43,7 +43,8 @@ export async function synthesizeVoice(input: {
   logger: Logger;
 }): Promise<{ voice: string; summary: string | null } | null> {
   const byKind = (kind: PersonNote["kind"]) => input.notes.filter((note) => note.kind === kind);
-  const answers = byKind("answer").map((note) => ({
+  // How Patch should talk to them is not how they write.
+  const answers = byKind("answer").filter((note) => note.topic !== PATCH_TONE_TOPIC).map((note) => ({
     question: QUESTION_TEXT.get(note.topic ?? "") ?? note.topic,
     answer: clip(note.content, 1_200),
   }));

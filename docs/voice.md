@@ -6,19 +6,19 @@ Nothing here needs configuration. It uses the same D1 database as tasks (tables 
 
 ## `@patch setup`
 
-Each person sends `@patch setup` in the group. Patch then asks 22 questions, one at a time, addressed to that person:
+Each person sends `@patch setup` in the group. Patch then asks 23 questions, one at a time, addressed to that person:
 
 | Section | What it asks |
 | --- | --- |
 | You | Role and what they own, this quarter's focus, who they write to outside the team |
 | How you write | Three words for their style, openings, sign-offs and the name they sign with, length, language mix (Hinglish, Hindi), emoji, formality by audience, phrases they use and avoid, how they push back, nudge, give bad news and say thanks |
 | Samples | An email to an investor or advisor, one to a customer or partner, one to a candidate, vendor or teammate |
-| Working with Patch | One draft or two options, subject lines, anything never to do, anything else |
+| Working with Patch | One draft or two options, subject lines, how Patch should talk to them (straight, friendly or banter), anything never to do, anything else |
 
 Each question looks like this:
 
 ```text
-📝 Setup · Tanvi · Q4/22
+📝 Setup · Tanvi · Q4/23
 
 *How you write*
 Describe how you write in three words. How would a colleague describe your emails?
@@ -58,6 +58,7 @@ The voice guide is rebuilt from all of these in the background when something ch
 | --- | --- |
 | `@patch show my profile` | Role, focus, voice guide, rules and lessons with `V<id>` refs, setup progress |
 | `@patch update my role: …` | Changes role, focus or the about line |
+| `@patch be less sarcastic with me` | Changes how Patch talks to you (straight, friendly, banter, or your own words) |
 | `@patch forget V12` | Removes that rule or lesson |
 | `@patch delete my profile` | Erases the profile, answers, samples, rules and voice guide |
 

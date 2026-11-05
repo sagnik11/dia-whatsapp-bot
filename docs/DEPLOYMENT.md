@@ -134,7 +134,7 @@ In the allowed group, as a founder, check each reply and its entry in the AI Gat
 - [ ] `@patch remember that we price per repo` → an `M<id>` memory
 - [ ] The next morning at `FOUNDER_BRIEF_TIME` (09:00): the brief arrives and covers only what was said in the group
 
-Then each person on the allowlist sends `@patch setup` and answers the 22 questions by replying to each one (about 10 minutes; `pause setup` and `@patch setup` again to resume). Afterwards, check:
+Then each person on the allowlist sends `@patch setup` and answers the 23 questions by replying to each one (about 10 minutes; `pause setup` and `@patch setup` again to resume). Afterwards, check:
 
 - [ ] Paste an email and send `@patch reply to this in my tone` → a draft in your voice
 - [ ] `@patch too formal, I never say Dear` → a revised draft and "📝 Noted for next time"

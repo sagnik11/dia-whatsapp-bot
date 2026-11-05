@@ -70,6 +70,8 @@ export class TaskAssigner {
     groupId: string;
     requester: string;
     tasks: readonly UnownedTask[];
+    /** The request itself, which may already say who owns what. */
+    context?: string;
   }): Promise<Map<number, OwnerPick>> {
     const picks = new Map<number, OwnerPick>();
     const fallback = (index: number) =>
@@ -113,6 +115,7 @@ export class TaskAssigner {
       const response = await this.options.llm.complete({
         system: [
           "You assign an owner to each new task for Autter's team.",
+          "First read the request: if it says who owns a task (items listed under a person's name or heading, '→ Name', 'for Tanvi', 'X leads'), that person owns it, whatever else suggests.",
           "Use the evidence: each person's role and focus from their profile, what memory says about who handles what, and who has owned similar tasks (same area or topic).",
           "Pick exactly one person per task, only from the candidates. When the evidence points to nobody, pick the requester.",
           "Give a short reason (under 12 words) that names the evidence, e.g. 'handles finance and the CA' or 'owned the last three hiring tasks'.",
@@ -124,6 +127,7 @@ export class TaskAssigner {
             role: "user",
             content: JSON.stringify({
               requester: input.requester,
+              request: input.context ? input.context.slice(0, 6_000) : null,
               candidates: [...new Set(known.values())].map((name) => {
                 const person = people.find((entry) => normalizeName(entry.name) === normalizeName(name));
                 return person

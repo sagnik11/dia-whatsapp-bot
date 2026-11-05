@@ -234,6 +234,7 @@ const assistant = new DiaAssistant({
   checklists,
   // Tasks nobody assigned get an owner from roles, shared memory and past tasks.
   assignOwners: new TaskAssigner({ llm, tasks, people, memory, logger }),
+  people,
   logger,
 });
 const mediaIngestion = new MediaIngestionService({

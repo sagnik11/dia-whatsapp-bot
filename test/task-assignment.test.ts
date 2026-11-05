@@ -136,3 +136,112 @@ describe("every task gets an owner and a due date", () => {
     expect((await tasks.get(1))?.dueAt).toBe(stored?.dueAt);
   });
 });
+
+describe("big lists, repeats and one name per person", () => {
+  function scripted(turns: ReturnType<typeof toolTurn>[], ownerReply?: (call: CompletionRequest) => string) {
+    const calls: CompletionRequest[] = [];
+    const llm: LanguageModel = {
+      complete: async (call) => {
+        calls.push(call);
+        if (call.metadata?.feature === "task_owner") return textTurn(ownerReply?.(call) ?? '{"assignments":[]}');
+        const next = turns.shift();
+        if (!next) throw new Error("out of turns");
+        return next;
+      },
+    };
+    return { llm, calls };
+  }
+
+  it("adds a 36-item list in one go", async () => {
+    const { tasks, people } = await team();
+    const items = Array.from({ length: 36 }, (_, i) => ({ title: `Distinct deliverable number ${i + 1} alpha${i}`, owner: i % 2 ? "Tanvi" : "Sagnik" }));
+    const { llm } = scripted([toolTurn("c1", "create_tasks", { tasks: items })]);
+    const assistant = new DiaAssistant({ llm, botName: "Patch", timezone: "Asia/Kolkata", tasks, people, logger });
+    const reply = await assistant.respond(request("@patch add these 36 tasks"));
+    expect(reply).toMatch(/^✅ 36 tasks added:/);
+    expect((await tasks.list({ text: null, statuses: null, includeClosed: false, owner: null, area: null, tag: null, dueFrom: null, dueTo: null, overdueOnly: false, limit: 100 })).tasks).toHaveLength(36);
+  });
+
+  it("holds back repeats of open tasks and of each other, and adds them when asked", async () => {
+    const { tasks, people } = await team();
+    await tasks.create(
+      [{ title: "Work on User Feedback collection and action", notes: null, status: null, priority: null, owner: "Sagnik", area: null, dueAt: "2026-11-12", tags: [] }],
+      { actor: "Sagnik", groupName: "HQ", messageId: "old" },
+    );
+    const { llm } = scripted([
+      toolTurn("c1", "create_tasks", {
+        tasks: [
+          { title: "Work on User Feedback", owner: "Sagnik" },
+          { title: "Create Product Hunt Content", owner: "Tanvi" },
+          { title: "Prepare and execute Product Hunt launch", owner: "Sagnik" },
+          { title: "Create Product Hunt content", owner: "Tanvi" },
+        ],
+      }),
+      toolTurn("c2", "create_tasks", { allow_duplicates: true, tasks: [{ title: "Work on User Feedback", owner: "Sagnik" }] }),
+    ]);
+    const assistant = new DiaAssistant({ llm, botName: "Patch", timezone: "Asia/Kolkata", tasks, people, logger });
+    const reply = await assistant.respond(request("@patch add these"));
+    expect(reply).toContain("✅ 2 tasks added:");
+    expect(reply).toContain('🔁 Not added, these 2 look like repeats:\n• "Work on User Feedback" ≈ #1 Work on User Feedback collection and action\n• "Create Product Hunt content" ≈ "Create Product Hunt Content" earlier in this list');
+    expect(reply).toContain('Reply "add them anyway" if they are really separate tasks.');
+
+    const again = await assistant.respond(request("@patch add them anyway"));
+    expect(again).toMatch(/^✅ Task #4 added: Work on User Feedback/);
+  });
+
+  it("uses one name per person and lets the owner filter match either form", async () => {
+    const { tasks, people } = await team();
+    const sagnik = await people.findBySender(["s@c.us"]);
+    await people.ensure({ name: "Sagnik Ghosh", senderIds: ["s@c.us"] }); // WhatsApp name changes are aliases
+    expect(sagnik?.name).toBe("Sagnik");
+    const { llm } = scripted([
+      toolTurn("c1", "create_tasks", { tasks: [{ title: "Ship the changelog", owner: "me" }, { title: "Fix OG image", owner: "sagnik ghosh" }] }),
+    ]);
+    const assistant = new DiaAssistant({ llm, botName: "Patch", timezone: "Asia/Kolkata", tasks, people, logger });
+    await assistant.respond(request("@patch add tasks for me"));
+    expect((await tasks.get(1))?.owner).toBe("Sagnik");
+    expect((await tasks.get(2))?.owner).toBe("Sagnik");
+    await tasks.create(
+      [{ title: "Legacy task", notes: null, status: null, priority: null, owner: "Sagnik Ghosh", area: null, dueAt: "2026-11-12", tags: [] }],
+      { actor: "Sagnik", groupName: "HQ", messageId: "legacy" },
+    );
+    const query = { text: null, statuses: null, includeClosed: false, area: null, tag: null, dueFrom: null, dueTo: null, overdueOnly: false, limit: 20 };
+    expect((await tasks.list({ ...query, owner: "Sagnik" })).tasks).toHaveLength(3);
+    expect((await tasks.list({ ...query, owner: "sagnik ghosh" })).tasks).toHaveLength(3);
+    expect((await tasks.list({ ...query, owner: "Tanvi" })).tasks).toHaveLength(0);
+  });
+
+  it("gives the owner picker the request, so owners stated in the message win", async () => {
+    const { tasks, people, memory } = await team();
+    const { llm, calls } = scripted(
+      [toolTurn("c1", "create_tasks", { tasks: [{ title: "Prepare Product Hunt launch" }] })],
+      () => JSON.stringify({ assignments: [{ task: 0, owner: "Sagnik", reason: "the message says Sagnik leads it" }] }),
+    );
+    const assistant = new DiaAssistant({
+      llm,
+      botName: "Patch",
+      timezone: "Asia/Kolkata",
+      tasks,
+      people,
+      assignOwners: new TaskAssigner({ llm, tasks, people, memory, logger }),
+      logger,
+    });
+    const reply = await assistant.respond(request("@patch add: SAGNIK (Product, Tech): 1. Product Hunt → Sagnik leads execution"));
+    expect(reply).toContain("👤 Owner picked: #1 → Sagnik (the message says Sagnik leads it)");
+    const ownerCall = calls.find((call) => call.metadata?.feature === "task_owner");
+    expect(String(ownerCall?.messages[0]?.content)).toContain("Product Hunt → Sagnik leads execution");
+    expect(ownerCall?.system).toContain("that person owns it, whatever else suggests");
+  });
+});
+
+describe("repeat detection", () => {
+  it("matches the same work and leaves different work alone", async () => {
+    const { isRepeat } = await import("../src/task-repeats.js");
+    expect(isRepeat("Work on User Feedback", "Work on User Feedback collection and action")).toBe(true);
+    expect(isRepeat("Create Product Hunt Content", "create product hunt content!")).toBe(true);
+    expect(isRepeat("Change OG image and cover image", "Change cover image & OG image")).toBe(true);
+    expect(isRepeat("Create Product Hunt Content", "Prepare and execute Product Hunt launch")).toBe(false);
+    expect(isRepeat("Autter Info Video Series Part 3 Animation", "Autter Info Video Series Part 4 Animation")).toBe(false);
+    expect(isRepeat("Send emails to Jasnoor list", "Find more Instagram influencers")).toBe(false);
+  });
+});

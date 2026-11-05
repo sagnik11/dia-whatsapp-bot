@@ -33,6 +33,11 @@ import {
   type TaskUpdateResult,
 } from "./task-store.js";
 import { DEFAULT_DUE_DAYS, defaultDueDate, type OwnerPick, type TaskAssigner } from "./task-assignment.js";
+import { findRepeats, formatRepeats } from "./task-repeats.js";
+import type { PeopleStore } from "./people-store.js";
+
+/** One create_tasks call takes a whole pasted list. */
+const MAX_TASKS_PER_CALL = 60;
 
 /** Every task keeps an owner and a due date: they can be changed, never cleared. */
 const REQUEST_CLEARABLE_FIELDS = CLEARABLE_TASK_FIELDS.filter((field) => field !== "owner" && field !== "due_at") as [
@@ -143,7 +148,8 @@ const taskDraftSchema = z.object({
 });
 
 const createTasksSchema = z.object({
-  tasks: z.array(taskDraftSchema).min(1).max(20),
+  tasks: z.array(taskDraftSchema).min(1).max(MAX_TASKS_PER_CALL),
+  allow_duplicates: z.coerce.boolean().nullish(),
 });
 
 const listTasksSchema = z.object({
@@ -336,14 +342,18 @@ const taskFieldProperties = {
 const createTasksTool: ToolDefinition = {
   name: "create_tasks",
   description:
-    "Add one or more tasks to Autter's task list in Cloudflare D1. Use when a founder asks to add, create, capture, record, or turn something into tasks. Create one entry per distinct action item.",
+    "Add one or more tasks to Autter's task list in Cloudflare D1. Use when someone asks to add, create, capture, record, or turn something into tasks. Create one entry per distinct action item, and put every item of a list in this one call (up to 60). Items that repeat an open task or each other are held back and the user is asked.",
   parameters: {
     type: "object",
     properties: {
+      allow_duplicates: {
+        type: "boolean",
+        description: "true only when the user confirmed adding tasks Patch held back as repeats ('add them anyway').",
+      },
       tasks: {
         type: "array",
         minItems: 1,
-        maxItems: 20,
+        maxItems: MAX_TASKS_PER_CALL,
         items: {
           type: "object",
           properties: taskFieldProperties,
@@ -1110,6 +1120,8 @@ interface AssistantOptions {
   checklists?: Pick<ChecklistStore, "itemsFor">;
   /** Picks an owner for tasks nobody assigned; without it they go to the requester. */
   assignOwners?: Pick<TaskAssigner, "assign">;
+  /** Maps "me", "Sagnik" and "Sagnik Ghosh" to one name per person, so ownership stays consistent. */
+  people?: Pick<PeopleStore, "findByName" | "findBySender">;
   logger: Logger;
 }
 
@@ -1383,7 +1395,8 @@ export class DiaAssistant {
       "- It is the only task system. Notion holds no tasks; never mention a Notion task tracker.",
       "- Use list_tasks before answering anything about existing tasks; never claim to know the list without it.",
       "- Use create_tasks only when a founder clearly asks to add or capture tasks. Derive titles and notes only from the triggered message and any message it quotes, or, when a founder asks to capture the discussion, from read_group_conversation results. Create one task per distinct action item, owned by whoever took it on. Never ask for a missing owner or due date: Patch picks an owner from the team's roles, memory and past tasks, and a task with no date is due in 7 days.",
-      "- An owner of 'me' means the sender. Leave owner empty when nobody was named, so Patch picks one; leave due_at empty when no date was given. Every task keeps an owner and a due date: they can be changed but never removed.",
+      "- An owner of 'me' means the sender. When the message says who owns items (listed under a person's name or heading, '→ Name', 'for Tanvi', 'X leads'), set that owner on every one of those items. Leave owner empty only when nobody was named, so Patch picks one; leave due_at empty when no date was given. Every task keeps an owner and a due date: they can be changed but never removed.",
+      "- Patch holds back items that repeat an open task or each other and asks. If the user then says to add them anyway, call create_tasks again with just those items and allow_duplicates true.",
       "- To change or delete a task described in words, call list_tasks first and act only on an unambiguous match. If several tasks match, ask which #id.",
       "- Use update_tasks for status, owner, due date, priority, area, tags, title, and notes. Finished work is status done; dropped work is cancelled. Use delete_tasks only when a founder explicitly says delete or remove.",
       "- Writes are confirmed to the founder automatically from the stored data. Do not restate them; answer only what remains.",
@@ -1519,9 +1532,14 @@ export class DiaAssistant {
 
   // -- Tasks -----------------------------------------------------------------
 
-  private owner(value: string | null, state: RequestState): string | null {
+  /** One name per person: "me" is the sender, and a known first name becomes their full name. */
+  private async owner(value: string | null, state: RequestState): Promise<string | null> {
     if (!value) return null;
-    return /^(?:me|myself|i)$/i.test(value) ? state.request.requestedBy : value;
+    const people = this.options.people;
+    if (/^(?:me|myself|i)$/i.test(value)) {
+      return (await people?.findBySender([state.request.requestedById]))?.name ?? state.request.requestedBy;
+    }
+    return (await people?.findByName(value))?.name ?? value;
   }
 
   private validateDue(value: string | null, field: string): void {
@@ -1533,16 +1551,24 @@ export class DiaAssistant {
   private async createTasks(args: unknown, state: RequestState): Promise<ToolOutcome> {
     const parsed = createTasksSchema.parse(args);
     parsed.tasks.forEach((task, index) => this.validateDue(task.due_at, `tasks.${index}.due_at`));
-    const drafts = parsed.tasks.map((task) => ({
-      title: task.title,
-      notes: task.notes,
-      status: task.status ?? null,
-      priority: task.priority ?? null,
-      owner: this.owner(task.owner, state),
-      area: task.area ?? null,
-      dueAt: task.due_at,
-      tags: task.tags ?? [],
-    }));
+    const requester = (await this.owner("me", state)) ?? state.request.requestedBy;
+    const allDrafts = await Promise.all(
+      parsed.tasks.map(async (task) => ({
+        title: task.title,
+        notes: task.notes,
+        status: task.status ?? null,
+        priority: task.priority ?? null,
+        owner: await this.owner(task.owner, state),
+        area: task.area ?? null,
+        dueAt: task.due_at,
+        tags: task.tags ?? [],
+      })),
+    );
+    // Hold back anything that repeats an open task or an earlier item, and ask.
+    const repeats = parsed.allow_duplicates ? new Map() : findRepeats(allDrafts, await this.openTasksForRepeats());
+    const drafts = allDrafts.filter((_, index) => !repeats.has(index));
+    const repeatNote = repeats.size > 0 ? formatRepeats(allDrafts, repeats) : null;
+    if (drafts.length === 0 && repeatNote) return terminal(repeatNote);
     // Every task gets an owner and a due date.
     const unowned = drafts.flatMap((draft, index) =>
       draft.owner ? [] : [{ index, title: draft.title, notes: draft.notes, area: draft.area }],
@@ -1551,8 +1577,9 @@ export class DiaAssistant {
       unowned.length > 0 && this.options.assignOwners
         ? await this.options.assignOwners.assign({
             groupId: state.request.groupId,
-            requester: state.request.requestedBy,
+            requester,
             tasks: unowned,
+            context: [state.request.body, state.request.quotedMessage ?? ""].join("\n").trim(),
           })
         : new Map<number, OwnerPick>();
     const defaultDue = defaultDueDate(Date.now(), this.options.timezone);
@@ -1560,7 +1587,7 @@ export class DiaAssistant {
       const results = await this.options.tasks.create(
         drafts.map((draft, index) => ({
           ...draft,
-          owner: draft.owner ?? picks.get(index)?.owner ?? state.request.requestedBy,
+          owner: draft.owner ?? picks.get(index)?.owner ?? requester,
           dueAt: draft.dueAt ?? defaultDue,
         })),
         {
@@ -1571,10 +1598,36 @@ export class DiaAssistant {
       );
       for (const result of results) state.knownTaskIds.add(result.task.id);
       return final(
-        [formatTaskCreateConfirmation(results, this.options.timezone), ...filledInLines(results, drafts, picks)].join("\n"),
+        [
+          formatTaskCreateConfirmation(results, this.options.timezone),
+          ...filledInLines(results, drafts, picks),
+          ...(repeatNote ? ["", repeatNote] : []),
+        ].join("\n"),
       );
     } catch (error) {
       return this.taskWriteFailure(error, state, "add those tasks");
+    }
+  }
+
+  /** Open tasks to check new ones against; if D1 is unreachable, the create reports it instead. */
+  private async openTasksForRepeats(): Promise<Array<{ id: number; title: string }>> {
+    try {
+      const result = await this.options.tasks.list({
+        text: null,
+        statuses: null,
+        includeClosed: false,
+        owner: null,
+        area: null,
+        tag: null,
+        dueFrom: null,
+        dueTo: null,
+        overdueOnly: false,
+        limit: 200,
+      });
+      return result.tasks;
+    } catch (error) {
+      this.options.logger.warn({ error }, "Could not read open tasks to check for repeats");
+      return [];
     }
   }
 
@@ -1586,7 +1639,7 @@ export class DiaAssistant {
       text: parsed.text,
       statuses: parsed.statuses ?? null,
       includeClosed: parsed.include_closed ?? false,
-      owner: this.owner(parsed.owner, state),
+      owner: await this.owner(parsed.owner, state),
       area: parsed.area,
       tag: parsed.tag,
       dueFrom: parsed.due_from,
@@ -1650,7 +1703,7 @@ export class DiaAssistant {
               title: update.title,
               status: update.status ?? null,
               priority: update.priority ?? null,
-              owner: this.owner(update.owner, state),
+              owner: await this.owner(update.owner, state),
               area: update.area ?? null,
               dueAt: update.due_at,
               tags: update.tags ?? null,

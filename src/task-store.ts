@@ -350,8 +350,12 @@ export class TaskStore {
       params.push(pattern, pattern);
     }
     if (query.owner?.trim()) {
-      where.push("lower(owner) = lower(?)");
-      params.push(query.owner.trim());
+      // "Sagnik" also finds "Sagnik Ghosh", and the other way round.
+      const owner = query.owner.trim();
+      where.push(
+        "(lower(owner) = lower(?) OR lower(owner) LIKE lower(?) ESCAPE '\\' OR lower(?) LIKE lower(owner) || ' %')",
+      );
+      params.push(owner, `${escapeLike(owner)} %`, owner);
     }
     if (query.area?.trim()) {
       where.push("lower(area) = lower(?)");

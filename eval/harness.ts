@@ -29,6 +29,7 @@ export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   "save_voice_rules",
   "learn_from_final",
   "update_my_profile",
+  "set_patch_tone",
   "forget_voice_rules",
   "delete_my_profile",
   // Finance (Phase 2)

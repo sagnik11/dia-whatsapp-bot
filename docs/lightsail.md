@@ -163,7 +163,7 @@ Copy the values in that entry's `senderIds` array, then add the IDs belonging to
 AUTHORIZED_USER_IDS=919999999999@c.us,919999999999
 ```
 
-Restart with `sudo docker compose up -d`. Captain Patch will answer every configured founder account. For other senders it uses a separate no-tools AI call to produce a sarcastic rejection without exposing the normal assistant, search, or Notion tools. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
+Restart with `sudo docker compose up -d`. Captain Patch will answer every configured founder account. For other senders it uses a separate no-tools AI call to produce a short, friendly rejection without exposing the normal assistant, search, or Notion tools. `UNAUTHORIZED_REPLY` is the fallback used only if that call fails. Authorization uses WhatsApp IDs, not editable display names.
 
 ## 5. Start Captain Patch continuously
 

@@ -6,7 +6,7 @@
 
 Captain Patch is an open-source, self-hosted WhatsApp chief of staff for a founding team. It keeps the company task list in **Cloudflare D1**, thinks with an **open-source model on Workers AI routed through Cloudflare AI Gateway**, remembers the group's own conversation so its answers and briefs are grounded in what you actually said, logs founder spending, captures ideas in a Notion Brain Dump, understands voice notes, screenshots, and PDFs, and only speaks unprompted for reminders you explicitly set.
 
-It is Autter's sarcastic harbour-master mascot out of the box, but the personality and company context live in one small file and can be replaced for another team.
+It is Autter's friendly harbour-master mascot out of the box, but the personality and company context live in one small file and can be replaced for another team.
 
 ```text
 @patch add tasks: renew the domain by Friday, Tanvi to call Rahul about the pilot
@@ -55,7 +55,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 - Logs and totals founder expenses in the Notion **Daily Spend Log**.
 - Reads and appends to the Notion **Brain Dump** page, including "research this and save it there".
 - Understands screenshots (vision), PDFs and Office documents (converted to Markdown by Workers AI), and voice notes (transcribed locally with `whisper.cpp`).
-- Drafts emails, replies, investor updates, JDs, agendas, follow-ups, and summaries on request, **in the voice of whoever it is from**. Each person runs `@patch setup` once, a 22-question interview in the group, and Patch keeps learning from their corrections, the versions they actually send, and their group messages.
+- Drafts emails, replies, investor updates, JDs, agendas, follow-ups, and summaries on request, **in the voice of whoever it is from**. Each person runs `@patch setup` once, a 23-question interview in the group, and Patch keeps learning from their corrections, the versions they actually send, and their group messages.
 - Stores persistent personal reminders in SQLite (advance, due-time, and optional repeats).
 - Sends **one** daily brief at 09:00 (on by default) written from the conversation since the last brief, cross-checked against D1 tasks and reminders, and skipped when the group was quiet. There is no periodic task digest and no Notion task notifications.
 - Optionally performs bounded Tavily web search and multi-search delegated research with citations.
@@ -63,7 +63,7 @@ The roadmap for growing Patch into a full chief of staff lives in [`docs/chief-o
 
 ## Captain Patch and Autter
 
-The default persona is Captain Patch, [Autter's](https://autter.dev/) suspicious harbour master. Patch is dry, highly sarcastic, and unimpressed by bad code, vague plans, avoidable chaos, and meetings that should have been messages. Patch is calm and gentle with Sagnik and performs an intentionally annoying comic rivalry with Tanvi without changing her equal permissions or the quality of her results. Serious or sensitive messages always drop the rivalry. The prompt explicitly keeps the humour non-abusive and requires the useful answer to win over the joke. The persona from before this founder-specific variation is preserved in [`docs/prompts/captain-patch-original.md`](docs/prompts/captain-patch-original.md).
+The default persona is Captain Patch, [Autter's](https://autter.dev/) harbour-master mascot: friendly, warm and direct with everyone, with light humour about situations and never at a person. There are no favourites or rivalries. Each person can choose how Patch talks to them (straight to the point, friendly, or banter) in `@patch setup` or any time with "@patch be less sarcastic with me", and serious or sensitive topics always get a neutral tone. Patch replies with the final message only: reasoning from the model is stripped, and a reply that quotes Patch's instructions or narrates its thinking is rewritten before it reaches the group. The persona from before this founder-specific variation is preserved in [`docs/prompts/captain-patch-original.md`](docs/prompts/captain-patch-original.md).
 
 The included context describes Autter as an independent assurance layer and merge gate for the AI coding era. It also records Sagnik Ghosh and Tanvi as equal co-founders and close friends. This context is used only as assistant background; WhatsApp authorization still depends exclusively on resolved sender IDs, never names.
 
@@ -231,7 +231,7 @@ Phase 1 of the [chief-of-staff plan](docs/chief-of-staff-plan.md). All of it liv
 
 ## Setup and writing in your voice
 
-Each person on the allowlist sends `@patch setup` in the group and answers 22 short questions, one at a time, by replying to each one: their role, who they write to, how they open and sign off, language mix, emoji, formality, phrases they use and avoid, how they push back, plus a few sample emails (screenshots and voice notes work). Patch turns it into a voice guide.
+Each person on the allowlist sends `@patch setup` in the group and answers 23 short questions, one at a time, by replying to each one: their role, who they write to, how they open and sign off, language mix, emoji, formality, phrases they use and avoid, how they push back, plus a few sample emails (screenshots and voice notes work). Patch turns it into a voice guide.
 
 Then paste or screenshot an email and ask `@patch reply to this in my tone`, or `@patch write to the CA in Tanvi's voice`. Corrections ("too formal", "I never say Dear") become lasting rules, a pasted final version teaches Patch what it got wrong, and every 6 hours it learns from what each person writes in the group. `@patch show my profile` shows what Patch knows; each person can change or delete only their own. Details: [docs/voice.md](docs/voice.md).
 
